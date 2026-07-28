@@ -5,10 +5,14 @@
 */
 
 #include "loader/hook.hpp"
-#include "loader/exception.hpp"
+#include "loader/memory.hpp"
 
-Hook::Hook()
-{
+#include <cstdint>
+#include <cstring>
+
+namespace {
+    // jmp rel32
+    constexpr size_t kJumpSize = 5;
 }
 
 Hook::~Hook()
@@ -16,9 +20,72 @@ Hook::~Hook()
     remove();
 }
 
-void Hook::clearMemory(void* target, size_t size)
+void Hook::writeJump(void* from, void* to)
 {
-    VirtualFree(target, 0, MEM_RELEASE);
+    auto* bytes = static_cast<uint8_t*>(from);
+    auto rel = static_cast<uint32_t>(
+        static_cast<uint8_t*>(to) - bytes - kJumpSize
+    );
+
+    bytes[0] = 0xE9;
+    std::memcpy(bytes + 1, &rel, sizeof(rel));
+}
+
+bool Hook::install(void* src, void* dst)
+{
+    if (_installed || !src || !dst) return false;
+
+    size_t len = Memory::PrologueLength(reinterpret_cast<uintptr_t>(src), kJumpSize);
+    if (len == 0) return false;   // prologue not relocatable: refuse
+
+    // Trampoline: the stolen bytes, then a jump back to the rest of the function.
+    auto* trampoline = static_cast<uint8_t*>(
+        VirtualAlloc(nullptr, len + kJumpSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+    );
+    if (!trampoline) return false;
+
+    std::memcpy(trampoline, src, len);
+    writeJump(trampoline + len, static_cast<uint8_t*>(src) + len);
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(src, len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    writeJump(src, dst);
+    // Leftover bytes of the last stolen instruction, so a disassembler (and any
+    // code branching just past the hook) still sees valid instructions.
+    std::memset(static_cast<uint8_t*>(src) + kJumpSize, 0x90, len - kJumpSize);
+
+    DWORD ignored = 0;
+    VirtualProtect(src, len, oldProtect, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), src, len);
+
+    _src = src;
+    _dst = dst;
+    _trampoline = trampoline;
+    _len = len;
+    _installed = true;
+    return true;
+}
+
+void Hook::remove()
+{
+    if (!_installed) return;
+
+    // The trampoline holds the original bytes: copy them back before freeing it.
+    DWORD oldProtect = 0;
+    if (VirtualProtect(_src, _len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        std::memcpy(_src, _trampoline, _len);
+
+        DWORD ignored = 0;
+        VirtualProtect(_src, _len, oldProtect, &ignored);
+        FlushInstructionCache(GetCurrentProcess(), _src, _len);
+    }
+
+    VirtualFree(_trampoline, 0, MEM_RELEASE);
+
     _src = nullptr;
     _dst = nullptr;
     _trampoline = nullptr;
@@ -26,15 +93,7 @@ void Hook::clearMemory(void* target, size_t size)
     _installed = false;
 }
 
-void Hook::restoreMemoryProtection(void* target, size_t size, DWORD oldProtect)
-{
-    if (!VirtualProtect(target, size, oldProtect, &oldProtect)) {
-        memcpy(target, _trampoline, size);
-        VirtualProtect(target, size, oldProtect, &oldProtect);
-    }
-}
-
-bool Hook::IsInstalled()
+bool Hook::isInstalled() const
 {
     return _installed;
 }
@@ -42,92 +101,4 @@ bool Hook::IsInstalled()
 void* Hook::getOriginal() const
 {
     return _trampoline;
-}
-
-bool Hook::changeMemoryProtection(void* target, size_t size, DWORD newProtect, DWORD& oldProtect)
-{
-    return VirtualProtect(target, size, newProtect, &oldProtect) != 0;
-}
-
-void Hook::writeJump(void* from, void* to)
-{
-    auto* srcBytes = static_cast<uint8_t*>(from);
-    auto relAddr = static_cast<uintptr_t>(
-        static_cast<uint8_t*>(to) - srcBytes - 5
-    );
-
-    srcBytes[0] = 0xE9; // JMP
-
-    *reinterpret_cast<uint32_t*>(srcBytes + 1) = static_cast<uint32_t>(relAddr);
-}
-
-void Hook::padWithNops(void* target, size_t offset, size_t totalLen)
-{
-    if (totalLen > offset) {
-        auto* bytes = static_cast<uint8_t*>(target);
-        std::memset(bytes + offset, 0x90, totalLen - offset); // 0x90 = NOP
-    }
-}
-
-void* Hook::allocateTrampoline()
-{
-    auto* trampoline = static_cast<uint8_t*>(
-        VirtualAlloc(nullptr, _len + 5, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
-    );
-    if (!trampoline) return nullptr;
-
-    std::memcpy(trampoline, _src, _len);
-
-    writeJump(trampoline + _len, static_cast<uint8_t*>(_src) + _len);
-
-    return trampoline;
-}
-
-bool Hook::install(void* src, void* dst, size_t len)
-{
-    if (_installed || len < 5) return false;
-
-    _src = src;
-    _dst = dst;
-    _len = len;
-
-    DWORD oldProtect;
-    if (!changeMemoryProtection(_src, _len, PAGE_EXECUTE_READWRITE, oldProtect)) {
-        return false;
-    }
-
-    try {
-        _trampoline = allocateTrampoline();
-        if (!_trampoline)
-            throw HookException(Severity::ERR, "Failed to allocate trampoline: VirtualAlloc returned null");
-    } catch (const HookException& e) {
-        e.log();
-        DWORD dummyProtect;
-        changeMemoryProtection(_src, _len, oldProtect, dummyProtect);
-        return false;
-    }
-
-    writeJump(_src, _dst);
-    padWithNops(_src, 5, _len);
-
-    DWORD dummyProtect;
-    changeMemoryProtection(_src, _len, oldProtect, dummyProtect);
-
-    _installed = true;
-    return true;
-}
-
-void Hook::remove()
-{
-    if (!_installed)
-        return;
-    // Restore original memory protection
-    DWORD oldProtect;
-    changeMemoryProtection(_src, _len, PAGE_EXECUTE_READWRITE, oldProtect);
-    // Clear trampoline memory
-    clearMemory(_trampoline, _len + 5);
-    // Restore original memory protection
-    restoreMemoryProtection(_src, _len, oldProtect);
-    // Clear all member variables
-    clearMemory(_src, _len);
 }

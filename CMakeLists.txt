@@ -56,7 +56,10 @@ set(CRABELOADER_SOURCES
 
 if(CRABELOADER_AS_SHARED)
     add_library(${PROJECT_NAME} SHARED ${CRABELOADER_SOURCES})
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "binkw32")
+    # The game loads bink2w32.dll; proxy.hpp forwards every export to
+    # bink2w32_orig.dll. Naming the output anything else means the game never
+    # loads the loader at all.
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "bink2w32")
 else()
     add_executable(${PROJECT_NAME} ${CRABELOADER_SOURCES})
 endif()
