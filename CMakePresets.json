@@ -26,8 +26,12 @@
     },
     {
       "name": "windows-vs2022",
-      "displayName": "Windows VS2022",
+      "displayName": "Windows VS2022 (x86)",
       "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "Win32",
+        "strategy": "set"
+      },
       "binaryDir": "${sourceDir}/build/vs2022",
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
@@ -35,8 +39,12 @@
     },
     {
       "name": "windows-vs2022-dll",
-      "displayName": "Windows VS2022 DLL Proxy",
+      "displayName": "Windows VS2022 DLL Proxy (x86)",
       "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "Win32",
+        "strategy": "set"
+      },
       "binaryDir": "${sourceDir}/build/vs2022-dll",
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
