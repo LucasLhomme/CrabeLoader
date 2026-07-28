@@ -1,0 +1,77 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-ninja-debug",
+      "displayName": "Windows Ninja Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ninja-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-ninja-release",
+      "displayName": "Windows Ninja Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ninja-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-vs2022",
+      "displayName": "Windows VS2022",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/vs2022",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      }
+    },
+    {
+      "name": "windows-vs2022-dll",
+      "displayName": "Windows VS2022 DLL Proxy",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/vs2022-dll",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "CRABELOADER_AS_SHARED": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-ninja-debug",
+      "configurePreset": "windows-ninja-debug"
+    },
+    {
+      "name": "build-ninja-release",
+      "configurePreset": "windows-ninja-release"
+    },
+    {
+      "name": "build-vs2022-debug",
+      "configurePreset": "windows-vs2022",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-vs2022-release",
+      "configurePreset": "windows-vs2022",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-vs2022-dll-debug",
+      "configurePreset": "windows-vs2022-dll",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-vs2022-dll-release",
+      "configurePreset": "windows-vs2022-dll",
+      "configuration": "Release"
+    }
+  ]
+}
