@@ -17,7 +17,7 @@ class Hook {
         bool install(void* src, void* dst, size_t len);
         void remove();
         bool IsInstalled();
-        bool UnlockProtection(void* address, size_t size, DWORD newProtect, DWORD* oldProtect);
+        void* getOriginal() const;
 
 
     protected:

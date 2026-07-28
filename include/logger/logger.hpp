@@ -1,5 +1,4 @@
 /*
-** EPITECH PROJECT, 2026
 ** CrabeLoader
 ** File description:
 ** logger

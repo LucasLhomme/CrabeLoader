@@ -9,11 +9,17 @@
 
 class Loader {
     public:
-        Loader();
-        ~Loader();
+        static Loader& get();
+
+        bool initialize();
+        void uninitialize();
 
     protected:
     private:
+        Loader() = default;
+        ~Loader() = default;
+        Loader(const Loader&) = delete;
+        Loader& operator=(const Loader&) = delete;
 };
 
 

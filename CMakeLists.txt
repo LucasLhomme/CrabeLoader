@@ -13,10 +13,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Static CRT: the proxy DLL is dropped into a game folder, so it must not
+# depend on a VC++ redistributable (debug or release) being installed there.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 set(CRABELOADER_CORE_SOURCES
     src/main.cpp
     src/Loader.cpp
+    src/hook.cpp
+    src/luacall.cpp
+    src/memory.cpp
     src/overlay.cpp
+    src/exception.cpp
     src/logger/logger.cpp
 )
 

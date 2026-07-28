@@ -5,6 +5,7 @@
 */
 
 #include "loader/hook.hpp"
+#include "loader/exception.hpp"
 
 Hook::Hook()
 {
@@ -35,7 +36,12 @@ void Hook::restoreMemoryProtection(void* target, size_t size, DWORD oldProtect)
 
 bool Hook::IsInstalled()
 {
-    return false;
+    return _installed;
+}
+
+void* Hook::getOriginal() const
+{
+    return _trampoline;
 }
 
 bool Hook::changeMemoryProtection(void* target, size_t size, DWORD newProtect, DWORD& oldProtect)
@@ -85,23 +91,25 @@ bool Hook::install(void* src, void* dst, size_t len)
     _dst = dst;
     _len = len;
 
-    // allocate trampoline
-    _trampoline = allocateTrampoline();
-    if (!_trampoline) return false;
-
-    // unlock memory protection for the source function
     DWORD oldProtect;
     if (!changeMemoryProtection(_src, _len, PAGE_EXECUTE_READWRITE, oldProtect)) {
-        VirtualFree(_trampoline, 0, MEM_RELEASE);
-        _trampoline = nullptr;
         return false;
     }
 
-    // set (JMP + NOPs)
+    try {
+        _trampoline = allocateTrampoline();
+        if (!_trampoline)
+            throw HookException(Severity::ERR, "Failed to allocate trampoline: VirtualAlloc returned null");
+    } catch (const HookException& e) {
+        e.log();
+        DWORD dummyProtect;
+        changeMemoryProtection(_src, _len, oldProtect, dummyProtect);
+        return false;
+    }
+
     writeJump(_src, _dst);
     padWithNops(_src, 5, _len);
 
-    //restore original memory protection
     DWORD dummyProtect;
     changeMemoryProtection(_src, _len, oldProtect, dummyProtect);
 
