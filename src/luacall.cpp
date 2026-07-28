@@ -8,24 +8,22 @@
 #include "logger/logger.hpp"
 
 namespace {
-    constexpr size_t kJumpPatchLen = 5;
-
-    // addr == 0 means "no verified address yet": skip rather than patch a
-    // guess, since a wrong address still overwrites live code and crashes
-    // the host process immediately on next execution.
+    // A resolved address of 0 means "not found": skip it rather than patch a
+    // guess, since a wrong address overwrites live code and crashes the host
+    // process on the next execution.
     bool installOne(Hook& hook, uintptr_t addr, void* detour, const char* name)
     {
         Logger& logger = Logger::getInstance();
 
         if (addr == 0) {
-            logger.warning("LuaCall: {} skipped (no verified address).", name);
+            logger.warning("LuaCall: {} skipped (address not resolved).", name);
             return false;
         }
-        if (!hook.install(reinterpret_cast<void*>(addr), detour, kJumpPatchLen)) {
-            logger.error("LuaCall: failed to install {} hook.", name);
+        if (!hook.install(reinterpret_cast<void*>(addr), detour)) {
+            logger.error("LuaCall: failed to hook {} at 0x{:X}.", name, addr);
             return false;
         }
-        logger.info("LuaCall: {} hook installed.", name);
+        logger.info("LuaCall: {} hooked.", name);
         return true;
     }
 }
@@ -40,9 +38,12 @@ bool LuaCall::initialize(uintptr_t addrLoadfile, uintptr_t addrLoadbuffer, uintp
 {
     bool anyInstalled = false;
 
-    anyInstalled |= installOne(_hookLoadfile, addrLoadfile, reinterpret_cast<void*>(&LuaCall::hkLoadfile), "luaL_loadfile");
-    anyInstalled |= installOne(_hookLoadbuffer, addrLoadbuffer, reinterpret_cast<void*>(&LuaCall::hkLoadbuffer), "luaL_loadbuffer");
-    anyInstalled |= installOne(_hookPcall, addrPcall, reinterpret_cast<void*>(&LuaCall::hkPcall), "lua_pcall");
+    anyInstalled |= installOne(_hookLoadfile, addrLoadfile,
+                            reinterpret_cast<void*>(&LuaCall::hkLoadfile), "luaL_loadfile");
+    anyInstalled |= installOne(_hookLoadbuffer, addrLoadbuffer,
+                            reinterpret_cast<void*>(&LuaCall::hkLoadbuffer), "luaL_loadbuffer");
+    anyInstalled |= installOne(_hookPcall, addrPcall,
+                            reinterpret_cast<void*>(&LuaCall::hkPcall), "lua_pcall");
 
     return anyInstalled;
 }
@@ -71,18 +72,18 @@ LuaCall::t_lua_pcall LuaCall::originalPcall() const
 
 int __cdecl LuaCall::hkLoadfile(void* L, const char* filename)
 {
-    Logger::getInstance().debug("hkLoadfile: {}", filename ? filename : "<null>");
+    Logger::getInstance().debug("Lua: loadfile {}", filename ? filename : "<null>");
     return LuaCall::get().originalLoadfile()(L, filename);
 }
 
 int __cdecl LuaCall::hkLoadbuffer(void* L, const char* buff, size_t size, const char* name)
 {
-    Logger::getInstance().debug("hkLoadbuffer: {}", name ? name : "<null>");
+    Logger::getInstance().debug("Lua: loadbuffer {} ({} bytes)", name ? name : "<null>", size);
     return LuaCall::get().originalLoadbuffer()(L, buff, size, name);
 }
 
 int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
 {
-    Logger::getInstance().debug("hkPcall: nargs={} nresults={}", nargs, nresults);
+    // Called thousands of times per second: no logging, no allocation.
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 }

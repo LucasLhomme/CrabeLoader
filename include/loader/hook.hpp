@@ -6,35 +6,41 @@
 
 #ifndef HOOK_HPP_
 #define HOOK_HPP_
-#include <windows.h>
-#include <cstring>
-#include <cstdint>
 
+#include <cstddef>
+#include <windows.h>
+
+// A single x86 trampoline hook.
+//
+// install() overwrites the first bytes of `src` with a jmp to `dst`, and keeps a
+// copy of those bytes -- followed by a jmp back -- in an executable trampoline.
+// getOriginal() returns that trampoline, so a detour can still call through.
+//
+// The number of stolen bytes is decided by Memory::PrologueLength(), never by the
+// caller: it must cover *whole* instructions, and a wrong count corrupts the host
+// process' code. install() refuses to hook a prologue it cannot size.
 class Hook {
     public:
-        Hook();
+        Hook() = default;
         ~Hook();
-        bool install(void* src, void* dst, size_t len);
+
+        Hook(const Hook&) = delete;
+        Hook& operator=(const Hook&) = delete;
+
+        bool install(void* src, void* dst);
         void remove();
-        bool IsInstalled();
+
+        bool isInstalled() const;
         void* getOriginal() const;
 
-
-    protected:
     private:
+        static void writeJump(void* from, void* to);
+
         void* _src = nullptr;
         void* _dst = nullptr;
         void* _trampoline = nullptr;
-        int _len = 0;
+        size_t _len = 0;
         bool _installed = false;
-
-        void *allocateTrampoline();
-        bool changeMemoryProtection(void* target, size_t size, DWORD newProtect, DWORD& oldProtect);
-        void writeJump(void* from, void* to);
-        void padWithNops(void* target, size_t offset, size_t totalLen);
-        void restoreMemoryProtection(void* target, size_t size, DWORD oldProtect);
-        void clearMemory(void* target, size_t size);
-
 };
 
 #endif /* !HOOK_HPP_ */

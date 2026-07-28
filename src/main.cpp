@@ -12,9 +12,6 @@
 #include "loader/loader.hpp"
 
 namespace {
-    // The host process' current working directory is not reliable (it may
-    // not match the game's install folder), so the log is placed next to
-    // this DLL itself instead of using a path relative to the CWD.
     std::string moduleLogPath(HMODULE hModule) {
         char path[MAX_PATH];
         DWORD len = GetModuleFileNameA(hModule, path, MAX_PATH);
@@ -23,7 +20,15 @@ namespace {
         auto pos = dir.find_last_of("\\/");
         dir.resize(pos != std::string::npos ? pos + 1 : 0);
 
-        return dir + "CrabeLoader.log";
+        return dir + "loader.log";
+    }
+    long WINAPI crashFilter(EXCEPTION_POINTERS* info) {
+        Logger::getInstance().error(
+            "Unhandled exception 0x{:X} at address 0x{:X}",
+            static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode),
+            reinterpret_cast<uintptr_t>(info->ExceptionRecord->ExceptionAddress)
+        );
+        return EXCEPTION_EXECUTE_HANDLER;
     }
 }
 
@@ -38,11 +43,12 @@ void InitMain() {
     Loader::get().initialize();
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         init_logger(hModule);
+        SetUnhandledExceptionFilter(crashFilter);
         Logger::getInstance().info("CrabeLoader DLL loaded.");
         std::thread(InitMain).detach();
     }
