@@ -5,6 +5,7 @@
 */
 
 #include "loader/luacall.hpp"
+#include "loader/loader.hpp"
 #include "logger/logger.hpp"
 
 namespace {
@@ -73,12 +74,18 @@ LuaCall::t_lua_pcall LuaCall::originalPcall() const
 int __cdecl LuaCall::hkLoadfile(void* L, const char* filename)
 {
     Logger::getInstance().debug("Lua: loadfile {}", filename ? filename : "<null>");
+    Loader::get().onLuaState(L);
     return LuaCall::get().originalLoadfile()(L, filename);
 }
 
 int __cdecl LuaCall::hkLoadbuffer(void* L, const char* buff, size_t size, const char* name)
 {
     Logger::getInstance().debug("Lua: loadbuffer {} ({} bytes)", name ? name : "<null>", size);
+    // This game ships its Lua as precompiled bytecode buffers: it never calls
+    // loadfile, so this is the real (and only) place a valid, fully-set-up
+    // Lua state is observed. onLuaState() is a no-op after the first call, so
+    // the extra check here is cheap even though loadbuffer fires constantly.
+    Loader::get().onLuaState(L);
     return LuaCall::get().originalLoadbuffer()(L, buff, size, name);
 }
 
@@ -86,4 +93,34 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
 {
     // Called thousands of times per second: no logging, no allocation.
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
+}
+
+bool LuaCall::runFile(void* L, const char* path) const
+{
+    t_luaL_loadfile loadfile = originalLoadfile();
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !loadfile || !pcall) {
+        Logger::getInstance().error("LuaCall: cannot run '{}': Lua state or hooks unavailable.", path);
+        return false;
+    }
+
+    constexpr int kLuaOk = 0;
+    constexpr int kLuaMultret = -1; // LUA_MULTRET
+
+    int loadStatus = loadfile(L, path);
+    if (loadStatus != kLuaOk) {
+        // The error message luaL_loadfile pushed onto the stack is left there:
+        // we don't have lua_tostring/lua_pop resolved yet to read and clear it.
+        Logger::getInstance().error("LuaCall: luaL_loadfile('{}') failed (status {}).", path, loadStatus);
+        return false;
+    }
+
+    int callStatus = pcall(L, 0, kLuaMultret, 0);
+    if (callStatus != kLuaOk) {
+        Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}).", path, callStatus);
+        return false;
+    }
+
+    return true;
 }
