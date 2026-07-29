@@ -77,6 +77,33 @@ namespace {
         return addr;
     }
 
+    bool isExtendedKey(int virtualKey)
+    {
+        switch (virtualKey) {
+            case VK_LEFT: case VK_RIGHT: case VK_UP: case VK_DOWN:
+            case VK_PRIOR: case VK_NEXT: case VK_END: case VK_HOME:
+            case VK_INSERT: case VK_DELETE:
+            case VK_DIVIDE: case VK_NUMLOCK:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    std::string virtualKeyName(int virtualKey)
+    {
+        LONG scanCode = MapVirtualKeyA(static_cast<UINT>(virtualKey), MAPVK_VK_TO_VSC);
+        LONG lParam = scanCode << 16;
+        if (isExtendedKey(virtualKey))
+            lParam |= 1 << 24;
+
+        char buffer[64];
+        int len = GetKeyNameTextA(lParam, buffer, sizeof(buffer));
+        if (len <= 0)
+            return std::format("VK 0x{:X}", virtualKey);
+        return std::string(buffer, len);
+    }
+
 } // namespace
 
 Loader& Loader::get()
@@ -144,31 +171,74 @@ void Loader::onLoadmods()
     }
 }
 
+void Loader::RegisterKeybind(int virtualKey, std::function<void()> onPress)
+{
+    std::lock_guard<std::mutex> lock(_keybindsMutex);
+    _keybinds[virtualKey] = Keybind{ std::move(onPress), false };
+    Logger::getInstance().info("Loader: registered keybind for virtual key 0x{:X}.", virtualKey);
+}
+
+void Loader::RegisterLuaKeybind(int virtualKey, const std::string& luaFunctionName)
+{
+    RegisterKeybind(virtualKey, [this, luaFunctionName]() {
+        QueueLuaCall(luaFunctionName);
+    });
+}
+
+void Loader::QueueLuaCall(const std::string& luaFunctionName)
+{
+    std::lock_guard<std::mutex> lock(_luaCallQueueMutex);
+    _pendingLuaCalls.push_back(luaFunctionName);
+}
+
+void Loader::DrainPendingKeybindCalls(void* L)
+{
+    std::vector<std::string> pending;
+    {
+        std::lock_guard<std::mutex> lock(_luaCallQueueMutex);
+        if (_pendingLuaCalls.empty())
+            return;
+        pending.swap(_pendingLuaCalls);
+    }
+
+    for (const auto& luaFunctionName : pending) {
+        if (!LuaCall::get().runGlobalIfExists(L, luaFunctionName)) {
+            Logger::getInstance().warning("Loader: keybind call '{}()' raised a Lua error.", luaFunctionName);
+        }
+    }
+}
+
+void Loader::registerDefaultKeybinds()
+{
+    static constexpr std::pair<int, const char*> kLuaKeybinds[] = {
+        { VK_F1, "OnKeyF1" }, { VK_F2, "OnKeyF2" }, { VK_F3, "OnKeyF3" }, { VK_F4, "OnKeyF4" }, { VK_F5, "OnKeyF5" },
+        { VK_F6, "OnKeyF6" }, { VK_F7, "OnKeyF7" }, { VK_F8, "OnKeyF8" }, { VK_F9, "OnKeyF9" },
+        { VK_F10, "OnKeyF10" }, { VK_F11, "OnKeyF11" }, { VK_F12, "OnKeyF12" },
+    };
+    for (const auto& [virtualKey, luaFunctionName] : kLuaKeybinds) {
+        RegisterLuaKeybind(virtualKey, luaFunctionName);
+    }
+}
+
 void Loader::HandleKeybind()
 {
-    // Edge-detected: GetAsyncKeyState is polled every tick, so without this
-    // the toggle would flip back and forth for as long as the key stays down.
-    static bool f5WasDown = false;
-
-    char BUFFER[256];
-    auto writesignal = [&](const char* signal) {
-        std::snprintf(BUFFER, sizeof(BUFFER), "Loader: keybind signal '%s'.", signal);
-        Logger::getInstance().info("{}", BUFFER);
-    };
-
-    bool f5IsDown = (GetAsyncKeyState(VK_F5) & 0x8000) != 0;
-    if (f5IsDown && !f5WasDown) {
-        _menuOpen = !_menuOpen;
-        writesignal(_menuOpen ? "menu_open" : "menu_close");
+    std::lock_guard<std::mutex> lock(_keybindsMutex);
+    for (auto& [virtualKey, bind] : _keybinds) {
+        bool isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+        if (isDown && !bind.wasDown) {
+            Logger::getInstance().debug("Loader: keybind pressed: {} (virtual key 0x{:X}).",
+                                        virtualKeyName(virtualKey), virtualKey);
+            bind.onPress();
+        }
+        bind.wasDown = isDown;
     }
-    f5WasDown = f5IsDown;
 }
 
 void Loader::inputLoop()
 {
     while (true) {
         HandleKeybind();
-        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 Hz
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
 
@@ -188,6 +258,7 @@ bool Loader::initialize()
     Logger::getInstance().info("Loader: initialized.");
     onLuaState(nullptr);
     onLoadmods();
+    registerDefaultKeybinds();
 
     std::thread(&Loader::inputLoop, this).detach();
     return true;

@@ -4,6 +4,8 @@
 ** luacall
 */
 
+#include <format>
+
 #include "loader/luacall.hpp"
 #include "loader/loader.hpp"
 #include "logger/logger.hpp"
@@ -91,7 +93,12 @@ int __cdecl LuaCall::hkLoadbuffer(void* L, const char* buff, size_t size, const 
 
 int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
 {
-    // Called thousands of times per second: no logging, no allocation.
+    // Called thousands of times per second: no logging, no allocation on the
+    // path where nothing is queued (Loader::DrainPendingKeybindCalls returns
+    // immediately in that case). This is also the only place it is safe to
+    // run keybind-triggered Lua calls from: it's the game's own thread
+    // already holding this L, unlike the input-polling thread that queued them.
+    Loader::get().DrainPendingKeybindCalls(L);
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 }
 
@@ -123,4 +130,27 @@ bool LuaCall::runFile(void* L, const char* path) const
     }
 
     return true;
+}
+
+bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
+{
+    t_luaL_loadbuffer loadbuffer = originalLoadbuffer();
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !loadbuffer || !pcall)
+        return false;
+
+    std::string chunk = std::format("if {0} then {0}() end", functionName);
+
+    constexpr int kLuaOk = 0;
+    constexpr int kLuaMultret = -1; // LUA_MULTRET
+
+    int loadStatus = loadbuffer(L, chunk.c_str(), chunk.size(), functionName.c_str());
+    if (loadStatus != kLuaOk) {
+        Logger::getInstance().error("LuaCall: failed to compile keybind chunk for '{}' (status {}).",
+                                    functionName, loadStatus);
+        return false;
+    }
+
+    return pcall(L, 0, kLuaMultret, 0) == kLuaOk;
 }
