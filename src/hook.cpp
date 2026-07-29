@@ -5,14 +5,41 @@
 */
 
 #include "loader/hook.hpp"
-#include "loader/memory.hpp"
 
 #include <cstdint>
-#include <cstring>
+#include <mutex>
+#include "minhook/MinHook.h"
+#include "logger/logger.hpp"
 
 namespace {
-    // jmp rel32
-    constexpr size_t kJumpSize = 5;
+    // MH_Initialize/MH_Uninitialize are process-global and must each be called
+    // exactly once, but Hook instances are created and destroyed independently
+    // (LuaCall alone owns three). Reference-count them so the last Hook to be
+    // removed is the one that tears MinHook down.
+    int g_refCount = 0;
+    std::mutex g_refMutex;
+
+    bool acquireMinHook()
+    {
+        std::lock_guard<std::mutex> lock(g_refMutex);
+        if (g_refCount == 0) {
+            MH_STATUS status = MH_Initialize();
+            if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {
+                Logger::getInstance().error("Hook: MH_Initialize failed: {}", MH_StatusToString(status));
+                return false;
+            }
+        }
+        ++g_refCount;
+        return true;
+    }
+
+    void releaseMinHook()
+    {
+        std::lock_guard<std::mutex> lock(g_refMutex);
+        if (--g_refCount == 0) {
+            MH_Uninitialize();
+        }
+    }
 }
 
 Hook::~Hook()
@@ -20,52 +47,33 @@ Hook::~Hook()
     remove();
 }
 
-void Hook::writeJump(void* from, void* to)
-{
-    auto* bytes = static_cast<uint8_t*>(from);
-    auto rel = static_cast<uint32_t>(
-        static_cast<uint8_t*>(to) - bytes - kJumpSize
-    );
-
-    bytes[0] = 0xE9;
-    std::memcpy(bytes + 1, &rel, sizeof(rel));
-}
-
 bool Hook::install(void* src, void* dst)
 {
     if (_installed || !src || !dst) return false;
+    if (!acquireMinHook()) return false;
 
-    size_t len = Memory::PrologueLength(reinterpret_cast<uintptr_t>(src), kJumpSize);
-    if (len == 0) return false;   // prologue not relocatable: refuse
+    Logger& logger = Logger::getInstance();
 
-    // Trampoline: the stolen bytes, then a jump back to the rest of the function.
-    auto* trampoline = static_cast<uint8_t*>(
-        VirtualAlloc(nullptr, len + kJumpSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
-    );
-    if (!trampoline) return false;
-
-    std::memcpy(trampoline, src, len);
-    writeJump(trampoline + len, static_cast<uint8_t*>(src) + len);
-
-    DWORD oldProtect = 0;
-    if (!VirtualProtect(src, len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        VirtualFree(trampoline, 0, MEM_RELEASE);
+    void* original = nullptr;
+    MH_STATUS status = MH_CreateHook(src, dst, &original);
+    if (status != MH_OK) {
+        logger.error("Hook: MH_CreateHook failed at 0x{:X}: {}",
+                    reinterpret_cast<uintptr_t>(src), MH_StatusToString(status));
+        releaseMinHook();
         return false;
     }
 
-    writeJump(src, dst);
-    // Leftover bytes of the last stolen instruction, so a disassembler (and any
-    // code branching just past the hook) still sees valid instructions.
-    std::memset(static_cast<uint8_t*>(src) + kJumpSize, 0x90, len - kJumpSize);
-
-    DWORD ignored = 0;
-    VirtualProtect(src, len, oldProtect, &ignored);
-    FlushInstructionCache(GetCurrentProcess(), src, len);
+    status = MH_EnableHook(src);
+    if (status != MH_OK) {
+        logger.error("Hook: MH_EnableHook failed at 0x{:X}: {}",
+                    reinterpret_cast<uintptr_t>(src), MH_StatusToString(status));
+        MH_RemoveHook(src);
+        releaseMinHook();
+        return false;
+    }
 
     _src = src;
-    _dst = dst;
-    _trampoline = trampoline;
-    _len = len;
+    _trampoline = original;
     _installed = true;
     return true;
 }
@@ -74,22 +82,12 @@ void Hook::remove()
 {
     if (!_installed) return;
 
-    // The trampoline holds the original bytes: copy them back before freeing it.
-    DWORD oldProtect = 0;
-    if (VirtualProtect(_src, _len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        std::memcpy(_src, _trampoline, _len);
-
-        DWORD ignored = 0;
-        VirtualProtect(_src, _len, oldProtect, &ignored);
-        FlushInstructionCache(GetCurrentProcess(), _src, _len);
-    }
-
-    VirtualFree(_trampoline, 0, MEM_RELEASE);
+    MH_DisableHook(_src);
+    MH_RemoveHook(_src);
+    releaseMinHook();
 
     _src = nullptr;
-    _dst = nullptr;
     _trampoline = nullptr;
-    _len = 0;
     _installed = false;
 }
 
