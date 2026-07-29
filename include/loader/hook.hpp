@@ -7,18 +7,18 @@
 #ifndef HOOK_HPP_
 #define HOOK_HPP_
 
-#include <cstddef>
 #include <windows.h>
 
-// A single x86 trampoline hook.
+// A single inline detour hook, backed by MinHook.
 //
-// install() overwrites the first bytes of `src` with a jmp to `dst`, and keeps a
-// copy of those bytes -- followed by a jmp back -- in an executable trampoline.
-// getOriginal() returns that trampoline, so a detour can still call through.
+// install() replaces `src` with a detour to `dst` and keeps the MinHook-built
+// trampoline that still runs the original stolen instructions.
+// getOriginal() returns that trampoline, so a detour can call through to the
+// real function.
 //
-// The number of stolen bytes is decided by Memory::PrologueLength(), never by the
-// caller: it must cover *whole* instructions, and a wrong count corrupts the host
-// process' code. install() refuses to hook a prologue it cannot size.
+// MinHook is reference-counted process-wide (MH_Initialize/MH_Uninitialize):
+// each installed Hook holds one reference, so unrelated Hook instances can be
+// created and destroyed independently without tearing down hooks still in use.
 class Hook {
     public:
         Hook() = default;
@@ -34,12 +34,8 @@ class Hook {
         void* getOriginal() const;
 
     private:
-        static void writeJump(void* from, void* to);
-
         void* _src = nullptr;
-        void* _dst = nullptr;
         void* _trampoline = nullptr;
-        size_t _len = 0;
         bool _installed = false;
 };
 
