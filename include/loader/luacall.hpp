@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <mutex>
+#include <string>
 
 #include "loader/hook.hpp"
 
@@ -25,6 +26,7 @@ class LuaCall {
         // executed outside of the game's own loading path.
         bool runFile(void* L, const char* path) const;
 
+        bool runGlobalIfExists(void* L, const std::string& functionName) const;
     protected:
     private:
         LuaCall() = default;
