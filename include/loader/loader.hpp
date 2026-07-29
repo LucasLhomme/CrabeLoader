@@ -26,9 +26,12 @@ class Loader {
         Loader(const Loader&) = delete;
         Loader& operator=(const Loader&) = delete;
         bool _isInjected();
+        void HandleKeybind();
+        void inputLoop();
 
         void* _luaState = nullptr;
         std::atomic<bool> _modsLoaded{false};
+        std::atomic<bool> _menuOpen{false};
 };
 
 
