@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <mutex>
 
 #include "loader/hook.hpp"
 
@@ -18,6 +19,11 @@ class LuaCall {
 
         bool initialize(uintptr_t addrLoadfile, uintptr_t addrLoadbuffer, uintptr_t addrPcall);
         void uninitialize();
+
+        // Loads `path` with the real (unhooked) luaL_loadfile and runs it with
+        // the real lua_pcall, in the given state. This is how mod scripts get
+        // executed outside of the game's own loading path.
+        bool runFile(void* L, const char* path) const;
 
     protected:
     private:
@@ -41,6 +47,8 @@ class LuaCall {
         Hook _hookLoadfile;
         Hook _hookLoadbuffer;
         Hook _hookPcall;
+        std::mutex _StateMutex;
+
 };
 
 #endif /* !LUACALL_HPP_ */

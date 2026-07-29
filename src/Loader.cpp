@@ -5,7 +5,10 @@
 */
 
 #include <cstdint>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <mutex>
 #include <string>
 #include <windows.h>
 
@@ -80,6 +83,65 @@ Loader& Loader::get()
     return instance;
 }
 
+void Loader::onLuaState(void *L)
+{
+    if (!L) {
+        Logger::getInstance().info("Loader: Lua state UNINJECTED.");
+        return;
+    }
+
+    // loadbuffer fires thousands of times per second during startup: bail out
+    // before the mutex/log once mods are already loaded, or every single Lua
+    // chunk load pays for a lock + a flushed log write.
+    if (_modsLoaded)
+        return;
+
+    std::lock_guard<std::mutex> lock(_StateMutex);
+    if (_modsLoaded)
+        return; // another thread handled it while we waited for the lock
+
+    _luaState = L;
+    _modsLoaded = true;
+    Logger::getInstance().info("Loader: Lua state INJECTED.");
+
+    onLoadmods();
+}
+
+bool Loader::_isInjected()
+{
+    return _luaState != nullptr;
+}
+
+void Loader::onLoadmods()
+{
+    std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
+
+    if (!Loader::get()._isInjected()) {
+        Logger::getInstance().info("Loader: Lua state not injected, skipping mod loading.");
+        return;
+    } else {
+        Logger::getInstance().info("Loader: Reading mods folder...");
+        if (!std::filesystem::exists(modsFolder)) {
+            Logger::getInstance().info("Loader: Mods folder does not exist, creating...");
+            std::filesystem::create_directory(modsFolder);
+        } else {
+            // here is the part where we iterate over the mods folder and execute any .lua files found
+            for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
+                if (entry.is_regular_file() && entry.path().extension() == ".lua") {
+                    std::string filename = entry.path().filename().string();
+                    Logger::getInstance().info("Loader: Found mod: {}", filename);
+
+                    if (LuaCall::get().runFile(_luaState, entry.path().string().c_str())) {
+                        Logger::getInstance().info("Loader: mod '{}' executed.", filename);
+                    } else {
+                        Logger::getInstance().warning("Loader: mod '{}' failed to execute.", filename);
+                    }
+                }
+            }
+        }
+    }
+}
+
 bool Loader::initialize()
 {
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
@@ -94,6 +156,8 @@ bool Loader::initialize()
     }
 
     Logger::getInstance().info("Loader: initialized.");
+    onLuaState(nullptr);
+    onLoadmods();
     return true;
 }
 
