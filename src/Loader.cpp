@@ -4,12 +4,14 @@
 ** Loader
 */
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <windows.h>
 
 #include "loader/loader.hpp"
@@ -142,6 +144,34 @@ void Loader::onLoadmods()
     }
 }
 
+void Loader::HandleKeybind()
+{
+    // Edge-detected: GetAsyncKeyState is polled every tick, so without this
+    // the toggle would flip back and forth for as long as the key stays down.
+    static bool f5WasDown = false;
+
+    char BUFFER[256];
+    auto writesignal = [&](const char* signal) {
+        std::snprintf(BUFFER, sizeof(BUFFER), "Loader: keybind signal '%s'.", signal);
+        Logger::getInstance().info("{}", BUFFER);
+    };
+
+    bool f5IsDown = (GetAsyncKeyState(VK_F5) & 0x8000) != 0;
+    if (f5IsDown && !f5WasDown) {
+        _menuOpen = !_menuOpen;
+        writesignal(_menuOpen ? "menu_open" : "menu_close");
+    }
+    f5WasDown = f5IsDown;
+}
+
+void Loader::inputLoop()
+{
+    while (true) {
+        HandleKeybind();
+        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 Hz
+    }
+}
+
 bool Loader::initialize()
 {
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
@@ -158,6 +188,8 @@ bool Loader::initialize()
     Logger::getInstance().info("Loader: initialized.");
     onLuaState(nullptr);
     onLoadmods();
+
+    std::thread(&Loader::inputLoop, this).detach();
     return true;
 }
 
