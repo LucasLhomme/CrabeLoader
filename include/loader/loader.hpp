@@ -45,7 +45,6 @@ class Loader {
 
         void* _luaState = nullptr;
         std::atomic<bool> _modsLoaded{false};
-        std::atomic<bool> _menuOpen{false};
         std::unordered_map<int, Keybind> _keybinds;
         std::mutex _keybindsMutex; // guards _keybinds: RegisterKeybind() may be called after inputLoop() has started
         std::vector<std::string> _pendingLuaCalls;

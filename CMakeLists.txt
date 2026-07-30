@@ -24,6 +24,7 @@ set(CRABELOADER_CORE_SOURCES
     src/luacall.cpp
     src/memory.cpp
     src/overlay.cpp
+    src/render_hook.cpp
     src/exception.cpp
     src/logger/logger.cpp
 )

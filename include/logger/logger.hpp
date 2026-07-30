@@ -7,12 +7,14 @@
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 
+#include <deque>
 #include <string>
 #include <fstream>
 #include <mutex>
 #include <iostream>
 #include <format>
 #include <utility>
+#include <vector>
 
 enum class LogLevel {
     DEBUG,
@@ -27,6 +29,7 @@ public:
 
     void setLogFile(const std::string& filename);
     void setLogLevel(LogLevel level);
+    std::vector<std::string> getHistory() const;
 
     template <typename... Args>
     void log(LogLevel level, std::string_view fmt, Args&&... args) {
@@ -68,10 +71,12 @@ private:
 
     std::string levelToString(LogLevel level) const;
     std::string getCurrentTime() const;
+    static constexpr size_t kMaxHistoryLines = 1000;
 
     std::ofstream m_fileStream;
     LogLevel m_minLevel;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
+    std::deque<std::string> m_history;
 };
 
 #endif // LOGGER_HPP

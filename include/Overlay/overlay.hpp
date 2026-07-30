@@ -7,13 +7,27 @@
 #ifndef OVERLAY_HPP_
 #define OVERLAY_HPP_
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_dx11.h"
+#include "imgui/imgui_impl_win32.h"
+
 class Overlay {
     public:
         Overlay();
         ~Overlay();
+        void initialize();
+        void uninitialize();
+        void Setup_flag();
+        void DefaultSettings();
+        void renderOverlay();
+        void OpenOverlay();
+        void CloseOverlay();
 
     protected:
     private:
+        void DrawConsoleTab();
+
+        char _consoleInputBuffer[256] = {};
 };
 
 #endif /* !OVERLAY_HPP_ */
