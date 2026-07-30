@@ -85,7 +85,7 @@ namespace {
 
     // ---- Minimal x86 instruction sizer, whitelist-based ----------------------
     // Covers what a function prologue can contain, nothing more. Anything else --
-    // notably every relative call/jump -- returns 0, which makes PrologueLength()
+    // notably every relative call/jump -- returns 0, which makes prologueLength()
     // refuse instead of producing a trampoline that jumps to the wrong place.
 
     // Size of the ModRM byte plus its optional SIB and displacement.
@@ -146,7 +146,7 @@ namespace {
 
 } // namespace
 
-uintptr_t Memory::PatternScan(const char* pattern, HMODULE module)
+uintptr_t Memory::patternScan(const char* pattern, HMODULE module)
 {
     ModuleRange mod = mainModule();
     if (module) mod.base = reinterpret_cast<uintptr_t>(module);
@@ -183,7 +183,7 @@ uintptr_t Memory::PatternScan(const char* pattern, HMODULE module)
     return found;
 }
 
-bool Memory::IsReadable(uintptr_t addr, size_t size)
+bool Memory::isReadable(uintptr_t addr, size_t size)
 {
     MEMORY_BASIC_INFORMATION mbi;
 
@@ -194,7 +194,7 @@ bool Memory::IsReadable(uintptr_t addr, size_t size)
     return addr + size <= end;
 }
 
-uintptr_t Memory::FindString(const char* text)
+uintptr_t Memory::findString(const char* text)
 {
     ModuleRange mod = mainModule();
     if (!mod.base) return 0;
@@ -217,9 +217,9 @@ uintptr_t Memory::FindString(const char* text)
     return found;
 }
 
-uintptr_t Memory::FindRegisteredFunction(const char* funcName)
+uintptr_t Memory::findRegisteredFunction(const char* funcName)
 {
-    uintptr_t nameAddr = FindString(funcName);
+    uintptr_t nameAddr = findString(funcName);
     if (!nameAddr) return 0;
 
     ModuleRange mod = mainModule();
@@ -232,7 +232,7 @@ uintptr_t Memory::FindRegisteredFunction(const char* funcName)
             if (*reinterpret_cast<const uintptr_t*>(p) != nameAddr) continue;
 
             uintptr_t fn = *reinterpret_cast<const uintptr_t*>(p + sizeof(uintptr_t));
-            if (fn > mod.base && fn < mod.base + mod.size && IsReadable(fn, 16)) {
+            if (fn > mod.base && fn < mod.base + mod.size && isReadable(fn, 16)) {
                 found = fn;
                 return true;
             }
@@ -243,18 +243,18 @@ uintptr_t Memory::FindRegisteredFunction(const char* funcName)
     return found;
 }
 
-uintptr_t Memory::ResolveCall(uintptr_t addr)
+uintptr_t Memory::resolveCall(uintptr_t addr)
 {
-    if (!IsReadable(addr, 5)) return 0;
+    if (!isReadable(addr, 5)) return 0;
     if (*reinterpret_cast<const uint8_t*>(addr) != 0xE8) return 0;
 
     int32_t rel = *reinterpret_cast<const int32_t*>(addr + 1);
     return addr + 5 + static_cast<uintptr_t>(rel);
 }
 
-uintptr_t Memory::FindNthCall(uintptr_t functionStart, int n, size_t maxScan)
+uintptr_t Memory::findNthCall(uintptr_t functionStart, int n, size_t maxScan)
 {
-    if (n <= 0 || !IsReadable(functionStart, maxScan)) return 0;
+    if (n <= 0 || !isReadable(functionStart, maxScan)) return 0;
 
     auto* code = reinterpret_cast<const uint8_t*>(functionStart);
     int seen = 0;
@@ -267,15 +267,15 @@ uintptr_t Memory::FindNthCall(uintptr_t functionStart, int n, size_t maxScan)
             ++i;
             continue;
         }
-        if (++seen == n) return ResolveCall(functionStart + i);
+        if (++seen == n) return resolveCall(functionStart + i);
         i += 5;
     }
     return 0;
 }
 
-size_t Memory::PrologueLength(uintptr_t addr, size_t minLen)
+size_t Memory::prologueLength(uintptr_t addr, size_t minLen)
 {
-    if (!IsReadable(addr, minLen + 16)) return 0;
+    if (!isReadable(addr, minLen + 16)) return 0;
 
     auto* code = reinterpret_cast<const uint8_t*>(addr);
     size_t total = 0;

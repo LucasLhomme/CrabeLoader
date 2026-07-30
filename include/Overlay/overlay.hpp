@@ -17,15 +17,15 @@ class Overlay {
         ~Overlay();
         void initialize();
         void uninitialize();
-        void Setup_flag();
-        void DefaultSettings();
+        void setupFlag();
+        void defaultSettings();
         void renderOverlay();
-        void OpenOverlay();
-        void CloseOverlay();
+        void openOverlay();
+        void closeOverlay();
 
     protected:
     private:
-        void DrawConsoleTab();
+        void drawConsoleTab();
 
         char _consoleInputBuffer[256] = {};
 };

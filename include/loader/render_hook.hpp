@@ -12,7 +12,7 @@
 #include <d3d11.h>
 #include <windows.h>
 
-#include "Overlay/Overlay.hpp"
+#include "overlay/overlay.hpp"
 #include "loader/hook.hpp"
 
 // Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's real D3D11
@@ -29,8 +29,8 @@ class RenderHook {
         bool initialize();
         void uninitialize();
 
-        void ToggleMenu();
-        bool IsMenuOpen() const;
+        void toggleMenu();
+        bool isMenuOpen() const;
 
     protected:
     private:

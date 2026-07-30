@@ -94,11 +94,11 @@ int __cdecl LuaCall::hkLoadbuffer(void* L, const char* buff, size_t size, const 
 int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
 {
     // Called thousands of times per second: no logging, no allocation on the
-    // path where nothing is queued (Loader::DrainPendingKeybindCalls returns
+    // path where nothing is queued (Loader::drainPendingKeybindCalls returns
     // immediately in that case). This is also the only place it is safe to
     // run keybind-triggered Lua calls from: it's the game's own thread
     // already holding this L, unlike the input-polling thread that queued them.
-    Loader::get().DrainPendingKeybindCalls(L);
+    Loader::get().drainPendingKeybindCalls(L);
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 }
 

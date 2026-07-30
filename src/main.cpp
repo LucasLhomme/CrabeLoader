@@ -32,14 +32,14 @@ namespace {
     }
 }
 
-void init_logger(HMODULE hModule) {
+void initLogger(HMODULE hModule) {
     Logger& logger = Logger::getInstance();
     logger.setLogFile(moduleLogPath(hModule));
     logger.setLogLevel(LogLevel::DEBUG);
     logger.info("Logger initialized.");
 }
 
-void InitMain() {
+void initMain() {
     Loader::get().initialize();
 }
 
@@ -47,10 +47,10 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-        init_logger(hModule);
+        initLogger(hModule);
         SetUnhandledExceptionFilter(crashFilter);
         Logger::getInstance().info("CrabeLoader DLL loaded.");
-        std::thread(InitMain).detach();
+        std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
         Logger::getInstance().info("CrabeLoader DLL unloaded.");
