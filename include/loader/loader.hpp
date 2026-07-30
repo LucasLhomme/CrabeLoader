@@ -19,12 +19,12 @@ class Loader {
 
         bool initialize();
         void uninitialize();
-        std::mutex _StateMutex;
+        std::mutex _stateMutex;
         void onLuaState(void *L);
         void onLoadmods();
-        void RegisterKeybind(int virtualKey, std::function<void()> onPress);
-        void QueueLuaCall(const std::string& luaFunctionName);
-        void DrainPendingKeybindCalls(void* L);
+        void registerKeybind(int virtualKey, std::function<void()> onPress);
+        void queueLuaCall(const std::string& luaFunctionName);
+        void drainPendingKeybindCalls(void* L);
 
     protected:
     private:
@@ -32,10 +32,10 @@ class Loader {
         ~Loader() = default;
         Loader(const Loader&) = delete;
         Loader& operator=(const Loader&) = delete;
-        bool _isInjected();
+        bool isInjected();
         void registerDefaultKeybinds();
-        void RegisterLuaKeybind(int virtualKey, const std::string& luaFunctionName);
-        void HandleKeybind();
+        void registerLuaKeybind(int virtualKey, const std::string& luaFunctionName);
+        void handleKeybind();
         void inputLoop();
 
         struct Keybind {
@@ -46,7 +46,7 @@ class Loader {
         void* _luaState = nullptr;
         std::atomic<bool> _modsLoaded{false};
         std::unordered_map<int, Keybind> _keybinds;
-        std::mutex _keybindsMutex; // guards _keybinds: RegisterKeybind() may be called after inputLoop() has started
+        std::mutex _keybindsMutex; // guards _keybinds: registerKeybind() may be called after inputLoop() has started
         std::vector<std::string> _pendingLuaCalls;
         std::mutex _luaCallQueueMutex;
 };

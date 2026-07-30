@@ -5,7 +5,7 @@
 */
 
 #include <windows.h>
-#include "Overlay/Overlay.hpp"
+#include "overlay/overlay.hpp"
 #include "logger/logger.hpp"
 
 Overlay::Overlay()
@@ -18,7 +18,7 @@ Overlay::~Overlay()
     uninitialize();
 }
 
-void Overlay::Setup_flag()
+void Overlay::setupFlag()
 {
     ImGuiWindowFlags window_flags = 
         ImGuiWindowFlags_NoDecoration | 
@@ -28,7 +28,7 @@ void Overlay::Setup_flag()
         ImGuiWindowFlags_NoNav;
 }
 
-void Overlay::DefaultSettings()
+void Overlay::defaultSettings()
 {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImVec2 work_pos = viewport->WorkPos;
@@ -40,7 +40,7 @@ void Overlay::DefaultSettings()
     ImGui::SetNextWindowSize(ImVec2(420.0f, 320.0f), ImGuiCond_FirstUseEver);
 }
 
-void Overlay::DrawConsoleTab()
+void Overlay::drawConsoleTab()
 {
     const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 
@@ -66,8 +66,8 @@ void Overlay::DrawConsoleTab()
 
 void Overlay::renderOverlay()
 {
-    Overlay::Setup_flag();
-    Overlay::DefaultSettings();
+    Overlay::setupFlag();
+    Overlay::defaultSettings();
 
     ImGui::Begin("CrabeLoader Overlay");
 
@@ -77,7 +77,7 @@ void Overlay::renderOverlay()
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Console")) {
-            DrawConsoleTab();
+            drawConsoleTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

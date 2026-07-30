@@ -146,13 +146,13 @@ void RenderHook::uninitialize()
     if (_device) { _device->Release(); _device = nullptr; }
 }
 
-void RenderHook::ToggleMenu()
+void RenderHook::toggleMenu()
 {
     _menuOpen = !_menuOpen;
     Logger::getInstance().info("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
 }
 
-bool RenderHook::IsMenuOpen() const
+bool RenderHook::isMenuOpen() const
 {
     return _menuOpen;
 }

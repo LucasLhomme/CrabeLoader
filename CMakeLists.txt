@@ -26,7 +26,7 @@ set(CRABELOADER_CORE_SOURCES
     src/overlay.cpp
     src/render_hook.cpp
     src/exception.cpp
-    src/logger/logger.cpp
+    src/logger.cpp
 )
 
 set(CRABELOADER_MINHOOK_SOURCES

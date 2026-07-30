@@ -43,7 +43,7 @@ namespace {
 
     std::string firstBytes(uintptr_t addr, size_t count)
     {
-        if (!Memory::IsReadable(addr, count)) return "<unreadable>";
+        if (!Memory::isReadable(addr, count)) return "<unreadable>";
 
         const auto* code = reinterpret_cast<const uint8_t*>(addr);
         std::string out;
@@ -59,14 +59,14 @@ namespace {
     {
         Logger& logger = Logger::getInstance();
 
-        uintptr_t wrapper = Memory::FindRegisteredFunction(symbol.stdlibName);
+        uintptr_t wrapper = Memory::findRegisteredFunction(symbol.stdlibName);
         if (!wrapper) {
             logger.error("Loader: {}: no '{}' entry in the Lua stdlib table.",
                         symbol.name, symbol.stdlibName);
             return 0;
         }
 
-        uintptr_t addr = Memory::FindNthCall(wrapper, symbol.callIndex);
+        uintptr_t addr = Memory::findNthCall(wrapper, symbol.callIndex);
         if (!addr) {
             logger.error("Loader: {}: call #{} not found in the '{}' wrapper (0x{:X}).",
                         symbol.name, symbol.callIndex, symbol.stdlibName, wrapper);
@@ -126,7 +126,7 @@ void Loader::onLuaState(void *L)
     if (_modsLoaded)
         return;
 
-    std::lock_guard<std::mutex> lock(_StateMutex);
+    std::lock_guard<std::mutex> lock(_stateMutex);
     if (_modsLoaded)
         return; // another thread handled it while we waited for the lock
 
@@ -137,7 +137,7 @@ void Loader::onLuaState(void *L)
     onLoadmods();
 }
 
-bool Loader::_isInjected()
+bool Loader::isInjected()
 {
     return _luaState != nullptr;
 }
@@ -146,7 +146,7 @@ void Loader::onLoadmods()
 {
     std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
 
-    if (!Loader::get()._isInjected()) {
+    if (!Loader::get().isInjected()) {
         Logger::getInstance().info("Loader: Lua state not injected, skipping mod loading.");
         return;
     } else {
@@ -172,27 +172,27 @@ void Loader::onLoadmods()
     }
 }
 
-void Loader::RegisterKeybind(int virtualKey, std::function<void()> onPress)
+void Loader::registerKeybind(int virtualKey, std::function<void()> onPress)
 {
     std::lock_guard<std::mutex> lock(_keybindsMutex);
     _keybinds[virtualKey] = Keybind{ std::move(onPress), false };
     Logger::getInstance().info("Loader: registered keybind for virtual key 0x{:X}.", virtualKey);
 }
 
-void Loader::RegisterLuaKeybind(int virtualKey, const std::string& luaFunctionName)
+void Loader::registerLuaKeybind(int virtualKey, const std::string& luaFunctionName)
 {
-    RegisterKeybind(virtualKey, [this, luaFunctionName]() {
-        QueueLuaCall(luaFunctionName);
+    registerKeybind(virtualKey, [this, luaFunctionName]() {
+        queueLuaCall(luaFunctionName);
     });
 }
 
-void Loader::QueueLuaCall(const std::string& luaFunctionName)
+void Loader::queueLuaCall(const std::string& luaFunctionName)
 {
     std::lock_guard<std::mutex> lock(_luaCallQueueMutex);
     _pendingLuaCalls.push_back(luaFunctionName);
 }
 
-void Loader::DrainPendingKeybindCalls(void* L)
+void Loader::drainPendingKeybindCalls(void* L)
 {
     std::vector<std::string> pending;
     {
@@ -217,15 +217,15 @@ void Loader::registerDefaultKeybinds()
         { VK_F10, "OnKeyF10" }, { VK_F11, "OnKeyF11" }, { VK_F12, "OnKeyF12" },
     };
     for (const auto& [virtualKey, luaFunctionName] : kLuaKeybinds) {
-        RegisterLuaKeybind(virtualKey, luaFunctionName);
+        registerLuaKeybind(virtualKey, luaFunctionName);
     }
 
-    RegisterKeybind(VK_INSERT, []() {
-        RenderHook::get().ToggleMenu();
+    registerKeybind(VK_INSERT, []() {
+        RenderHook::get().toggleMenu();
     });
 }
 
-void Loader::HandleKeybind()
+void Loader::handleKeybind()
 {
     std::lock_guard<std::mutex> lock(_keybindsMutex);
     for (auto& [virtualKey, bind] : _keybinds) {
@@ -242,7 +242,7 @@ void Loader::HandleKeybind()
 void Loader::inputLoop()
 {
     while (true) {
-        HandleKeybind();
+        handleKeybind();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }

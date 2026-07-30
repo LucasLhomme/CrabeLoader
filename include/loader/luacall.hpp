@@ -49,7 +49,7 @@ class LuaCall {
         Hook _hookLoadfile;
         Hook _hookLoadbuffer;
         Hook _hookPcall;
-        std::mutex _StateMutex;
+        std::mutex _stateMutex;
 
 };
 
