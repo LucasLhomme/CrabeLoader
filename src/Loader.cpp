@@ -17,6 +17,7 @@
 #include "loader/loader.hpp"
 #include "loader/luacall.hpp"
 #include "loader/memory.hpp"
+#include "loader/render_hook.hpp"
 #include "logger/logger.hpp"
 
 namespace {
@@ -218,6 +219,10 @@ void Loader::registerDefaultKeybinds()
     for (const auto& [virtualKey, luaFunctionName] : kLuaKeybinds) {
         RegisterLuaKeybind(virtualKey, luaFunctionName);
     }
+
+    RegisterKeybind(VK_INSERT, []() {
+        RenderHook::get().ToggleMenu();
+    });
 }
 
 void Loader::HandleKeybind()
@@ -260,11 +265,16 @@ bool Loader::initialize()
     onLoadmods();
     registerDefaultKeybinds();
 
+    if (!RenderHook::get().initialize()) {
+        Logger::getInstance().warning("Loader: failed to initialize the render hook (overlay disabled).");
+    }
+
     std::thread(&Loader::inputLoop, this).detach();
     return true;
 }
 
 void Loader::uninitialize()
 {
+    RenderHook::get().uninitialize();
     LuaCall::get().uninitialize();
 }
