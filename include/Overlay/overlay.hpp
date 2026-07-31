@@ -26,6 +26,7 @@ class Overlay {
     protected:
     private:
         void drawConsoleTab();
+        void submitConsoleInput();
 
         char _consoleInputBuffer[256] = {};
 };

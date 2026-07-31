@@ -25,6 +25,8 @@ class Loader {
         void registerKeybind(int virtualKey, std::function<void()> onPress);
         void queueLuaCall(const std::string& luaFunctionName);
         void drainPendingKeybindCalls(void* L);
+        void queueConsoleSnippet(const std::string& code);
+        void drainPendingSnippets(void* L);
 
     protected:
     private:
@@ -49,6 +51,8 @@ class Loader {
         std::mutex _keybindsMutex; // guards _keybinds: registerKeybind() may be called after inputLoop() has started
         std::vector<std::string> _pendingLuaCalls;
         std::mutex _luaCallQueueMutex;
+        std::vector<std::string> _pendingSnippets;
+        std::mutex _snippetQueueMutex;
 };
 
 
