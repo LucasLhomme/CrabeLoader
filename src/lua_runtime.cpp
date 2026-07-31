@@ -14,8 +14,6 @@
 
 namespace {
 
-    // Where the loader's own Lua lives, next to the game executable. Kept apart
-    // from mods/ on purpose: this is the loader talking, not a user mod.
     constexpr const char* kApiFolderName = "api";
 
 } // namespace
@@ -27,13 +25,9 @@ std::filesystem::path LuaRuntime::apiFolder()
 
 LuaRuntime::StateKind LuaRuntime::classifyState(void* L)
 {
-    // Nothing but global lookups and concatenation: this has to be answerable
-    // in a state where none of the globals it asks about exist yet. It stays a
-    // C++ string rather than an api/ file because it runs *before* the decision
-    // to load any of them.
-    //
-    // The natives are what tell the game's script state apart from the shader
-    // compiler's, which has a perfectly good base library and none of these.
+    // Must stay answerable in a state where none of the globals it tests exist.
+    // The natives are what tell the game apart from the shader compiler's
+    // state, which has a full base library and none of them.
     static constexpr const char* kProbe = R"lua(
 if not (type and pairs and tostring and table and pcall and error) then return 'unusable' end
 if not (UI_GetSparks and Players_GetHostPlayerID) then return 'notgame' end
@@ -66,9 +60,8 @@ bool LuaRuntime::injectAll(void* L)
             modules.push_back(entry.path());
     }
 
-    // Load order is dependency order, encoded in the filenames' numeric
-    // prefixes (00_core, 10_game, ...). Directory iteration order is not
-    // specified, so it is sorted here rather than trusted.
+    // Dependency order is the numeric prefixes; directory iteration order is
+    // not specified.
     std::sort(modules.begin(), modules.end());
 
     if (modules.empty()) {
