@@ -7,6 +7,7 @@
 #ifndef LOADER_HPP_
 #define LOADER_HPP_
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -27,6 +28,7 @@ class Loader {
         void drainPendingKeybindCalls(void* L);
         void queueConsoleSnippet(const std::string& code);
         void drainPendingSnippets(void* L);
+        void drainLuaOutput(void* L);
 
     protected:
     private:
@@ -53,6 +55,7 @@ class Loader {
         std::mutex _luaCallQueueMutex;
         std::vector<std::string> _pendingSnippets;
         std::mutex _snippetQueueMutex;
+        std::chrono::steady_clock::time_point _lastOutputDrain{};
 };
 
 
