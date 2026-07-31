@@ -35,11 +35,15 @@ namespace {
         const char* name;        // what we are resolving, for the log
         const char* stdlibName;  // Lua stdlib entry holding the wrapper
         int callIndex;           // 1-based `call` inside the wrapper
+        size_t scanBytes = 256;  // how far into the wrapper to look
     };
 
     constexpr LuaSymbol kLoadfile   { "luaL_loadfile",   "loadfile",   2 };
     constexpr LuaSymbol kLoadbuffer { "luaL_loadbuffer", "loadstring", 3 };
     constexpr LuaSymbol kPcall      { "lua_pcall",       "xpcall",     4 };
+    constexpr LuaSymbol kGetfield   { "lua_getfield",    "print",      2 };
+    constexpr LuaSymbol kTolstring  { "lua_tolstring",   "print",      6,  512 };
+    constexpr LuaSymbol kSettop     { "lua_settop",      "print",      11, 512 };
 
     std::string firstBytes(uintptr_t addr, size_t count)
     {
@@ -66,7 +70,7 @@ namespace {
             return 0;
         }
 
-        uintptr_t addr = Memory::findNthCall(wrapper, symbol.callIndex);
+        uintptr_t addr = Memory::findNthCall(wrapper, symbol.callIndex, symbol.scanBytes);
         if (!addr) {
             logger.error("Loader: {}: call #{} not found in the '{}' wrapper (0x{:X}).",
                         symbol.name, symbol.callIndex, symbol.stdlibName, wrapper);
@@ -251,11 +255,15 @@ bool Loader::initialize()
 {
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
-    uintptr_t loadfile = resolveLuaFunction(kLoadfile, base);
-    uintptr_t loadbuffer = resolveLuaFunction(kLoadbuffer, base);
-    uintptr_t pcall = resolveLuaFunction(kPcall, base);
+    LuaApiAddresses addresses;
+    addresses.loadfile = resolveLuaFunction(kLoadfile, base);
+    addresses.loadbuffer = resolveLuaFunction(kLoadbuffer, base);
+    addresses.pcall = resolveLuaFunction(kPcall, base);
+    addresses.getfield = resolveLuaFunction(kGetfield, base);
+    addresses.tolstring = resolveLuaFunction(kTolstring, base);
+    addresses.settop = resolveLuaFunction(kSettop, base);
 
-    if (!LuaCall::get().initialize(loadfile, loadbuffer, pcall)) {
+    if (!LuaCall::get().initialize(addresses)) {
         Logger::getInstance().error("Loader: failed to initialize LuaCall.");
         return false;
     }

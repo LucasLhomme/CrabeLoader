@@ -37,16 +37,28 @@ LuaCall& LuaCall::get()
     return instance;
 }
 
-bool LuaCall::initialize(uintptr_t addrLoadfile, uintptr_t addrLoadbuffer, uintptr_t addrPcall)
+bool LuaCall::initialize(const LuaApiAddresses& addresses)
 {
     bool anyInstalled = false;
 
-    anyInstalled |= installOne(_hookLoadfile, addrLoadfile,
+    anyInstalled |= installOne(_hookLoadfile, addresses.loadfile,
                             reinterpret_cast<void*>(&LuaCall::hkLoadfile), "luaL_loadfile");
-    anyInstalled |= installOne(_hookLoadbuffer, addrLoadbuffer,
+    anyInstalled |= installOne(_hookLoadbuffer, addresses.loadbuffer,
                             reinterpret_cast<void*>(&LuaCall::hkLoadbuffer), "luaL_loadbuffer");
-    anyInstalled |= installOne(_hookPcall, addrPcall,
+    anyInstalled |= installOne(_hookPcall, addresses.pcall,
                             reinterpret_cast<void*>(&LuaCall::hkPcall), "lua_pcall");
+
+    // Called, never hooked: these are how the loader reads values back out of
+    // the Lua stack. An unresolved one degrades a feature (runSnippet returns
+    // no text) rather than breaking the hooks, so it is only a warning.
+    _getfield = reinterpret_cast<t_lua_getfield>(addresses.getfield);
+    _tolstring = reinterpret_cast<t_lua_tolstring>(addresses.tolstring);
+    _settop = reinterpret_cast<t_lua_settop>(addresses.settop);
+
+    if (!_tolstring || !_settop) {
+        Logger::getInstance().warning(
+            "LuaCall: lua_tolstring/lua_settop unresolved; snippet results and errors will be unavailable.");
+    }
 
     return anyInstalled;
 }
@@ -71,6 +83,21 @@ LuaCall::t_luaL_loadbuffer LuaCall::originalLoadbuffer() const
 LuaCall::t_lua_pcall LuaCall::originalPcall() const
 {
     return reinterpret_cast<t_lua_pcall>(_hookPcall.getOriginal());
+}
+
+std::string LuaCall::popString(void* L, int index) const
+{
+    if (!_tolstring || !_settop) 
+        return {};
+
+    // lua_tolstring converts the stack slot to a string in place. That is fine
+    // for values we own and drop right away, but must never be aimed at a slot
+    // still belonging to the game.
+    const char* text = _tolstring(L, index, nullptr);
+    std::string out = text ? text : "";
+
+    _settop(L, -2); // lua_pop(L, 1)
+    return out;
 }
 
 int __cdecl LuaCall::hkLoadfile(void* L, const char* filename)
@@ -117,15 +144,17 @@ bool LuaCall::runFile(void* L, const char* path) const
 
     int loadStatus = loadfile(L, path);
     if (loadStatus != kLuaOk) {
-        // The error message luaL_loadfile pushed onto the stack is left there:
-        // we don't have lua_tostring/lua_pop resolved yet to read and clear it.
-        Logger::getInstance().error("LuaCall: luaL_loadfile('{}') failed (status {}).", path, loadStatus);
+        Logger::getInstance().error("LuaCall: luaL_loadfile('{}') failed (status {}): {}",
+                                    path, loadStatus, popString(L, -1));
         return false;
     }
 
+    // LUA_MULTRET leaves an unknown number of results, so the error object can
+    // only be read on the failure path, where pcall leaves exactly one.
     int callStatus = pcall(L, 0, kLuaMultret, 0);
     if (callStatus != kLuaOk) {
-        Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}).", path, callStatus);
+        Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}): {}",
+                                    path, callStatus, popString(L, -1));
         return false;
     }
 
@@ -153,4 +182,41 @@ bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
     }
 
     return pcall(L, 0, kLuaMultret, 0) == kLuaOk;
+}
+
+bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) const
+{
+    out.clear();
+
+    t_luaL_loadbuffer loadbuffer = originalLoadbuffer();
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !loadbuffer || !pcall) {
+        out = "Lua state or hooks unavailable.";
+        return false;
+    }
+
+    constexpr int kLuaOk = 0;
+
+    // No Lua-side pcall wrapper: lua_pcall already traps runtime errors, and
+    // the error object it leaves on the stack is now readable directly.
+    int loadStatus = loadbuffer(L, code.c_str(), code.size(), "=console");
+    if (loadStatus != kLuaOk) {
+        out = popString(L, -1);
+        if (out.empty())
+            out = std::format("compile failed (status {}).", loadStatus);
+        return false;
+    }
+
+    // nresults = 1: lua_pcall pads with nil, so exactly one slot is always
+    // there to pop, whether or not the chunk returned anything.
+    int callStatus = pcall(L, 0, 1, 0);
+    out = popString(L, -1);
+
+    if (callStatus != kLuaOk) {
+        if (out.empty()) 
+            out = std::format("runtime error (status {}).", callStatus);
+        return false;
+    }
+    return true;
 }
