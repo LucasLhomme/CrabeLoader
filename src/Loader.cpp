@@ -35,15 +35,20 @@ namespace {
         const char* name;        // what we are resolving, for the log
         const char* stdlibName;  // Lua stdlib entry holding the wrapper
         int callIndex;           // 1-based `call` inside the wrapper
+        uintptr_t expectedRva;   // RVA read off the shipped binary, 0 to skip the check
         size_t scanBytes = 256;  // how far into the wrapper to look
     };
 
-    constexpr LuaSymbol kLoadfile   { "luaL_loadfile",   "loadfile",   2 };
-    constexpr LuaSymbol kLoadbuffer { "luaL_loadbuffer", "loadstring", 3 };
-    constexpr LuaSymbol kPcall      { "lua_pcall",       "xpcall",     4 };
-    constexpr LuaSymbol kGetfield   { "lua_getfield",    "print",      2 };
-    constexpr LuaSymbol kTolstring  { "lua_tolstring",   "print",      6,  512 };
-    constexpr LuaSymbol kSettop     { "lua_settop",      "print",      11, 512 };
+    // Call indexes AND the RVA each one must land on were read off the shipped
+    // binary. Hooking a wrong address corrupts the host process on the next
+    // call, so a mismatch refuses instead of patching: the index is a hint, the
+    // RVA is the contract.
+    constexpr LuaSymbol kLoadfile   { "luaL_loadfile",   "loadfile",   2,  0xF0EBF0 };
+    constexpr LuaSymbol kLoadbuffer { "luaL_loadbuffer", "loadstring", 3,  0xF0EDE0 };
+    constexpr LuaSymbol kPcall      { "lua_pcall",       "xpcall",     4,  0xF0DF60 };
+    constexpr LuaSymbol kGetfield   { "lua_getfield",    "print",      2,  0xF0DA00 };
+    constexpr LuaSymbol kTolstring  { "lua_tolstring",   "print",      6,  0xF0D5A0, 512 };
+    constexpr LuaSymbol kSettop     { "lua_settop",      "print",      11, 0xF0D0F0, 512 };
 
     std::string firstBytes(uintptr_t addr, size_t count)
     {
@@ -70,15 +75,35 @@ namespace {
             return 0;
         }
 
-        uintptr_t addr = Memory::findNthCall(wrapper, symbol.callIndex, symbol.scanBytes);
-        if (!addr) {
-            logger.error("Loader: {}: call #{} not found in the '{}' wrapper (0x{:X}).",
-                        symbol.name, symbol.callIndex, symbol.stdlibName, wrapper);
+        std::vector<uintptr_t> calls = Memory::findCalls(wrapper, symbol.scanBytes);
+
+        auto logCandidates = [&]() {
+            for (size_t i = 0; i < calls.size(); ++i) {
+                logger.debug("Loader: {}: '{}' call #{} -> RVA 0x{:X}",
+                            symbol.name, symbol.stdlibName, i + 1, calls[i] - base);
+            }
+        };
+
+        auto index = static_cast<size_t>(symbol.callIndex);
+        if (symbol.callIndex <= 0 || index > calls.size()) {
+            logger.error("Loader: {}: call #{} not found in the '{}' wrapper (0x{:X}, {} calls).",
+                        symbol.name, symbol.callIndex, symbol.stdlibName, wrapper, calls.size());
+            logCandidates();
+            return 0;
+        }
+
+        uintptr_t addr = calls[index - 1];
+        uintptr_t rva = addr - base;
+
+        if (symbol.expectedRva && rva != symbol.expectedRva) {
+            logger.error("Loader: {}: call #{} of '{}' resolved to RVA 0x{:X}, expected 0x{:X}; refusing.",
+                        symbol.name, symbol.callIndex, symbol.stdlibName, rva, symbol.expectedRva);
+            logCandidates();
             return 0;
         }
 
         logger.info("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
-                    symbol.name, addr, addr - base, firstBytes(addr, 8));
+                    symbol.name, addr, rva, firstBytes(addr, 8));
         return addr;
     }
 

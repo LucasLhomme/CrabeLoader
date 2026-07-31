@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 #include <windows.h>
 
 // Read-only introspection of the host process' main module.
@@ -27,8 +28,11 @@ namespace Memory {
     bool isReadable(uintptr_t addr, size_t size);
 
     // Address of the first occurrence of `text` (its terminating NUL included)
-    // in the module's readable memory, or 0 if absent.
-    uintptr_t findString(const char* text);
+    // in the module's readable memory strictly above `after`, or 0 if there is
+    // none. A short name like "print" occurs many times; `after` is how
+    // findRegisteredFunction() walks past the ones no registration table
+    // points at.
+    uintptr_t findString(const char* text, uintptr_t after = 0);
 
     // Lua registers its standard library as an array of
     // { const char* name; lua_CFunction fn; } pairs. This locates the entry whose
@@ -39,6 +43,13 @@ namespace Memory {
 
     // Target of the `call rel32` (opcode E8) at `addr`, or 0 if there is none.
     uintptr_t resolveCall(uintptr_t addr);
+
+    // Targets of every `call rel32` in the first `maxScan` bytes of the function
+    // at `functionStart`, in order. A candidate only counts when its target
+    // lands inside readable memory: an E8 byte also occurs inside other
+    // instructions (`8B E8` = mov ebp, eax), and counting those shifts every
+    // later index.
+    std::vector<uintptr_t> findCalls(uintptr_t functionStart, size_t maxScan = 256);
 
     // Target of the `n`-th `call rel32` found in the first `maxScan` bytes of the
     // function starting at `functionStart`. This is how a wrapper is turned into

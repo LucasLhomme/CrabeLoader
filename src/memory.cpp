@@ -194,7 +194,7 @@ bool Memory::isReadable(uintptr_t addr, size_t size)
     return addr + size <= end;
 }
 
-uintptr_t Memory::findString(const char* text)
+uintptr_t Memory::findString(const char* text, uintptr_t after)
 {
     ModuleRange mod = mainModule();
     if (!mod.base) return 0;
@@ -204,8 +204,10 @@ uintptr_t Memory::findString(const char* text)
 
     forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
         if (end - start < len) return false;
+        if (after >= end) return false;
+        if (after >= start) start = after + 1;
 
-        for (uintptr_t p = start; p <= end - len; ++p) {
+        for (uintptr_t p = start; p + len <= end; ++p) {
             if (std::memcmp(reinterpret_cast<const void*>(p), text, len) == 0) {
                 found = p;
                 return true;
@@ -219,28 +221,36 @@ uintptr_t Memory::findString(const char* text)
 
 uintptr_t Memory::findRegisteredFunction(const char* funcName)
 {
-    uintptr_t nameAddr = findString(funcName);
-    if (!nameAddr) return 0;
-
     ModuleRange mod = mainModule();
-    uintptr_t found = 0;
+    if (!mod.base) return 0;
 
-    // Look for a pointer to that string: the pointer right after it in the
-    // registration table is the C function bound to the name.
-    forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
-        for (uintptr_t p = start; p + 2 * sizeof(uintptr_t) <= end; p += sizeof(uintptr_t)) {
-            if (*reinterpret_cast<const uintptr_t*>(p) != nameAddr) continue;
+    // A short name like "print" appears many times in the image, and only one
+    // of those copies is the one a registration table points at. Walk the
+    // occurrences until one of them is referenced by a { name, fn } pair.
+    for (uintptr_t nameAddr = findString(funcName); nameAddr;
+        nameAddr = findString(funcName, nameAddr)) {
 
-            uintptr_t fn = *reinterpret_cast<const uintptr_t*>(p + sizeof(uintptr_t));
-            if (fn > mod.base && fn < mod.base + mod.size && isReadable(fn, 16)) {
-                found = fn;
-                return true;
+        uintptr_t found = 0;
+
+        // Look for a pointer to that string: the pointer right after it in the
+        // registration table is the C function bound to the name.
+        forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
+            for (uintptr_t p = start; p + 2 * sizeof(uintptr_t) <= end; p += sizeof(uintptr_t)) {
+                if (*reinterpret_cast<const uintptr_t*>(p) != nameAddr) continue;
+
+                uintptr_t fn = *reinterpret_cast<const uintptr_t*>(p + sizeof(uintptr_t));
+                if (fn > mod.base && fn < mod.base + mod.size && isReadable(fn, 16)) {
+                    found = fn;
+                    return true;
+                }
             }
-        }
-        return false;
-    });
+            return false;
+        });
 
-    return found;
+        if (found) return found;
+    }
+
+    return 0;
 }
 
 uintptr_t Memory::resolveCall(uintptr_t addr)
@@ -252,28 +262,49 @@ uintptr_t Memory::resolveCall(uintptr_t addr)
     return addr + 5 + static_cast<uintptr_t>(rel);
 }
 
-uintptr_t Memory::findNthCall(uintptr_t functionStart, int n, size_t maxScan)
+std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan)
 {
-    if (n <= 0 || !isReadable(functionStart, maxScan)) return 0;
+    std::vector<uintptr_t> targets;
+
+    ModuleRange mod = mainModule();
+    if (!mod.base || !isReadable(functionStart, maxScan)) return targets;
 
     auto* code = reinterpret_cast<const uint8_t*>(functionStart);
-    int seen = 0;
 
-    // Plain byte walk rather than a full decoder. An E8 byte does appear inside
-    // other instructions -- luaB_print holds `8B E8` (mov ebp, eax) -- so a
-    // candidate only counts when its target lands inside the image. Without
-    // that filter the bogus match also consumed the 5 bytes after it, hiding
-    // the real call that started 2 bytes later.
-    for (size_t i = 0; i + 5 <= maxScan; )
+    // Plain byte walk rather than a full decoder. An E8 byte also occurs inside
+    // other instructions -- luaB_print holds `8B E8` (mov ebp, eax) at +0x19 --
+    // so a candidate only counts when its target lands inside the image.
+    // Merely being readable is not enough: that bogus one wraps around to an
+    // address that happens to be mapped, and accepting it both shifts every
+    // later index and consumes the 5 bytes hiding the real call at +0x1B.
+    for (size_t i = 0; i + 5 <= maxScan; ) {
         if (code[i] != 0xE8) {
             ++i;
+            continue;
+        }
+
         uintptr_t target = resolveCall(functionStart + i);
-        if (!target || !isReadable(target, 16))
+        bool inImage = target >= mod.base && target < mod.base + mod.size;
+
+        if (!inImage || !isReadable(target, 16)) {
             ++i;
-        if (++seen == n) return target;
+            continue;
+        }
+
+        targets.push_back(target);
         i += 5;
     }
-    return 0;
+    return targets;
+}
+
+uintptr_t Memory::findNthCall(uintptr_t functionStart, int n, size_t maxScan)
+{
+    if (n <= 0) return 0;
+
+    std::vector<uintptr_t> targets = findCalls(functionStart, maxScan);
+    if (static_cast<size_t>(n) > targets.size()) return 0;
+
+    return targets[static_cast<size_t>(n) - 1];
 }
 
 size_t Memory::prologueLength(uintptr_t addr, size_t minLen)
