@@ -3,7 +3,6 @@ $ErrorActionPreference = "Stop"
 $gameDir = "D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition"
 $gameExe = Join-Path $gameDir "DisneyInfinity3.exe"
 $dllSource = "Release\bink2w32.dll"
-$luaSource = "mod.lua"
 $logFile = Join-Path $gameDir "loader.log"
 
 Write-Host "=== 1. Closing the game (if running) ===" -ForegroundColor Cyan
@@ -37,23 +36,17 @@ if (!(Test-Path $origDllPath)) {
 Write-Host "Copying the new DLL..."
 Copy-Item -Path $dllSource -Destination $targetDllPath -Force
 
-if (Test-Path $luaSource) {
-    Write-Host "Copying $luaSource..."
-    Copy-Item -Path $luaSource -Destination (Join-Path $gameDir "mod.lua") -Force
-}
+# Two Lua folders, deployed side by side and kept strictly apart:
+#   api/  = the loader's own runtime (src/api/), loaded before anything else
+#   mods/ = user mods, run once the game's Lua state is up
+# Both targets are purged first so no stale or deleted file lingers.
+foreach ($folder in @(@{ Source = "src\api"; Name = "api" }, @{ Source = "mods"; Name = "mods" })) {
+    if (!(Test-Path $folder.Source)) { continue }
 
-if (Test-Path "mod_files") {
-    Write-Host "Copying the mod_files folder..."
-    Copy-Item -Path "mod_files" -Destination $gameDir -Recurse -Force
-}
-
-# crabe/ = framework + mods, loaded at runtime by mod.lua (bootstrap).
-# Purge the target first so no stale/removed mods linger.
-if (Test-Path "crabe") {
-    Write-Host "Copying the crabe/ folder (framework + mods)..."
-    $crabeTarget = Join-Path $gameDir "crabe"
-    if (Test-Path $crabeTarget) { Remove-Item -Path $crabeTarget -Recurse -Force }
-    Copy-Item -Path "crabe" -Destination $gameDir -Recurse -Force
+    Write-Host "Copying $($folder.Name)/ ..."
+    $target = Join-Path $gameDir $folder.Name
+    if (Test-Path $target) { Remove-Item -Path $target -Recurse -Force }
+    Copy-Item -Path $folder.Source -Destination $target -Recurse -Force
 }
 if (Test-Path $logFile) {
     Clear-Content $logFile -ErrorAction SilentlyContinue
