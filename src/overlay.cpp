@@ -78,9 +78,13 @@ void Overlay::submitConsoleInput()
     input.erase(0, start);
     Logger::getInstance().info("> {}", input);
 
+    // `=expr` prints a value, as in the standalone Lua REPL. Going through the
+    // game's own tostring is what makes nil, booleans and tables printable:
+    // lua_tolstring alone hands back NULL for anything that is not already a
+    // string or a number, which would show as no output at all.
     if (input.front() == '=')
-        input = "return " + input.substr(1);
-    
+        input = "return tostring(" + input.substr(1) + ")";
+
     Loader::get().queueConsoleSnippet(input);
 }
 
