@@ -259,15 +259,18 @@ uintptr_t Memory::findNthCall(uintptr_t functionStart, int n, size_t maxScan)
     auto* code = reinterpret_cast<const uint8_t*>(functionStart);
     int seen = 0;
 
-    // Plain byte walk rather than a full decoder: an E8 byte can in theory appear
-    // inside another instruction, but the call indexes used here were validated
-    // against the shipped binary.
-    for (size_t i = 0; i + 5 <= maxScan; ) {
+    // Plain byte walk rather than a full decoder. An E8 byte does appear inside
+    // other instructions -- luaB_print holds `8B E8` (mov ebp, eax) -- so a
+    // candidate only counts when its target lands inside the image. Without
+    // that filter the bogus match also consumed the 5 bytes after it, hiding
+    // the real call that started 2 bytes later.
+    for (size_t i = 0; i + 5 <= maxScan; )
         if (code[i] != 0xE8) {
             ++i;
-            continue;
-        }
-        if (++seen == n) return resolveCall(functionStart + i);
+        uintptr_t target = resolveCall(functionStart + i);
+        if (!target || !isReadable(target, 16))
+            ++i;
+        if (++seen == n) return target;
         i += 5;
     }
     return 0;
