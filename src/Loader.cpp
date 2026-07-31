@@ -324,8 +324,12 @@ void Loader::drainPendingSnippets(void* L)
 
         if (!ok) {
             Logger::getInstance().error("! {}", result);
-        } else if (!result.empty()) {
-            Logger::getInstance().info("= {}", result);
+        } else {
+            // A success with an empty string is a real, distinct outcome (a
+            // native returning "" rather than nil) -- silently printing
+            // nothing made it indistinguishable from the command not having
+            // run at all.
+            Logger::getInstance().info("= {}", result.empty() ? "(empty string)" : result);
         }
     }
 
