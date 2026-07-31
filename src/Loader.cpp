@@ -213,6 +213,34 @@ void Loader::drainPendingKeybindCalls(void* L)
     }
 }
 
+void Loader::queueConsoleSnippet(const std::string& code)
+{
+    std::lock_guard<std::mutex> lock(_snippetQueueMutex);
+    _pendingSnippets.push_back(code);
+}
+
+void Loader::drainPendingSnippets(void* L)
+{
+    std::vector<std::string> pending;
+    {
+        std::lock_guard<std::mutex> lock(_snippetQueueMutex);
+        if (_pendingSnippets.empty())
+            return;
+        pending.swap(_pendingSnippets);
+    }
+
+    for (const auto& code : pending) {
+        std::string result;
+        bool ok = LuaCall::get().runSnippet(L, code, result);
+
+        if (!ok) {
+            Logger::getInstance().error("! {}", result);
+        } else if (!result.empty()) {
+            Logger::getInstance().info("= {}", result);
+        }
+    }
+}
+
 void Loader::registerDefaultKeybinds()
 {
     static constexpr std::pair<int, const char*> kLuaKeybinds[] = {

@@ -4,8 +4,11 @@
 ** overlay
 */
 
+#include <string>
 #include <windows.h>
+
 #include "overlay/overlay.hpp"
+#include "loader/loader.hpp"
 #include "logger/logger.hpp"
 
 Overlay::Overlay()
@@ -58,10 +61,27 @@ void Overlay::drawConsoleTab()
     ImGui::PushItemWidth(-1.0f);
     if (ImGui::InputText("##ConsoleInput", _consoleInputBuffer, sizeof(_consoleInputBuffer),
                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+        submitConsoleInput();
         _consoleInputBuffer[0] = '\0';
         ImGui::SetKeyboardFocusHere(-1);
     }
     ImGui::PopItemWidth();
+}
+
+void Overlay::submitConsoleInput()
+{
+    std::string input(_consoleInputBuffer);
+
+    size_t start = input.find_first_not_of(" \t");
+    if (start == std::string::npos) 
+        return;
+    input.erase(0, start);
+    Logger::getInstance().info("> {}", input);
+
+    if (input.front() == '=')
+        input = "return " + input.substr(1);
+    
+    Loader::get().queueConsoleSnippet(input);
 }
 
 void Overlay::renderOverlay()

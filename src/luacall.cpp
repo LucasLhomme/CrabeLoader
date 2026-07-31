@@ -126,6 +126,7 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
     // run keybind-triggered Lua calls from: it's the game's own thread
     // already holding this L, unlike the input-polling thread that queued them.
     Loader::get().drainPendingKeybindCalls(L);
+    Loader::get().drainPendingSnippets(L);
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 }
 
