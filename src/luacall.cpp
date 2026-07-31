@@ -26,7 +26,7 @@ namespace {
             logger.error("LuaCall: failed to hook {} at 0x{:X}.", name, addr);
             return false;
         }
-        logger.info("LuaCall: {} hooked.", name);
+        logger.debug("LuaCall: {} hooked.", name);
         return true;
     }
 }

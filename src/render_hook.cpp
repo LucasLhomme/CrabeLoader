@@ -34,7 +34,7 @@ namespace {
             logger.error("RenderHook: failed to hook {} at 0x{:X}.", name, addr);
             return false;
         }
-        logger.info("RenderHook: {} hooked.", name);
+        logger.debug("RenderHook: {} hooked.", name);
         return true;
     }
 }
@@ -152,7 +152,7 @@ void RenderHook::toggleMenu()
     ImGui::GetIO().MouseDrawCursor = _menuOpen;
     if (_menuOpen) ClipCursor(nullptr);
 
-    Logger::getInstance().info("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
+    Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
 }
 
 bool RenderHook::isMenuOpen() const
@@ -208,7 +208,7 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     createRenderTarget(swapChain);
 
     _backendInitialized = true;
-    Logger::getInstance().info("RenderHook: ImGui DX11/Win32 backends initialized (hwnd 0x{:X}).",
+    Logger::getInstance().debug("RenderHook: ImGui DX11/Win32 backends initialized (hwnd 0x{:X}).",
                                 reinterpret_cast<uintptr_t>(_hwnd));
 }
 

@@ -49,11 +49,11 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         DisableThreadLibraryCalls(hModule);
         initLogger(hModule);
         SetUnhandledExceptionFilter(crashFilter);
-        Logger::getInstance().info("CrabeLoader DLL loaded.");
+        Logger::getInstance().debug("CrabeLoader DLL loaded.");
         std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
-        Logger::getInstance().info("CrabeLoader DLL unloaded.");
+        Logger::getInstance().debug("CrabeLoader DLL unloaded.");
     }
     return TRUE;
 }

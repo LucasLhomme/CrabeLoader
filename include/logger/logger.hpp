@@ -23,13 +23,21 @@ enum class LogLevel {
     ERR
 };
 
+// A crash (HookException::Severity::CRASH) logs through error() with a
+// "CRASH: " prefix rather than as its own level -- there is no LogLevel for
+// it, filtering on ERR already covers it.
+struct LogEntry {
+    LogLevel level;
+    std::string text; // fully formatted: "[time] [LEVEL] message"
+};
+
 class Logger {
 public:
     static Logger& getInstance();
 
     void setLogFile(const std::string& filename);
     void setLogLevel(LogLevel level);
-    std::vector<std::string> getHistory() const;
+    std::vector<LogEntry> getHistory() const;
 
     template <typename... Args>
     void log(LogLevel level, std::string_view fmt, Args&&... args) {
@@ -76,7 +84,7 @@ private:
     std::ofstream m_fileStream;
     LogLevel m_minLevel;
     mutable std::mutex m_mutex;
-    std::deque<std::string> m_history;
+    std::deque<LogEntry> m_history;
 };
 
 #endif // LOGGER_HPP
