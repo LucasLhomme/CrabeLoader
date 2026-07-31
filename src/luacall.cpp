@@ -48,12 +48,17 @@ bool LuaCall::initialize(const LuaApiAddresses& addresses)
     anyInstalled |= installOne(_hookPcall, addresses.pcall,
                             reinterpret_cast<void*>(&LuaCall::hkPcall), "lua_pcall");
 
-    // Called, never hooked: these are how the loader reads values back out of
-    // the Lua stack. An unresolved one degrades a feature (runSnippet returns
-    // no text) rather than breaking the hooks, so it is only a warning.
+    // Called, never hooked: this is how the loader reads values back out of the
+    // Lua stack, and how a future native API would push its own. Keeping the
+    // whole set together means an unresolved one degrades a feature rather than
+    // breaking the hooks, so it is only ever a warning.
+    _api = addresses;
     _getfield = reinterpret_cast<t_lua_getfield>(addresses.getfield);
     _tolstring = reinterpret_cast<t_lua_tolstring>(addresses.tolstring);
     _settop = reinterpret_cast<t_lua_settop>(addresses.settop);
+    _gettop = reinterpret_cast<t_lua_gettop>(addresses.gettop);
+    _pushnumber = reinterpret_cast<t_lua_pushnumber>(addresses.pushnumber);
+    _toboolean = reinterpret_cast<t_lua_toboolean>(addresses.toboolean);
 
     if (!_tolstring || !_settop) {
         Logger::getInstance().warning(
@@ -125,9 +130,15 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
     // immediately in that case). This is also the only place it is safe to
     // run keybind-triggered Lua calls from: it's the game's own thread
     // already holding this L, unlike the input-polling thread that queued them.
-    Loader::get().drainPendingKeybindCalls(L);
-    Loader::get().drainPendingSnippets(L);
-    Loader::get().drainLuaOutput(L);
+    Loader& loader = Loader::get();
+    loader.ensureRuntimeReady(L);
+    if (loader.isGameState(L)) {
+        loader.runTicks(L);
+        loader.drainPendingKeybindCalls(L);
+        loader.drainPendingSnippets(L);
+        loader.drainLuaOutput(L);
+    }
+
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 }
 
@@ -141,26 +152,38 @@ bool LuaCall::runFile(void* L, const char* path) const
         return false;
     }
 
+    // This runs while the game's own lua_pcall is on the stack, borrowing its
+    // state. That pcall finds the function it is about to call at
+    // `top - (nargs + 1)`, so the stack has to be handed back at exactly the
+    // height it was found at -- LUA_MULTRET leaves an unknown number of
+    // results behind, and even one stray value makes the game call whatever
+    // sits in the wrong slot.
+    int savedTop = _gettop ? _gettop(L) : 0;
+
     constexpr int kLuaOk = 0;
     constexpr int kLuaMultret = -1; // LUA_MULTRET
+
+    auto restoreTop = [&]() {
+        if (_gettop && _settop) _settop(L, savedTop);
+    };
 
     int loadStatus = loadfile(L, path);
     if (loadStatus != kLuaOk) {
         Logger::getInstance().error("LuaCall: luaL_loadfile('{}') failed (status {}): {}",
                                     path, loadStatus, popString(L, -1));
+        restoreTop();
         return false;
     }
 
-    // LUA_MULTRET leaves an unknown number of results, so the error object can
-    // only be read on the failure path, where pcall leaves exactly one.
     int callStatus = pcall(L, 0, kLuaMultret, 0);
     if (callStatus != kLuaOk) {
+        // Read the error object before unwinding, pcall leaves exactly one.
         Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}): {}",
                                     path, callStatus, popString(L, -1));
-        return false;
     }
 
-    return true;
+    restoreTop();
+    return callStatus == kLuaOk;
 }
 
 bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
@@ -173,6 +196,13 @@ bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
 
     std::string chunk = std::format("if {0} then {0}() end", functionName);
 
+    // Same stack contract as runFile: this borrows the state from underneath
+    // the game's own pending lua_pcall and must return it untouched.
+    int savedTop = _gettop ? _gettop(L) : 0;
+    auto restoreTop = [&]() {
+        if (_gettop && _settop) _settop(L, savedTop);
+    };
+
     constexpr int kLuaOk = 0;
     constexpr int kLuaMultret = -1; // LUA_MULTRET
 
@@ -180,10 +210,47 @@ bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
     if (loadStatus != kLuaOk) {
         Logger::getInstance().error("LuaCall: failed to compile keybind chunk for '{}' (status {}).",
                                     functionName, loadStatus);
+        restoreTop();
         return false;
     }
 
-    return pcall(L, 0, kLuaMultret, 0) == kLuaOk;
+    int callStatus = pcall(L, 0, kLuaMultret, 0);
+    restoreTop();
+    return callStatus == kLuaOk;
+}
+
+bool LuaCall::callTick(void* L, double dt) const
+{
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !pcall || !_getfield || !_gettop || !_settop || !_pushnumber || !_toboolean)
+        return false;
+
+    constexpr int kLuaGlobalsIndex = -10002; // LUA_GLOBALSINDEX in 5.1
+    constexpr int kLuaOk = 0;
+
+    int savedTop = _gettop(L);
+
+    // lua_toboolean stands in for a type check: it is false for nil, and the
+    // loader has no lua_type resolved. Indexing a nil with lua_getfield would
+    // raise a Lua error, which longjmps straight out of here.
+    _getfield(L, kLuaGlobalsIndex, "Game");
+    if (!_toboolean(L, -1)) {
+        _settop(L, savedTop);
+        return false;
+    }
+
+    _getfield(L, -1, "_runTicks");
+    if (!_toboolean(L, -1)) {
+        _settop(L, savedTop);
+        return false;
+    }
+
+    _pushnumber(L, dt);
+    int status = pcall(L, 1, 0, 0);
+    _settop(L, savedTop);
+
+    return status == kLuaOk;
 }
 
 bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) const
@@ -200,6 +267,14 @@ bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) con
 
     constexpr int kLuaOk = 0;
 
+    // popString already pops what it reads, so this is normally balanced; the
+    // guard covers the case where lua_settop went unresolved, since leaking a
+    // slot here corrupts the game's pending lua_pcall.
+    int savedTop = _gettop ? _gettop(L) : 0;
+    auto restoreTop = [&]() {
+        if (_gettop && _settop) _settop(L, savedTop);
+    };
+
     // No Lua-side pcall wrapper: lua_pcall already traps runtime errors, and
     // the error object it leaves on the stack is now readable directly.
     int loadStatus = loadbuffer(L, code.c_str(), code.size(), "=console");
@@ -207,6 +282,7 @@ bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) con
         out = popString(L, -1);
         if (out.empty())
             out = std::format("compile failed (status {}).", loadStatus);
+        restoreTop();
         return false;
     }
 
@@ -214,9 +290,10 @@ bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) con
     // there to pop, whether or not the chunk returned anything.
     int callStatus = pcall(L, 0, 1, 0);
     out = popString(L, -1);
+    restoreTop();
 
     if (callStatus != kLuaOk) {
-        if (out.empty()) 
+        if (out.empty())
             out = std::format("runtime error (status {}).", callStatus);
         return false;
     }
