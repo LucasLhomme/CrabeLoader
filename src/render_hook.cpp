@@ -149,6 +149,9 @@ void RenderHook::uninitialize()
 void RenderHook::toggleMenu()
 {
     _menuOpen = !_menuOpen;
+    ImGui::GetIO().MouseDrawCursor = _menuOpen;
+    if (_menuOpen) ClipCursor(nullptr);
+
     Logger::getInstance().info("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
 }
 
