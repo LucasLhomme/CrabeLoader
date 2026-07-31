@@ -138,7 +138,7 @@ namespace {
             return 0;
         }
 
-        logger.info("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
+        logger.debug("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
                     symbol.name, addr, rva, firstBytes(addr, 8));
         return addr;
     }
@@ -181,7 +181,7 @@ Loader& Loader::get()
 void Loader::onLuaState(void *L)
 {
     if (!L) {
-        Logger::getInstance().info("Loader: Lua state UNINJECTED.");
+        Logger::getInstance().error("Loader: Lua state UNINJECTED.");
         return;
     }
 
@@ -197,7 +197,7 @@ void Loader::onLuaState(void *L)
 
     _luaState = L;
     _modsLoaded = true;
-    Logger::getInstance().info("Loader: Lua state INJECTED.");
+    Logger::getInstance().debug("Loader: Lua state INJECTED.");
 
     // The API and the mods are NOT loaded here. This runs on the game's very
     // first loadbuffer, before luaopen_base has filled _G: `type`, `rawget`
@@ -220,10 +220,10 @@ void Loader::onLoadmods()
     std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
 
     if (!Loader::get().isInjected()) {
-        Logger::getInstance().info("Loader: Lua state not injected, skipping mod loading.");
+        Logger::getInstance().error("Loader: Lua state not injected, skipping mod loading.");
         return;
     } else {
-        Logger::getInstance().info("Loader: Reading mods folder...");
+        Logger::getInstance().debug("Loader: Reading mods folder...");
         if (!std::filesystem::exists(modsFolder)) {
             Logger::getInstance().info("Loader: Mods folder does not exist, creating...");
             std::filesystem::create_directory(modsFolder);
@@ -235,7 +235,7 @@ void Loader::onLoadmods()
                     Logger::getInstance().info("Loader: Found mod: {}", filename);
 
                     if (LuaCall::get().runFile(_luaState, entry.path().string().c_str())) {
-                        Logger::getInstance().info("Loader: mod '{}' executed.", filename);
+                        Logger::getInstance().debug("Loader: mod '{}' executed.", filename);
                     } else {
                         Logger::getInstance().warning("Loader: mod '{}' failed to execute.", filename);
                     }
@@ -249,7 +249,7 @@ void Loader::registerKeybind(int virtualKey, std::function<void()> onPress)
 {
     std::lock_guard<std::mutex> lock(_keybindsMutex);
     _keybinds[virtualKey] = Keybind{ std::move(onPress), false };
-    Logger::getInstance().info("Loader: registered keybind for virtual key 0x{:X}.", virtualKey);
+    Logger::getInstance().debug("Loader: registered keybind for virtual key 0x{:X}.", virtualKey);
 }
 
 void Loader::registerLuaKeybind(int virtualKey, const std::string& luaFunctionName)
@@ -348,7 +348,7 @@ void Loader::ensureRuntimeReady(void* L)
     if (kind != LuaRuntime::StateKind::Game) {
         if (kind == LuaRuntime::StateKind::NotTheGame && !_sawForeignState) {
             _sawForeignState = true;
-            Logger::getInstance().info(
+            Logger::getInstance().debug(
                 "Loader: skipping a Lua state without the game's natives (shader compiler); still waiting.");
         }
         return;
@@ -389,7 +389,7 @@ void Loader::drainLuaOutput(void* L)
         if (end == std::string::npos)
             end = output.size();
 
-        if (end > start) Logger::getInstance().info("{}", output.substr(start, end - start));
+        if (end > start) Logger::getInstance().debug("{}", output.substr(start, end - start));
         start = end + 1;
     }
 }

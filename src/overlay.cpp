@@ -43,13 +43,30 @@ void Overlay::defaultSettings()
     ImGui::SetNextWindowSize(ImVec2(420.0f, 320.0f), ImGuiCond_FirstUseEver);
 }
 
+bool Overlay::isLevelVisible(LogLevel level) const
+{
+    switch (level) {
+        case LogLevel::DEBUG:   return _showDebug;
+        case LogLevel::INFO:    return _showInfo;
+        case LogLevel::WARNING: return _showWarning;
+        case LogLevel::ERR:     return _showError;
+        default:                return true;
+    }
+}
+
 void Overlay::drawConsoleTab()
 {
+    ImGui::Checkbox("Debug", &_showDebug); ImGui::SameLine();
+    ImGui::Checkbox("Info", &_showInfo); ImGui::SameLine();
+    ImGui::Checkbox("Warning", &_showWarning); ImGui::SameLine();
+    ImGui::Checkbox("Error", &_showError);
+
     const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 
     ImGui::BeginChild("ConsoleScroll", ImVec2(0.0f, -footerHeight), false, ImGuiWindowFlags_HorizontalScrollbar);
-    for (const std::string& line : Logger::getInstance().getHistory()) {
-        ImGui::TextUnformatted(line.c_str());
+    for (const LogEntry& entry : Logger::getInstance().getHistory()) {
+        if (isLevelVisible(entry.level))
+            ImGui::TextUnformatted(entry.text.c_str());
     }
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
         ImGui::SetScrollHereY(1.0f);

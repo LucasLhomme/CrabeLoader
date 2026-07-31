@@ -55,15 +55,15 @@ void Logger::writeLog(LogLevel level, std::string_view message) {
         m_fileStream.flush();
     }
 
-    m_history.push_back(std::move(formattedMessage));
+    m_history.push_back(LogEntry{ level, std::move(formattedMessage) });
     if (m_history.size() > kMaxHistoryLines) {
         m_history.pop_front();
     }
 }
 
-std::vector<std::string> Logger::getHistory() const {
+std::vector<LogEntry> Logger::getHistory() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return std::vector<std::string>(m_history.begin(), m_history.end());
+    return std::vector<LogEntry>(m_history.begin(), m_history.end());
 }
 
 std::string Logger::levelToString(LogLevel level) const {
