@@ -127,6 +127,7 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
     // already holding this L, unlike the input-polling thread that queued them.
     Loader::get().drainPendingKeybindCalls(L);
     Loader::get().drainPendingSnippets(L);
+    Loader::get().drainLuaOutput(L);
     return LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 }
 

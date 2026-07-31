@@ -15,6 +15,7 @@
 #include <windows.h>
 
 #include "loader/loader.hpp"
+#include "loader/lua_runtime.hpp"
 #include "loader/luacall.hpp"
 #include "loader/memory.hpp"
 #include "loader/render_hook.hpp"
@@ -163,6 +164,8 @@ void Loader::onLuaState(void *L)
     _modsLoaded = true;
     Logger::getInstance().info("Loader: Lua state INJECTED.");
 
+    // The API has to exist before any mod runs: mods are written against it.
+    LuaRuntime::injectAll(L);
     onLoadmods();
 }
 
@@ -263,6 +266,37 @@ void Loader::drainPendingSnippets(void* L)
         } else if (!result.empty()) {
             Logger::getInstance().info("= {}", result);
         }
+    }
+
+    // Show anything the snippet printed right away rather than at the next
+    // throttled tick.
+    _lastOutputDrain = {};
+    drainLuaOutput(L);
+}
+
+void Loader::drainLuaOutput(void* L)
+{
+    // Compiling and running a chunk is far too expensive to do on every pcall,
+    // and console output does not need to be more responsive than this.
+    constexpr auto kInterval = std::chrono::milliseconds(100);
+
+    auto now = std::chrono::steady_clock::now();
+    if (now - _lastOutputDrain < kInterval)
+        return;
+    _lastOutputDrain = now;
+
+    std::string output;
+    if (!LuaCall::get().runSnippet(L, "return CrabeBridge and CrabeBridge.flush() or ''", output))
+        return;
+
+    // The buffer joins its lines, so one flush can carry several of them.
+    size_t start = 0;
+    while (start < output.size()) {
+        size_t end = output.find('\n', start);
+        if (end == std::string::npos) end = output.size();
+
+        if (end > start) Logger::getInstance().info("{}", output.substr(start, end - start));
+        start = end + 1;
     }
 }
 
