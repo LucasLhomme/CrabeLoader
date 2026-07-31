@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class Loader {
@@ -29,6 +30,9 @@ class Loader {
         void queueConsoleSnippet(const std::string& code);
         void drainPendingSnippets(void* L);
         void drainLuaOutput(void* L);
+        void ensureRuntimeReady(void* L);
+        void runTicks(void* L);
+        bool isGameState(void* L) const;
 
     protected:
     private:
@@ -56,6 +60,11 @@ class Loader {
         std::vector<std::string> _pendingSnippets;
         std::mutex _snippetQueueMutex;
         std::chrono::steady_clock::time_point _lastOutputDrain{};
+        std::chrono::steady_clock::time_point _lastReadyProbe{};
+        std::chrono::steady_clock::time_point _lastTick{};
+        std::atomic<bool> _runtimeReady{false};
+        bool _sawForeignState = false;
+        std::unordered_set<void*> _initializedStates;
 };
 
 

@@ -4,174 +4,87 @@
 ** lua_runtime
 */
 
+#include <algorithm>
+#include <filesystem>
+#include <vector>
+
 #include "loader/lua_runtime.hpp"
 #include "loader/luacall.hpp"
 #include "logger/logger.hpp"
 
 namespace {
 
-    // Output bridge. The loader cannot register a C function as `print` (that
-    // needs lua_pushcclosure, which is not resolved), so the capture is done in
-    // Lua: print appends to a buffer, and the C++ side periodically asks for
-    // it with flush(). Everything a mod prints ends up in the overlay console.
-    constexpr const char* kBridgeSource = R"lua(
-CrabeBridge = CrabeBridge or {}
-CrabeBridge._lines = {}
-CrabeBridge._maxLines = 200
-
-function CrabeBridge.write(line)
-    local lines = CrabeBridge._lines
-    lines[#lines + 1] = tostring(line)
-
-    -- The game can print faster than the loader drains; dropping the oldest
-    -- line bounds the buffer instead of growing it until the next flush.
-    while #lines > CrabeBridge._maxLines do
-        table.remove(lines, 1)
-    end
-end
-
-function CrabeBridge.flush()
-    local lines = CrabeBridge._lines
-    if #lines == 0 then return "" end
-
-    local joined = table.concat(lines, "\n")
-    CrabeBridge._lines = {}
-    return joined
-end
-
--- Guarded: the runtime is injected once per captured lua_State, but chaining
--- the wrapper onto itself twice would double every line.
-if not CrabeBridge._printHooked then
-    CrabeBridge._printHooked = true
-    local originalPrint = print
-
-    print = function(...)
-        local parts = {}
-        for i = 1, select("#", ...) do
-            parts[i] = tostring((select(i, ...)))
-        end
-        CrabeBridge.write(table.concat(parts, "\t"))
-
-        if originalPrint then originalPrint(...) end
-    end
-end
-)lua";
-
-    // The modding API itself. Wraps the engine natives behind stable names, so
-    // a mod says what it wants rather than which native happens to do it.
-    constexpr const char* kGameSource = R"lua(
-Game = Game or {}
-Game._itemRegistry = Game._itemRegistry or {}
-
--- An item id is a dotted string ("Items.money"). Two kinds exist so far:
---   { kind = "currency", apply = function(amount) end }
---   { kind = "spawn", rrofile = "<INV_ name without the INV_ prefix>" }
-function Game.registerItem(id, entry)
-    if type(id) ~= "string" or type(entry) ~= "table" then
-        error("Game.registerItem: expected (string, table)", 2)
-    end
-    Game._itemRegistry[id] = entry
-end
-
-Game.registerItem("Items.money", {
-    kind = "currency",
-    apply = function(amount) UI_IncrementSparks(amount) end,
-})
-
-function Game.GetSparks()
-    return UI_GetSparks()
-end
-
-function Game.ShowMessage(text, body)
-    UI_DisplayTextBox(tostring(text), body or "", false, 0,
-                    Players_GetHostPlayerID(), "HelpBubble", 3)
-end
-
--- Placing an object only works from the Toy Box editor's context, hence the
--- SetEditorState prefix: without it CalculateSpawnPosition yields nothing and
--- the ghost is created but never placed.
-local function spawnOnce(player, rrofile)
-    Place_SetEditorState(player, "Editor::ObjectMode")
-    Place_CalculateSpawnPosition(player)
-    Place_PlaceObject(player, Place_CreateGhost(player, 0, rrofile))
-end
-
-function Game.AddToInventory(id, amount)
-    local entry = Game._itemRegistry[id]
-    if not entry then
-        error("Game.AddToInventory: unknown item id '" .. tostring(id) .. "'", 2)
-    end
-    amount = amount or 1
-
-    if entry.kind == "currency" then
-        entry.apply(amount)
-        return amount
-    end
-
-    if entry.kind == "spawn" then
-        local player = Players_GetHostPlayerID()
-        local ok, err = true, nil
-
-        for _ = 1, amount do
-            ok, err = pcall(spawnOnce, player, entry.rrofile)
-            if not ok then break end
-        end
-
-        -- StopPlaceMode has to run even when a spawn above failed, or the
-        -- editor keeps the player's input locked.
-        pcall(Place_StopPlaceMode, player, 0, false)
-
-        if not ok then error(err, 2) end
-        return amount
-    end
-
-    error("Game.AddToInventory: item '" .. tostring(id) .. "' has an unknown kind", 2)
-end
-)lua";
-
-    struct Module {
-        const char* name;
-        const char* source;
-    };
-
-    // Injection order is dependency order: game.lua reports through the bridge.
-    constexpr Module kModules[] = {
-        { "bridge", kBridgeSource },
-        { "game",   kGameSource },
-    };
+    // Where the loader's own Lua lives, next to the game executable. Kept apart
+    // from mods/ on purpose: this is the loader talking, not a user mod.
+    constexpr const char* kApiFolderName = "api";
 
 } // namespace
 
-size_t LuaRuntime::moduleCount()
+std::filesystem::path LuaRuntime::apiFolder()
 {
-    return sizeof(kModules) / sizeof(kModules[0]);
+    return std::filesystem::current_path() / kApiFolderName;
 }
 
-const char* LuaRuntime::moduleName(size_t index)
+LuaRuntime::StateKind LuaRuntime::classifyState(void* L)
 {
-    return index < moduleCount() ? kModules[index].name : "";
-}
+    // Nothing but global lookups and concatenation: this has to be answerable
+    // in a state where none of the globals it asks about exist yet. It stays a
+    // C++ string rather than an api/ file because it runs *before* the decision
+    // to load any of them.
+    //
+    // The natives are what tell the game's script state apart from the shader
+    // compiler's, which has a perfectly good base library and none of these.
+    static constexpr const char* kProbe = R"lua(
+if not (type and pairs and tostring and table and pcall and error) then return 'unusable' end
+if not (UI_GetSparks and Players_GetHostPlayerID) then return 'notgame' end
+return 'game'
+)lua";
 
-const char* LuaRuntime::moduleSource(size_t index)
-{
-    return index < moduleCount() ? kModules[index].source : "";
+    std::string result;
+    if (!LuaCall::get().runSnippet(L, kProbe, result))
+        return StateKind::Unusable;
+
+    if (result == "game") return StateKind::Game;
+    if (result == "notgame") return StateKind::NotTheGame;
+    return StateKind::Unusable;
 }
 
 bool LuaRuntime::injectAll(void* L)
 {
     Logger& logger = Logger::getInstance();
+    std::filesystem::path folder = apiFolder();
+
+    if (!std::filesystem::exists(folder)) {
+        logger.error("LuaRuntime: '{}' not found; the API is unavailable and every mod will fail.",
+                    folder.string());
+        return false;
+    }
+
+    std::vector<std::filesystem::path> modules;
+    for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".lua")
+            modules.push_back(entry.path());
+    }
+
+    // Load order is dependency order, encoded in the filenames' numeric
+    // prefixes (00_core, 10_game, ...). Directory iteration order is not
+    // specified, so it is sorted here rather than trusted.
+    std::sort(modules.begin(), modules.end());
+
+    if (modules.empty()) {
+        logger.error("LuaRuntime: no .lua module in '{}'; the API is unavailable.", folder.string());
+        return false;
+    }
+
     bool allOk = true;
-
-    for (size_t i = 0; i < moduleCount(); ++i) {
-        std::string error;
-
-        if (LuaCall::get().runSnippet(L, kModules[i].source, error)) continue;
-
+    for (const auto& path : modules) {
         // Keep going: a broken module costs its own features, not the API.
-        logger.error("LuaRuntime: module '{}' failed to inject: {}", kModules[i].name, error);
+        if (LuaCall::get().runFile(L, path.string().c_str())) continue;
+
+        logger.error("LuaRuntime: API module '{}' failed to load.", path.filename().string());
         allOk = false;
     }
 
-    if (allOk) logger.info("LuaRuntime: API injected ({} modules).", moduleCount());
+    if (allOk) logger.info("LuaRuntime: API loaded ({} modules from {}/).", modules.size(), kApiFolderName);
     return allOk;
 }

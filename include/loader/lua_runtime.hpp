@@ -7,24 +7,27 @@
 #ifndef LUA_RUNTIME_HPP_
 #define LUA_RUNTIME_HPP_
 
-#include <cstddef>
+#include <filesystem>
 
-// The modding API CrabeLoader exposes to mods (the global `Game` table, the
-// console output bridge, the per-frame hook).
-//
-// Injected into the game's own lua_State right before the mods are loaded, so
-// `Game` already exists by the time any mod runs.
+// The modding API CrabeLoader exposes to mods: the `Crabe` namespace
 namespace LuaRuntime {
-    // Injects every module, in dependency order. Returns false if any of them
-    // failed; failures are logged individually, and a failing module does not
-    // stop the ones after it (a broken helper should not cost the whole API).
-    bool injectAll(void* L);
+    // How usable a given lua_State is. The process runs more than one: the
+    // first the loader sees belongs to the Slang shader compiler, and the
+    // earliest states of any kind are seen before luaopen_base has filled _G.
+    enum class StateKind {
+        Unusable,   // no base library yet (`type`, `pairs`... still nil)
+        NotTheGame, // base library is up, but none of the game's natives are
+        Game,       // the script state the API and the mods belong in
+    };
 
-    // Lua source of the modules, in injection order. Exposed for the log line
-    // that names a failing module, not meant to be run directly.
-    const char* moduleName(size_t index);
-    const char* moduleSource(size_t index);
-    size_t moduleCount();
+    StateKind classifyState(void* L);
+
+    // Runs every api/*.lua in filename order, which is dependency order.
+    // Returns false if any of them failed; failures are logged individually,
+    // and a failing module does not stop the ones after it (a broken helper
+    // should not cost the whole API).
+    bool injectAll(void* L);
+    std::filesystem::path apiFolder();
 }
 
 #endif /* !LUA_RUNTIME_HPP_ */

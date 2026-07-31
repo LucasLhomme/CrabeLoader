@@ -44,12 +44,47 @@ namespace {
     // binary. Hooking a wrong address corrupts the host process on the next
     // call, so a mismatch refuses instead of patching: the index is a hint, the
     // RVA is the contract.
-    constexpr LuaSymbol kLoadfile   { "luaL_loadfile",   "loadfile",   2,  0xF0EBF0 };
-    constexpr LuaSymbol kLoadbuffer { "luaL_loadbuffer", "loadstring", 3,  0xF0EDE0 };
-    constexpr LuaSymbol kPcall      { "lua_pcall",       "xpcall",     4,  0xF0DF60 };
-    constexpr LuaSymbol kGetfield   { "lua_getfield",    "print",      2,  0xF0DA00 };
-    constexpr LuaSymbol kTolstring  { "lua_tolstring",   "print",      6,  0xF0D5A0, 512 };
-    constexpr LuaSymbol kSettop     { "lua_settop",      "print",      11, 0xF0D0F0, 512 };
+    //
+    // The indexes come from cross-referencing a dump of every stdlib wrapper
+    //
+    // Two of the wrappers are not the obvious ones:
+    //  - "wrap" is coroutine.wrap; luaB_cowrap is `cocreate; pushcclosure`.
+    //  - "type" resolves to io.type, not luaB_type -- both libraries register
+    //    that name, and io's table is found first. Its call sequence matches
+    //    io_type (checkany, touserdata, getfield, getmetatable, rawequal, then
+    //    the pushliteral branches), which is what makes those indexes valid.
+    constexpr LuaSymbol kLoadfile     { "luaL_loadfile",     "loadfile",   2,  0xF0EBF0 };
+    constexpr LuaSymbol kLoadbuffer   { "luaL_loadbuffer",   "loadstring", 3,  0xF0EDE0 };
+    constexpr LuaSymbol kPcall        { "lua_pcall",         "xpcall",     4,  0xF0DF60 };
+
+    constexpr LuaSymbol kGettop       { "lua_gettop",        "print",      1,  0xF0D0E0 };
+    constexpr LuaSymbol kGetfield     { "lua_getfield",      "print",      2,  0xF0DA00 };
+    constexpr LuaSymbol kPushvalue    { "lua_pushvalue",     "print",      3,  0xF0D2A0 };
+    constexpr LuaSymbol kCall         { "lua_call",          "print",      5,  0xF0DF00 };
+    constexpr LuaSymbol kTolstring    { "lua_tolstring",     "print",      6,  0xF0D5A0, 512 };
+    constexpr LuaSymbol kSettop       { "lua_settop",        "print",      11, 0xF0D0F0, 512 };
+
+    constexpr LuaSymbol kPushcclosure { "lua_pushcclosure",  "wrap",       2,  0xF0D8E0 };
+
+    constexpr LuaSymbol kChecktype    { "luaL_checktype",    "rawset",     1,  0xF0EFE0 };
+    constexpr LuaSymbol kCheckany     { "luaL_checkany",     "rawset",     2,  0xF0F010 };
+    constexpr LuaSymbol kRawset       { "lua_rawset",        "rawset",     5,  0xF0DCA0 };
+    constexpr LuaSymbol kRawget       { "lua_rawget",        "rawget",     4,  0xF0DA60 };
+
+    constexpr LuaSymbol kChecklstring { "luaL_checklstring", "require",    1,  0xF0F040 };
+    constexpr LuaSymbol kToboolean    { "lua_toboolean",     "require",    5,  0xF0D570 };
+
+    constexpr LuaSymbol kIsnumber     { "lua_isnumber",      "tonumber",   3,  0xF0D350 };
+    constexpr LuaSymbol kTonumber     { "lua_tonumber",      "tonumber",   4,  0xF0D4F0 };
+    constexpr LuaSymbol kPushnumber   { "lua_pushnumber",    "tonumber",   5,  0xF0D7C0 };
+
+    constexpr LuaSymbol kTouserdata   { "lua_touserdata",    "type",       2,  0xF0D6D0 };
+    constexpr LuaSymbol kGetmetatable { "lua_getmetatable",  "type",       4,  0xF0DB20 };
+    constexpr LuaSymbol kRawequal     { "lua_rawequal",      "type",       5,  0xF0D3F0 };
+    constexpr LuaSymbol kPushlstring  { "lua_pushlstring",   "type",       6,  0xF0D800 };
+    constexpr LuaSymbol kPushnil      { "lua_pushnil",       "type",       8,  0xF0D7A0 };
+
+    constexpr LuaSymbol kPushboolean  { "lua_pushboolean",   "rawequal",   4,  0xF0D960 };
 
     std::string firstBytes(uintptr_t addr, size_t count)
     {
@@ -164,14 +199,20 @@ void Loader::onLuaState(void *L)
     _modsLoaded = true;
     Logger::getInstance().info("Loader: Lua state INJECTED.");
 
-    // The API has to exist before any mod runs: mods are written against it.
-    LuaRuntime::injectAll(L);
-    onLoadmods();
+    // The API and the mods are NOT loaded here. This runs on the game's very
+    // first loadbuffer, before luaopen_base has filled _G: `type`, `rawget`
+    // and the rest are still nil, so anything injected now fails. Loading is
+    // deferred to ensureRuntimeReady(), retried from the hooked pcall.
 }
 
 bool Loader::isInjected()
 {
     return _luaState != nullptr;
+}
+
+bool Loader::isGameState(void* L) const
+{
+    return L && _initializedStates.count(L) != 0;
 }
 
 void Loader::onLoadmods()
@@ -247,6 +288,26 @@ void Loader::queueConsoleSnippet(const std::string& code)
     _pendingSnippets.push_back(code);
 }
 
+void Loader::runTicks(void* L)
+{
+    if (!_runtimeReady)
+        return;
+
+    // The game exposes no global Update to wrap, so the per-frame callbacks are
+    // driven from here instead. The hooked pcall fires far more often than a
+    // frame, hence the interval.
+    constexpr auto kInterval = std::chrono::milliseconds(16); // ~60 Hz
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = now - _lastTick;
+    if (elapsed < kInterval)
+        return;
+
+    _lastTick = now;
+    double dt = std::chrono::duration<double>(elapsed).count();
+    LuaCall::get().callTick(L, dt);
+}
+
 void Loader::drainPendingSnippets(void* L)
 {
     std::vector<std::string> pending;
@@ -268,10 +329,43 @@ void Loader::drainPendingSnippets(void* L)
         }
     }
 
-    // Show anything the snippet printed right away rather than at the next
-    // throttled tick.
     _lastOutputDrain = {};
     drainLuaOutput(L);
+}
+
+void Loader::ensureRuntimeReady(void* L)
+{
+    if (isGameState(L))
+        return;
+    constexpr auto kInterval = std::chrono::milliseconds(250);
+
+    auto now = std::chrono::steady_clock::now();
+    if (now - _lastReadyProbe < kInterval)
+        return;
+    _lastReadyProbe = now;
+
+    LuaRuntime::StateKind kind = LuaRuntime::classifyState(L);
+    if (kind != LuaRuntime::StateKind::Game) {
+        if (kind == LuaRuntime::StateKind::NotTheGame && !_sawForeignState) {
+            _sawForeignState = true;
+            Logger::getInstance().info(
+                "Loader: skipping a Lua state without the game's natives (shader compiler); still waiting.");
+        }
+        return;
+    }
+
+    // The game does not keep one script state for its whole run: screen
+    // transitions bring up new ones. Each needs the API and the mods of its
+    // own, so they are tracked individually rather than latched onto the first.
+    _initializedStates.insert(L);
+    _luaState = L;
+    _runtimeReady = true;
+
+    Logger::getInstance().info("Loader: game Lua state 0x{:X} ready, injecting the API ({} state(s) so far).",
+                            reinterpret_cast<uintptr_t>(L), _initializedStates.size());
+
+    LuaRuntime::injectAll(L);
+    onLoadmods();
 }
 
 void Loader::drainLuaOutput(void* L)
@@ -286,14 +380,14 @@ void Loader::drainLuaOutput(void* L)
     _lastOutputDrain = now;
 
     std::string output;
-    if (!LuaCall::get().runSnippet(L, "return CrabeBridge and CrabeBridge.flush() or ''", output))
+    if (!LuaCall::get().runSnippet(L, "return Crabe and Crabe.flush() or ''", output))
         return;
 
-    // The buffer joins its lines, so one flush can carry several of them.
     size_t start = 0;
     while (start < output.size()) {
         size_t end = output.find('\n', start);
-        if (end == std::string::npos) end = output.size();
+        if (end == std::string::npos)
+            end = output.size();
 
         if (end > start) Logger::getInstance().info("{}", output.substr(start, end - start));
         start = end + 1;
@@ -346,9 +440,33 @@ bool Loader::initialize()
     addresses.loadfile = resolveLuaFunction(kLoadfile, base);
     addresses.loadbuffer = resolveLuaFunction(kLoadbuffer, base);
     addresses.pcall = resolveLuaFunction(kPcall, base);
-    addresses.getfield = resolveLuaFunction(kGetfield, base);
-    addresses.tolstring = resolveLuaFunction(kTolstring, base);
+    addresses.call = resolveLuaFunction(kCall, base);
+
+    addresses.gettop = resolveLuaFunction(kGettop, base);
     addresses.settop = resolveLuaFunction(kSettop, base);
+    addresses.pushvalue = resolveLuaFunction(kPushvalue, base);
+
+    addresses.tolstring = resolveLuaFunction(kTolstring, base);
+    addresses.tonumber = resolveLuaFunction(kTonumber, base);
+    addresses.toboolean = resolveLuaFunction(kToboolean, base);
+    addresses.touserdata = resolveLuaFunction(kTouserdata, base);
+    addresses.isnumber = resolveLuaFunction(kIsnumber, base);
+
+    addresses.pushnil = resolveLuaFunction(kPushnil, base);
+    addresses.pushnumber = resolveLuaFunction(kPushnumber, base);
+    addresses.pushlstring = resolveLuaFunction(kPushlstring, base);
+    addresses.pushboolean = resolveLuaFunction(kPushboolean, base);
+    addresses.pushcclosure = resolveLuaFunction(kPushcclosure, base);
+
+    addresses.getfield = resolveLuaFunction(kGetfield, base);
+    addresses.rawget = resolveLuaFunction(kRawget, base);
+    addresses.rawset = resolveLuaFunction(kRawset, base);
+    addresses.rawequal = resolveLuaFunction(kRawequal, base);
+    addresses.getmetatable = resolveLuaFunction(kGetmetatable, base);
+
+    addresses.checkany = resolveLuaFunction(kCheckany, base);
+    addresses.checktype = resolveLuaFunction(kChecktype, base);
+    addresses.checklstring = resolveLuaFunction(kChecklstring, base);
 
     if (!LuaCall::get().initialize(addresses)) {
         Logger::getInstance().error("Loader: failed to initialize LuaCall.");
@@ -356,8 +474,6 @@ bool Loader::initialize()
     }
 
     Logger::getInstance().info("Loader: initialized.");
-    onLuaState(nullptr);
-    onLoadmods();
     registerDefaultKeybinds();
 
     if (!RenderHook::get().initialize()) {
