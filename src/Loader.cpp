@@ -282,10 +282,65 @@ void Loader::drainPendingKeybindCalls(void* L)
     }
 }
 
-void Loader::queueConsoleSnippet(const std::string& code)
+void Loader::queueConsoleSnippet(const std::string& rawInput)
 {
+    std::string input = rawInput;
+
+    size_t start = input.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos)
+        return;
+    input.erase(0, start);
+    size_t end = input.find_last_not_of(" \t\r\n");
+    if (end != std::string::npos)
+        input.erase(end + 1);
+
+    Logger::getInstance().info("> {}", input);
+
+    // `=expr` prints a value, as in the standalone Lua REPL. Going through the
+    // game's own tostring is what makes nil, booleans and tables printable:
+    // lua_tolstring alone hands back NULL for anything that is not already a
+    // string or a number, which would show as no output at all.
+    if (input.front() == '=')
+        input = "return tostring(" + input.substr(1) + ")";
+
     std::lock_guard<std::mutex> lock(_snippetQueueMutex);
-    _pendingSnippets.push_back(code);
+    _pendingSnippets.push_back(input);
+}
+
+void Loader::drainRemoteCommandFile(void* L)
+{
+    // Not tied to L: this only decides whether there is a new command to
+    // queue. Kept as a parameter for symmetry with the other drain*()
+    // functions and in case a future version needs the state directly.
+    (void)L;
+
+    constexpr auto kInterval = std::chrono::milliseconds(250);
+    auto now = std::chrono::steady_clock::now();
+    if (now - _lastRemoteCommandProbe < kInterval)
+        return;
+    _lastRemoteCommandProbe = now;
+
+    constexpr const char* kRemoteCommandFileName = "crabe_remote_cmd.txt";
+    std::filesystem::path path = std::filesystem::current_path() / kRemoteCommandFileName;
+
+    std::ifstream file(path);
+    if (!file)
+        return; // no file yet: nothing to do, not an error
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    // Compared before trimming/transforming so a byte-identical rewrite of
+    // the same command (e.g. the caller re-touching the file) does not
+    // re-queue it -- only a genuinely new command should run again.
+    if (content == _lastRemoteCommandContent)
+        return;
+    _lastRemoteCommandContent = content;
+
+    if (content.find_first_not_of(" \t\r\n") == std::string::npos)
+        return; // cleared/empty: treat as "no command", not a blank submission
+
+    queueConsoleSnippet(content);
 }
 
 void Loader::runTicks(void* L)
@@ -369,6 +424,7 @@ void Loader::ensureRuntimeReady(void* L)
                             reinterpret_cast<uintptr_t>(L), _initializedStates.size());
 
     LuaRuntime::injectAll(L);
+    LuaRuntime::registerNatives(L); // needs Crabe, which injectAll just created
     onLoadmods();
 }
 

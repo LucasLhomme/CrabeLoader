@@ -5,16 +5,32 @@
 */
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <vector>
 
 #include "loader/lua_runtime.hpp"
 #include "loader/luacall.hpp"
+#include "loader/render_hook.hpp"
 #include "logger/logger.hpp"
 
 namespace {
 
     constexpr const char* kApiFolderName = "api";
+
+    // The only real C++ native so far. No native anywhere in the game exposes
+    // window/fullscreen state to Lua (see docs/nativedb.md), so this is a pure
+    // Win32 concern -- RenderHook is the only thing that can do it, and it must
+    // happen on the render thread, not here (this runs on whichever thread owns
+    // L when the game's script code calls it), hence just posting a request.
+    int __cdecl nativeSetWindowMode(void* L)
+    {
+        const char* mode = LuaCall::get().argToString(L, 1);
+        bool borderless = mode && std::strcmp(mode, "borderless") == 0;
+
+        RenderHook::get().requestWindowMode(borderless ? WindowMode::BorderlessWindowed : WindowMode::Windowed);
+        return 0; // no Lua return values
+    }
 
 } // namespace
 
@@ -80,4 +96,15 @@ bool LuaRuntime::injectAll(void* L)
 
     if (allOk) logger.info("LuaRuntime: API loaded ({} modules from {}/).", modules.size(), kApiFolderName);
     return allOk;
+}
+
+bool LuaRuntime::registerNatives(void* L)
+{
+    // Registered under an underscore-prefixed name: it is the raw native,
+    // wrapped by the ergonomic Crabe.SetWindowMode/GetWindowMode pair in
+    // src/api/05_window.lua, same as every other internal detail in Crabe.
+    bool ok = LuaCall::get().registerNativeFunction(L, "Crabe", "_setWindowModeNative", &nativeSetWindowMode);
+    if (!ok)
+        Logger::getInstance().error("LuaRuntime: failed to register Crabe._setWindowModeNative.");
+    return ok;
 }

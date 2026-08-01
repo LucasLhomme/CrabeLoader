@@ -32,6 +32,12 @@ The native surface does not change with the game mode. Dumps taken in Toy Box an
 
 What differs is game-side Lua (890 vs 622 functions) and which **UI screen objects** happen to be instantiated — `ScreenSpace_Text`, `VirtualReaderPC_*` and `Storefront` in Toy Box, `Container`, `ButtonLegend` and `HUD_PowerDiskMeter` in Rise. Each carries the same 54 methods: it is one UI class instantiated under different global names, not extra API. Dumping in more places only widens the catalogue of screen names.
 
+## `Crabe.*` vs game natives
+
+Everything below is a native the *game engine* registered in `_G` — CrabeLoader only wraps it. `Crabe.*` is different: it is CrabeLoader's own API, and most of it (`Crabe.dump.*`, `Crabe.log`, …) is pure Lua with no engine involvement at all.
+
+One exception: `Crabe.SetWindowMode`/`Crabe.GetWindowMode` (`src/api/05_window.lua`) wrap `Crabe._setWindowModeNative`, a real C++ function registered with `lua_pushcclosure` (`LuaRuntime::registerNatives`, `src/lua_runtime.cpp`) — not a wrapper around a game native, because no native anywhere in this dump exposes window/fullscreen/display state (exhaustive search: zero hits for `window`/`fullscreen`/`display`/`borderless`). It exists because Win32 window styling can only happen from C++, where `RenderHook` already holds the real `HWND`. Any future loader-side (as opposed to game-side) capability follows the same `_underscorePrefixed` native + ergonomic Lua wrapper pattern.
+
 ## Confirmed natives
 
 Verified in-game. The rest of the dump is triaged as it gets used.

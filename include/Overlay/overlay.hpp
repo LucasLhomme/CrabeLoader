@@ -30,7 +30,7 @@ class Overlay {
         void submitConsoleInput();
         bool isLevelVisible(LogLevel level) const;
 
-        char _consoleInputBuffer[256] = {};
+        char _consoleInputBuffer[1024] = {};
 
         // Debug is opt-in: it is the noisy per-keypress/per-hook-install level,
         // the other three are what you want on by default.

@@ -28,6 +28,12 @@ namespace LuaRuntime {
     // should not cost the whole API).
     bool injectAll(void* L);
     std::filesystem::path apiFolder();
+
+    // Registers every real C++ native (as opposed to the plain Lua wrappers
+    // in api/*.lua, which just call the game's own natives). Called after
+    // injectAll(L), since it needs the Crabe table injectAll just created,
+    // and before onLoadmods(), so mods see the natives already in place.
+    bool registerNatives(void* L);
 }
 
 #endif /* !LUA_RUNTIME_HPP_ */

@@ -82,6 +82,26 @@ class LuaCall {
         bool runSnippet(void* L, const std::string& code, std::string& out) const;
         bool callTick(void* L, double dt) const;
 
+        // Raw lua_CFunction signature: what a C++ function must look like to be
+        // callable from Lua via lua_pushcclosure.
+        typedef int(__cdecl* t_lua_cfunction)(void* L);
+
+        // Registers `cFunction` as `<tableName>.<fieldName>` in `L`, e.g.
+        // ("Crabe", "SetWindowMode", &nativeFn) for Crabe.SetWindowMode. This is
+        // a real C++ function the Lua VM calls directly -- not a Lua wrapper
+        // around one of the game's own natives, unlike everything in api/*.lua.
+        // `tableName` must already exist as a global table (api/*.lua creates
+        // Crabe/Game on load; this runs after that). Returns false if the table
+        // is missing or any of the required addresses failed to resolve.
+        bool registerNativeFunction(void* L, const char* tableName, const char* fieldName, t_lua_cfunction cFunction) const;
+
+        // Reads argument `idx` as a string, meant to be called from inside a
+        // registered t_lua_cfunction reading its own arguments. Unlike
+        // popString, this does not pop or otherwise touch the stack height --
+        // a C function's arguments are read in place, and the VM reclaims the
+        // whole frame once it returns.
+        const char* argToString(void* L, int idx) const;
+
     protected:
     private:
         LuaCall() = default;
@@ -98,6 +118,9 @@ class LuaCall {
         typedef int(__cdecl* t_lua_gettop)(void* L);
         typedef void(__cdecl* t_lua_pushnumber)(void* L, double n);
         typedef int(__cdecl* t_lua_toboolean)(void* L, int idx);
+        typedef void(__cdecl* t_lua_pushlstring)(void* L, const char* s, size_t len);
+        typedef void(__cdecl* t_lua_pushcclosure)(void* L, t_lua_cfunction fn, int n);
+        typedef void(__cdecl* t_lua_rawset)(void* L, int idx);
 
         static int __cdecl hkLoadfile(void* L, const char* filename);
         static int __cdecl hkLoadbuffer(void* L, const char* buff, size_t size, const char* name);
@@ -120,6 +143,9 @@ class LuaCall {
         t_lua_gettop _gettop = nullptr;
         t_lua_pushnumber _pushnumber = nullptr;
         t_lua_toboolean _toboolean = nullptr;
+        t_lua_pushlstring _pushlstring = nullptr;
+        t_lua_pushcclosure _pushcclosure = nullptr;
+        t_lua_rawset _rawset = nullptr;
         std::mutex _stateMutex;
 
 };

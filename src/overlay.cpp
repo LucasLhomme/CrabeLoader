@@ -87,22 +87,10 @@ void Overlay::drawConsoleTab()
 
 void Overlay::submitConsoleInput()
 {
-    std::string input(_consoleInputBuffer);
-
-    size_t start = input.find_first_not_of(" \t");
-    if (start == std::string::npos) 
-        return;
-    input.erase(0, start);
-    Logger::getInstance().info("> {}", input);
-
-    // `=expr` prints a value, as in the standalone Lua REPL. Going through the
-    // game's own tostring is what makes nil, booleans and tables printable:
-    // lua_tolstring alone hands back NULL for anything that is not already a
-    // string or a number, which would show as no output at all.
-    if (input.front() == '=')
-        input = "return tostring(" + input.substr(1) + ")";
-
-    Loader::get().queueConsoleSnippet(input);
+    // Trimming, the "> {}" echo and the "=expr" -> "return tostring(expr)"
+    // rewrite all live in Loader::queueConsoleSnippet now, shared with
+    // Loader::drainRemoteCommandFile so both entry points behave identically.
+    Loader::get().queueConsoleSnippet(_consoleInputBuffer);
 }
 
 void Overlay::renderOverlay()
