@@ -4,6 +4,7 @@
 ** luacall
 */
 
+#include <cstring>
 #include <format>
 
 #include "loader/luacall.hpp"
@@ -59,6 +60,9 @@ bool LuaCall::initialize(const LuaApiAddresses& addresses)
     _gettop = reinterpret_cast<t_lua_gettop>(addresses.gettop);
     _pushnumber = reinterpret_cast<t_lua_pushnumber>(addresses.pushnumber);
     _toboolean = reinterpret_cast<t_lua_toboolean>(addresses.toboolean);
+    _pushlstring = reinterpret_cast<t_lua_pushlstring>(addresses.pushlstring);
+    _pushcclosure = reinterpret_cast<t_lua_pushcclosure>(addresses.pushcclosure);
+    _rawset = reinterpret_cast<t_lua_rawset>(addresses.rawset);
 
     if (!_tolstring || !_settop) {
         Logger::getInstance().warning(
@@ -135,6 +139,7 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
     if (loader.isGameState(L)) {
         loader.runTicks(L);
         loader.drainPendingKeybindCalls(L);
+        loader.drainRemoteCommandFile(L);
         loader.drainPendingSnippets(L);
         loader.drainLuaOutput(L);
     }
@@ -251,6 +256,39 @@ bool LuaCall::callTick(void* L, double dt) const
     _settop(L, savedTop);
 
     return status == kLuaOk;
+}
+
+bool LuaCall::registerNativeFunction(void* L, const char* tableName, const char* fieldName, t_lua_cfunction cFunction) const
+{
+    if (!L || !cFunction || !_getfield || !_toboolean || !_pushlstring || !_pushcclosure || !_rawset || !_gettop || !_settop)
+        return false;
+
+    constexpr int kLuaGlobalsIndex = -10002; // LUA_GLOBALSINDEX in 5.1
+    int savedTop = _gettop(L);
+
+    // toboolean stands in for a type check here too (see callTick): a missing
+    // table would otherwise make the eventual rawset write into whatever
+    // garbage happened to be on the stack.
+    _getfield(L, kLuaGlobalsIndex, tableName);
+    if (!_toboolean(L, -1)) {
+        _settop(L, savedTop);
+        Logger::getInstance().error("LuaCall: registerNativeFunction: global table '{}' does not exist.", tableName);
+        return false;
+    }
+
+    // Stack: [table, key, closure] -- rawset(-3) assigns table[key] = closure
+    // and pops both, leaving just [table] behind.
+    _pushlstring(L, fieldName, std::strlen(fieldName));
+    _pushcclosure(L, cFunction, 0);
+    _rawset(L, -3);
+
+    _settop(L, savedTop);
+    return true;
+}
+
+const char* LuaCall::argToString(void* L, int idx) const
+{
+    return _tolstring ? _tolstring(L, idx, nullptr) : nullptr;
 }
 
 bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) const

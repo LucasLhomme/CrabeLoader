@@ -160,6 +160,64 @@ bool RenderHook::isMenuOpen() const
     return _menuOpen;
 }
 
+void RenderHook::requestWindowMode(WindowMode mode)
+{
+    _requestedWindowMode = mode;
+    _windowModeDirty = true;
+}
+
+void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
+{
+    if (!_windowModeDirty.exchange(false))
+        return;
+    if (!_hwnd)
+        return;
+
+    // The alt-tab "screen flips" symptom is exclusive fullscreen: the window
+    // style controls what the desktop compositor draws, but DXGI's exclusive
+    // fullscreen bypasses the compositor and owns the display mode directly.
+    // Changing GWL_STYLE alone leaves that ownership in place. Dropping out of
+    // it first is what actually makes this borderless-*windowed*.
+    BOOL wasFullscreen = FALSE;
+    swapChain->GetFullscreenState(&wasFullscreen, nullptr);
+    if (wasFullscreen)
+        swapChain->SetFullscreenState(FALSE, nullptr);
+
+    RECT targetRect;
+    if (_requestedWindowMode == WindowMode::BorderlessWindowed) {
+        HMONITOR monitor = MonitorFromWindow(_hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (!GetMonitorInfoW(monitor, &monitorInfo))
+            return;
+
+        targetRect = monitorInfo.rcMonitor;
+        SetWindowLongPtrW(_hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+        SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top,
+                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
+                    SWP_FRAMECHANGED | SWP_NOZORDER);
+    } else {
+        targetRect = _originalRect;
+        SetWindowLongPtrW(_hwnd, GWL_STYLE, _originalStyle);
+        SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top,
+                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
+                    SWP_FRAMECHANGED | SWP_NOZORDER);
+    }
+
+    // The window just changed size; the swap chain's back buffer did not.
+    // Without this the render stays clipped/stretched to its old dimensions.
+    // Every view onto the old back buffer must be released first, same
+    // constraint as hkResizeBuffers -- the next Present recreates it.
+    DXGI_SWAP_CHAIN_DESC desc{};
+    swapChain->GetDesc(&desc);
+    releaseRenderTarget();
+    swapChain->ResizeBuffers(0, targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
+                            DXGI_FORMAT_UNKNOWN, desc.Flags);
+
+    Logger::getInstance().info("RenderHook: window mode set to {}.",
+                                _requestedWindowMode.load() == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
+}
+
 RenderHook::t_Present RenderHook::originalPresent() const
 {
     return reinterpret_cast<t_Present>(_hookPresent.getOriginal());
@@ -199,6 +257,11 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     swapChain->GetDesc(&desc);
     _hwnd = desc.OutputWindow;
 
+    // Captured once, before anything ever changes it, so a later "windowed"
+    // request has something exact to restore rather than guessing a size.
+    _originalStyle = GetWindowLongPtrW(_hwnd, GWL_STYLE);
+    GetWindowRect(_hwnd, &_originalRect);
+
     ImGui_ImplWin32_Init(_hwnd);
     ImGui_ImplDX11_Init(_device, _context);
 
@@ -219,6 +282,8 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     self.ensureBackendInit(swapChain);
 
     if (self._backendInitialized) {
+        self.applyPendingWindowMode(swapChain);
+
         if (!self._renderTargetView)
             self.createRenderTarget(swapChain);
 

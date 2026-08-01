@@ -30,6 +30,12 @@ class Loader {
         void queueConsoleSnippet(const std::string& code);
         void drainPendingSnippets(void* L);
         void drainLuaOutput(void* L);
+        // Polls crabe_remote_cmd.txt (next to loader.log) for a new command,
+        // and queues it exactly as if it had been typed into the overlay
+        // console. Lets an external process (or a human editor) drive the
+        // console without needing the overlay open -- e.g. for scripted
+        // dev-time testing.
+        void drainRemoteCommandFile(void* L);
         void ensureRuntimeReady(void* L);
         void runTicks(void* L);
         bool isGameState(void* L) const;
@@ -62,6 +68,8 @@ class Loader {
         std::chrono::steady_clock::time_point _lastOutputDrain{};
         std::chrono::steady_clock::time_point _lastReadyProbe{};
         std::chrono::steady_clock::time_point _lastTick{};
+        std::chrono::steady_clock::time_point _lastRemoteCommandProbe{};
+        std::string _lastRemoteCommandContent;
         std::atomic<bool> _runtimeReady{false};
         bool _sawForeignState = false;
         std::unordered_set<void*> _initializedStates;

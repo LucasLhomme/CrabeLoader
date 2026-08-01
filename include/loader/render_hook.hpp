@@ -22,6 +22,14 @@
 // RenderHook owns every D3D11/Win32 hooking detail; Overlay only owns the
 // ImGui context and the UI content drawn each frame. This mirrors how LuaCall
 // owns Lua hook mechanics while Loader owns mod logic.
+// No native in the whole game exposes window/fullscreen state to Lua (see
+// docs/nativedb.md) -- this is a pure Win32 concern, hence it lives here
+// rather than as a Game.* wrapper.
+enum class WindowMode {
+    Windowed,
+    BorderlessWindowed,
+};
+
 class RenderHook {
     public:
         static RenderHook& get();
@@ -31,6 +39,13 @@ class RenderHook {
 
         void toggleMenu();
         bool isMenuOpen() const;
+
+        // Thread-safe: called from the Lua-owning thread (a registered native),
+        // not the render thread. Only records the request; hkPresent applies it
+        // on the next frame, since Win32 window calls belong on the thread that
+        // owns the window and touching D3D state off the render thread is asking
+        // for trouble.
+        void requestWindowMode(WindowMode mode);
 
     protected:
     private:
@@ -48,6 +63,7 @@ class RenderHook {
         void ensureBackendInit(IDXGISwapChain* swapChain);
         void releaseRenderTarget();
         void createRenderTarget(IDXGISwapChain* swapChain);
+        void applyPendingWindowMode(IDXGISwapChain* swapChain);
 
         static HRESULT __stdcall hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
         static HRESULT __stdcall hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
@@ -73,6 +89,15 @@ class RenderHook {
         WNDPROC _originalWndProc = nullptr;
         std::atomic<bool> _backendInitialized{false};
         std::atomic<bool> _menuOpen{false};
+
+        // The window's style/rect as the game created it, captured once so
+        // Game.SetWindowMode("windowed") can restore it exactly rather than
+        // guessing a size.
+        LONG_PTR _originalStyle = 0;
+        RECT _originalRect{};
+
+        std::atomic<bool> _windowModeDirty{false};
+        std::atomic<WindowMode> _requestedWindowMode{WindowMode::Windowed};
 };
 
 #endif /* !RENDER_HOOK_HPP_ */
