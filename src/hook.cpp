@@ -12,10 +12,8 @@
 #include "logger/logger.hpp"
 
 namespace {
-    // MH_Initialize/MH_Uninitialize are process-global and must each be called
-    // exactly once, but Hook instances are created and destroyed independently
-    // (LuaCall alone owns three). Reference-count them so the last Hook to be
-    // removed is the one that tears MinHook down.
+    // MH_Initialize/MH_Uninitialize are process-global; Hook instances are
+    // created/destroyed independently, so reference-count them.
     int g_refCount = 0;
     std::mutex g_refMutex;
 

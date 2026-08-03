@@ -6,6 +6,7 @@
 
 #include "loader/memory.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -83,10 +84,9 @@ namespace {
         return bytes;
     }
 
-    // ---- Minimal x86 instruction sizer, whitelist-based ----------------------
-    // Covers what a function prologue can contain, nothing more. Anything else --
-    // notably every relative call/jump -- returns 0, which makes prologueLength()
-    // refuse instead of producing a trampoline that jumps to the wrong place.
+    // Minimal x86 instruction sizer, whitelist-based: anything not covered
+    // (notably relative call/jump) returns 0, so prologueLength() refuses
+    // rather than building a trampoline that jumps to the wrong place.
 
     // Size of the ModRM byte plus its optional SIB and displacement.
     size_t modrmLength(const uint8_t* p)
@@ -146,7 +146,7 @@ namespace {
 
 } // namespace
 
-uintptr_t Memory::patternScan(const char* pattern, HMODULE module)
+uintptr_t Memory::patternScan(const char* pattern, HMODULE module, uintptr_t after)
 {
     ModuleRange mod = mainModule();
     if (module) mod.base = reinterpret_cast<uintptr_t>(module);
@@ -158,6 +158,10 @@ uintptr_t Memory::patternScan(const char* pattern, HMODULE module)
     uintptr_t found = 0;
 
     forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
+        // Same skip rule as findString: entirely behind the cursor means
+        // nothing to do here, partly behind means resume just past it.
+        if (after >= end) return false;
+        if (after >= start) start = after + 1;
         if (end - start < needle.size()) return false;
 
         auto* bytes = reinterpret_cast<const uint8_t*>(start);
@@ -194,6 +198,41 @@ bool Memory::isReadable(uintptr_t addr, size_t size)
     return addr + size <= end;
 }
 
+std::vector<uintptr_t> Memory::findPointers(uintptr_t value, size_t limit)
+{
+    std::vector<uintptr_t> found;
+    if (!value) return found;
+
+    SYSTEM_INFO info{};
+    GetSystemInfo(&info);
+
+    auto addr = reinterpret_cast<uintptr_t>(info.lpMinimumApplicationAddress);
+    auto maxAddr = reinterpret_cast<uintptr_t>(info.lpMaximumApplicationAddress);
+
+    while (addr < maxAddr && found.size() < limit) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) break;
+
+        auto start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+        uintptr_t end = start + mbi.RegionSize;
+
+        // MEM_PRIVATE only: the heap, where a live object's vtable pointer
+        // sits. Skipping MEM_IMAGE/MEM_MAPPED keeps this scan in milliseconds.
+        if (isReadableRegion(mbi) && mbi.Type == MEM_PRIVATE) {
+            for (uintptr_t p = start; p + sizeof(uintptr_t) <= end; p += sizeof(uintptr_t)) {
+                if (*reinterpret_cast<const uintptr_t*>(p) != value) continue;
+
+                found.push_back(p);
+                if (found.size() >= limit) break;
+            }
+        }
+
+        addr = end;
+    }
+
+    return found;
+}
+
 uintptr_t Memory::findString(const char* text, uintptr_t after)
 {
     ModuleRange mod = mainModule();
@@ -219,18 +258,18 @@ uintptr_t Memory::findString(const char* text, uintptr_t after)
     return found;
 }
 
-uintptr_t Memory::findRegisteredFunction(const char* funcName)
+std::vector<uintptr_t> Memory::findRegisteredFunctions(const char* funcName)
 {
-    ModuleRange mod = mainModule();
-    if (!mod.base) return 0;
+    std::vector<uintptr_t> found;
 
-    // A short name like "print" appears many times in the image, and only one
-    // of those copies is the one a registration table points at. Walk the
-    // occurrences until one of them is referenced by a { name, fn } pair.
+    ModuleRange mod = mainModule();
+    if (!mod.base) return found;
+
+    // A short name can be registered by more than one library ("type" by both
+    // base and io); collect every binding, since which comes first is not
+    // stable between runs.
     for (uintptr_t nameAddr = findString(funcName); nameAddr;
         nameAddr = findString(funcName, nameAddr)) {
-
-        uintptr_t found = 0;
 
         // Look for a pointer to that string: the pointer right after it in the
         // registration table is the C function bound to the name.
@@ -239,18 +278,22 @@ uintptr_t Memory::findRegisteredFunction(const char* funcName)
                 if (*reinterpret_cast<const uintptr_t*>(p) != nameAddr) continue;
 
                 uintptr_t fn = *reinterpret_cast<const uintptr_t*>(p + sizeof(uintptr_t));
-                if (fn > mod.base && fn < mod.base + mod.size && isReadable(fn, 16)) {
-                    found = fn;
-                    return true;
-                }
-            }
-            return false;
-        });
+                if (fn <= mod.base || fn >= mod.base + mod.size || !isReadable(fn, 16)) continue;
 
-        if (found) return found;
+                if (std::find(found.begin(), found.end(), fn) == found.end())
+                    found.push_back(fn);
+            }
+            return false; // every region, not just the first with a hit
+        });
     }
 
-    return 0;
+    return found;
+}
+
+uintptr_t Memory::findRegisteredFunction(const char* funcName)
+{
+    std::vector<uintptr_t> candidates = findRegisteredFunctions(funcName);
+    return candidates.empty() ? 0 : candidates.front();
 }
 
 uintptr_t Memory::resolveCall(uintptr_t addr)
@@ -262,6 +305,39 @@ uintptr_t Memory::resolveCall(uintptr_t addr)
     return addr + 5 + static_cast<uintptr_t>(rel);
 }
 
+std::vector<uintptr_t> Memory::findCallSites(uintptr_t target, size_t limit)
+{
+    std::vector<uintptr_t> sites;
+
+    ModuleRange mod = mainModule();
+    if (!mod.base || !target) return sites;
+
+    forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
+        if (end - start < 5) return false;
+
+        const auto* bytes = reinterpret_cast<const uint8_t*>(start);
+        size_t limitIndex = (end - start) - 5;
+
+        for (size_t i = 0; i <= limitIndex; ++i) {
+            if (bytes[i] != 0xE8) continue;
+
+            // Resolve in place rather than via resolveCall(): that would
+            // re-run VirtualQuery for every one of the millions of stray E8
+            // bytes in the image, which turns this scan into minutes.
+            auto rel = *reinterpret_cast<const int32_t*>(start + i + 1);
+            uintptr_t callee = start + i + 5 + static_cast<uintptr_t>(rel);
+
+            if (callee != target) continue;
+
+            sites.push_back(start + i);
+            if (sites.size() >= limit) return true;
+        }
+        return false;
+    });
+
+    return sites;
+}
+
 std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan)
 {
     std::vector<uintptr_t> targets;
@@ -271,12 +347,9 @@ std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan
 
     auto* code = reinterpret_cast<const uint8_t*>(functionStart);
 
-    // Plain byte walk rather than a full decoder. An E8 byte also occurs inside
-    // other instructions -- luaB_print holds `8B E8` (mov ebp, eax) at +0x19 --
-    // so a candidate only counts when its target lands inside the image.
-    // Merely being readable is not enough: that bogus one wraps around to an
-    // address that happens to be mapped, and accepting it both shifts every
-    // later index and consumes the 5 bytes hiding the real call at +0x1B.
+    // Plain byte walk, not a full decoder: an E8 byte also occurs inside other
+    // instructions, so a candidate only counts when its target lands inside
+    // the image -- merely readable isn't enough, that shifts every later index.
     for (size_t i = 0; i + 5 <= maxScan; ) {
         if (code[i] != 0xE8) {
             ++i;

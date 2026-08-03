@@ -18,20 +18,17 @@
 #include "loader/lua_runtime.hpp"
 #include "loader/luacall.hpp"
 #include "loader/memory.hpp"
+#include "loader/avatar_relay_hook.hpp"
+#include "loader/input_hook.hpp"
+#include "loader/message_hook.hpp"
 #include "loader/render_hook.hpp"
 #include "logger/logger.hpp"
 
 namespace {
 
-    // The game exports no Lua symbol, and byte signatures proved unreliable on
-    // this build. What does work is the standard library's own registration
-    // table: each stdlib name is bound to a small wrapper, which delegates to the
-    // C API function we actually want. So: find the wrapper by name, then follow
-    // the n-th `call` inside it.
-    //
-    // Call indexes were read off the shipped binary; resolveLuaFunction() logs the
-    // resulting address and its first bytes so a mismatch after a game update is
-    // visible in the log instead of crashing the process.
+    // The game exports no Lua symbol; each stdlib name is bound to a small
+    // wrapper that delegates to the real C API function, so the real address
+    // is the n-th `call` inside that wrapper.
     struct LuaSymbol {
         const char* name;        // what we are resolving, for the log
         const char* stdlibName;  // Lua stdlib entry holding the wrapper
@@ -40,19 +37,9 @@ namespace {
         size_t scanBytes = 256;  // how far into the wrapper to look
     };
 
-    // Call indexes AND the RVA each one must land on were read off the shipped
-    // binary. Hooking a wrong address corrupts the host process on the next
-    // call, so a mismatch refuses instead of patching: the index is a hint, the
-    // RVA is the contract.
-    //
-    // The indexes come from cross-referencing a dump of every stdlib wrapper
-    //
-    // Two of the wrappers are not the obvious ones:
-    //  - "wrap" is coroutine.wrap; luaB_cowrap is `cocreate; pushcclosure`.
-    //  - "type" resolves to io.type, not luaB_type -- both libraries register
-    //    that name, and io's table is found first. Its call sequence matches
-    //    io_type (checkany, touserdata, getfield, getmetatable, rawequal, then
-    //    the pushliteral branches), which is what makes those indexes valid.
+    // Index is a hint, RVA is the contract: a mismatch refuses rather than
+    // hooking a wrong address. "type" resolves to io.type (found before
+    // luaB_type); "wrap" is coroutine.wrap.
     constexpr LuaSymbol kLoadfile     { "luaL_loadfile",     "loadfile",   2,  0xF0EBF0 };
     constexpr LuaSymbol kLoadbuffer   { "luaL_loadbuffer",   "loadstring", 3,  0xF0EDE0 };
     constexpr LuaSymbol kPcall        { "lua_pcall",         "xpcall",     4,  0xF0DF60 };
@@ -104,43 +91,64 @@ namespace {
     {
         Logger& logger = Logger::getInstance();
 
-        uintptr_t wrapper = Memory::findRegisteredFunction(symbol.stdlibName);
-        if (!wrapper) {
+        // Some stdlib names are registered more than once ("type" is both
+        // luaB_type and io_type); try each binding and keep the one whose
+        // call #N lands on the contracted RVA.
+        std::vector<uintptr_t> wrappers = Memory::findRegisteredFunctions(symbol.stdlibName);
+        if (wrappers.empty()) {
             logger.error("Loader: {}: no '{}' entry in the Lua stdlib table.",
                         symbol.name, symbol.stdlibName);
             return 0;
         }
 
-        std::vector<uintptr_t> calls = Memory::findCalls(wrapper, symbol.scanBytes);
-
-        auto logCandidates = [&]() {
-            for (size_t i = 0; i < calls.size(); ++i) {
-                logger.debug("Loader: {}: '{}' call #{} -> RVA 0x{:X}",
-                            symbol.name, symbol.stdlibName, i + 1, calls[i] - base);
-            }
-        };
-
         auto index = static_cast<size_t>(symbol.callIndex);
-        if (symbol.callIndex <= 0 || index > calls.size()) {
-            logger.error("Loader: {}: call #{} not found in the '{}' wrapper (0x{:X}, {} calls).",
-                        symbol.name, symbol.callIndex, symbol.stdlibName, wrapper, calls.size());
-            logCandidates();
+        if (symbol.callIndex <= 0) {
+            logger.error("Loader: {}: invalid call index {}.", symbol.name, symbol.callIndex);
             return 0;
         }
 
-        uintptr_t addr = calls[index - 1];
-        uintptr_t rva = addr - base;
+        uintptr_t fallback = 0; // best guess when the symbol carries no expected RVA
 
-        if (symbol.expectedRva && rva != symbol.expectedRva) {
-            logger.error("Loader: {}: call #{} of '{}' resolved to RVA 0x{:X}, expected 0x{:X}; refusing.",
-                        symbol.name, symbol.callIndex, symbol.stdlibName, rva, symbol.expectedRva);
-            logCandidates();
-            return 0;
+        for (uintptr_t wrapper : wrappers) {
+            std::vector<uintptr_t> calls = Memory::findCalls(wrapper, symbol.scanBytes);
+            if (index > calls.size()) continue;
+
+            uintptr_t addr = calls[index - 1];
+            uintptr_t rva = addr - base;
+
+            if (!symbol.expectedRva) {
+                if (!fallback) fallback = addr;
+                continue;
+            }
+            if (rva != symbol.expectedRva) continue;
+
+            logger.debug("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
+                        symbol.name, addr, rva, firstBytes(addr, 8));
+            return addr;
         }
 
-        logger.debug("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
-                    symbol.name, addr, rva, firstBytes(addr, 8));
-        return addr;
+        if (!symbol.expectedRva && fallback) {
+            logger.debug("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}] (unverified: no expected RVA)",
+                        symbol.name, fallback, fallback - base, firstBytes(fallback, 8));
+            return fallback;
+        }
+
+        // Nothing matched: dump what each candidate did contain, since that is
+        // exactly what a game update would change.
+        logger.error("Loader: {}: no '{}' binding ({} candidate(s)) whose call #{} lands on RVA 0x{:X}; refusing.",
+                    symbol.name, symbol.stdlibName, wrappers.size(), symbol.callIndex, symbol.expectedRva);
+
+        for (uintptr_t wrapper : wrappers) {
+            std::vector<uintptr_t> calls = Memory::findCalls(wrapper, symbol.scanBytes);
+            logger.debug("Loader: {}: candidate '{}' @ 0x{:X}, {} call(s)",
+                        symbol.name, symbol.stdlibName, wrapper, calls.size());
+
+            for (size_t i = 0; i < calls.size(); ++i) {
+                logger.debug("Loader: {}:   call #{} -> RVA 0x{:X}",
+                            symbol.name, i + 1, calls[i] - base);
+            }
+        }
+        return 0;
     }
 
     bool isExtendedKey(int virtualKey)
@@ -199,10 +207,8 @@ void Loader::onLuaState(void *L)
     _modsLoaded = true;
     Logger::getInstance().debug("Loader: Lua state INJECTED.");
 
-    // The API and the mods are NOT loaded here. This runs on the game's very
-    // first loadbuffer, before luaopen_base has filled _G: `type`, `rawget`
-    // and the rest are still nil, so anything injected now fails. Loading is
-    // deferred to ensureRuntimeReady(), retried from the hooked pcall.
+    // API/mods NOT loaded here: this fires before luaopen_base fills _G, so
+    // anything injected now would fail. Deferred to ensureRuntimeReady().
 }
 
 bool Loader::isInjected()
@@ -296,10 +302,8 @@ void Loader::queueConsoleSnippet(const std::string& rawInput)
 
     Logger::getInstance().info("> {}", input);
 
-    // `=expr` prints a value, as in the standalone Lua REPL. Going through the
-    // game's own tostring is what makes nil, booleans and tables printable:
-    // lua_tolstring alone hands back NULL for anything that is not already a
-    // string or a number, which would show as no output at all.
+    // `=expr` prints a value, REPL-style, via the game's own tostring --
+    // lua_tolstring alone returns NULL for anything not already a string/number.
     if (input.front() == '=')
         input = "return tostring(" + input.substr(1) + ")";
 
@@ -330,12 +334,16 @@ void Loader::drainRemoteCommandFile(void* L)
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
 
-    // Compared before trimming/transforming so a byte-identical rewrite of
-    // the same command (e.g. the caller re-touching the file) does not
-    // re-queue it -- only a genuinely new command should run again.
-    if (content == _lastRemoteCommandContent)
+    // Consume before running: a crashing command left in place would boot-loop
+    // the game (relaunch, find the same command, die again) since the file
+    // outlives the process but "already seen this one" does not.
+    std::error_code removeError;
+    std::filesystem::remove(path, removeError);
+    if (removeError) {
+        Logger::getInstance().warning("Loader: could not consume {} ({}); skipping it to avoid a crash loop.",
+            kRemoteCommandFileName, removeError.message());
         return;
-    _lastRemoteCommandContent = content;
+    }
 
     if (content.find_first_not_of(" \t\r\n") == std::string::npos)
         return; // cleared/empty: treat as "no command", not a blank submission
@@ -380,10 +388,8 @@ void Loader::drainPendingSnippets(void* L)
         if (!ok) {
             Logger::getInstance().error("! {}", result);
         } else {
-            // A success with an empty string is a real, distinct outcome (a
-            // native returning "" rather than nil) -- silently printing
-            // nothing made it indistinguishable from the command not having
-            // run at all.
+            // Print explicitly for an empty string, or it's indistinguishable
+            // from the command not having run at all.
             Logger::getInstance().info("= {}", result.empty() ? "(empty string)" : result);
         }
     }
@@ -540,12 +546,25 @@ bool Loader::initialize()
         Logger::getInstance().warning("Loader: failed to initialize the render hook (overlay disabled).");
     }
 
+    // Purely diagnostic, and optional: it answers "which controller slots does
+    // the game actually poll", which nothing else can (the per-controller
+    // objects are heap-allocated, so the module scanner cannot count them).
+    InputHook::get().initialize();
+    MessageHook::get().initialize();
+
+    // Installed disarmed, permanently -- see avatar_relay_hook.hpp. Only
+    // acts when Crabe._armAvatarRelay is called from Lua (splitscreen mod).
+    AvatarRelayHook::get().initialize();
+
     std::thread(&Loader::inputLoop, this).detach();
     return true;
 }
 
 void Loader::uninitialize()
 {
+    InputHook::get().uninitialize();
+    MessageHook::get().uninitialize();
+    AvatarRelayHook::get().uninitialize();
     RenderHook::get().uninitialize();
     LuaCall::get().uninitialize();
 }

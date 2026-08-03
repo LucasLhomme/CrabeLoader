@@ -1,0 +1,16 @@
+{
+  "ignore": [
+    "docs",
+    "tools",
+    "build",
+    "Release",
+    "minhook",
+    "imgui"
+  ],
+  "rules": {
+    "disable": []
+  },
+  "thresholds": {
+    "maxFileLines": 500
+  }
+}

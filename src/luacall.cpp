@@ -49,16 +49,15 @@ bool LuaCall::initialize(const LuaApiAddresses& addresses)
     anyInstalled |= installOne(_hookPcall, addresses.pcall,
                             reinterpret_cast<void*>(&LuaCall::hkPcall), "lua_pcall");
 
-    // Called, never hooked: this is how the loader reads values back out of the
-    // Lua stack, and how a future native API would push its own. Keeping the
-    // whole set together means an unresolved one degrades a feature rather than
-    // breaking the hooks, so it is only ever a warning.
+    // Called, never hooked -- reads/pushes Lua stack values. An unresolved
+    // one degrades a feature rather than breaking the hooks.
     _api = addresses;
     _getfield = reinterpret_cast<t_lua_getfield>(addresses.getfield);
     _tolstring = reinterpret_cast<t_lua_tolstring>(addresses.tolstring);
     _settop = reinterpret_cast<t_lua_settop>(addresses.settop);
     _gettop = reinterpret_cast<t_lua_gettop>(addresses.gettop);
     _pushnumber = reinterpret_cast<t_lua_pushnumber>(addresses.pushnumber);
+    _tonumber = reinterpret_cast<t_lua_tonumber>(addresses.tonumber);
     _toboolean = reinterpret_cast<t_lua_toboolean>(addresses.toboolean);
     _pushlstring = reinterpret_cast<t_lua_pushlstring>(addresses.pushlstring);
     _pushcclosure = reinterpret_cast<t_lua_pushcclosure>(addresses.pushcclosure);
@@ -119,21 +118,17 @@ int __cdecl LuaCall::hkLoadfile(void* L, const char* filename)
 int __cdecl LuaCall::hkLoadbuffer(void* L, const char* buff, size_t size, const char* name)
 {
     Logger::getInstance().debug("Lua: loadbuffer {} ({} bytes)", name ? name : "<null>", size);
-    // This game ships its Lua as precompiled bytecode buffers: it never calls
-    // loadfile, so this is the real (and only) place a valid, fully-set-up
-    // Lua state is observed. onLuaState() is a no-op after the first call, so
-    // the extra check here is cheap even though loadbuffer fires constantly.
+    // The game ships precompiled bytecode and never calls loadfile, so this
+    // is the only place a valid Lua state is observed. No-op after the first.
     Loader::get().onLuaState(L);
     return LuaCall::get().originalLoadbuffer()(L, buff, size, name);
 }
 
 int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
 {
-    // Called thousands of times per second: no logging, no allocation on the
-    // path where nothing is queued (Loader::drainPendingKeybindCalls returns
-    // immediately in that case). This is also the only place it is safe to
-    // run keybind-triggered Lua calls from: it's the game's own thread
-    // already holding this L, unlike the input-polling thread that queued them.
+    // Called thousands of times/sec: no logging, no allocation when nothing
+    // is queued. Also the only safe place to run queued keybind calls from --
+    // it's the game's own thread holding L, not the input-polling thread.
     Loader& loader = Loader::get();
     loader.ensureRuntimeReady(L);
     if (loader.isGameState(L)) {
@@ -157,12 +152,8 @@ bool LuaCall::runFile(void* L, const char* path) const
         return false;
     }
 
-    // This runs while the game's own lua_pcall is on the stack, borrowing its
-    // state. That pcall finds the function it is about to call at
-    // `top - (nargs + 1)`, so the stack has to be handed back at exactly the
-    // height it was found at -- LUA_MULTRET leaves an unknown number of
-    // results behind, and even one stray value makes the game call whatever
-    // sits in the wrong slot.
+    // Borrows the game's own pending lua_pcall's stack; must be handed back
+    // at exactly the height it was found at, or the game calls the wrong slot.
     int savedTop = _gettop ? _gettop(L) : 0;
 
     constexpr int kLuaOk = 0;
@@ -258,10 +249,32 @@ bool LuaCall::callTick(void* L, double dt) const
     return status == kLuaOk;
 }
 
-bool LuaCall::registerNativeFunction(void* L, const char* tableName, const char* fieldName, t_lua_cfunction cFunction) const
+bool LuaCall::registerNativeFunction(void* L, const char* tableName, const char* fieldName,
+                                      t_lua_cfunction cFunction) const
 {
-    if (!L || !cFunction || !_getfield || !_toboolean || !_pushlstring || !_pushcclosure || !_rawset || !_gettop || !_settop)
+    // Name what is missing rather than just refusing: every one of these is a
+    // separately-resolved address, so a silent false here means re-deriving by
+    // hand which of nine things failed.
+    struct Requirement { const char* name; const void* value; };
+    const Requirement required[] = {
+        { "L",                L },
+        { "cFunction",        reinterpret_cast<const void*>(cFunction) },
+        { "lua_getfield",     reinterpret_cast<const void*>(_getfield) },
+        { "lua_toboolean",    reinterpret_cast<const void*>(_toboolean) },
+        { "lua_pushlstring",  reinterpret_cast<const void*>(_pushlstring) },
+        { "lua_pushcclosure", reinterpret_cast<const void*>(_pushcclosure) },
+        { "lua_rawset",       reinterpret_cast<const void*>(_rawset) },
+        { "lua_gettop",       reinterpret_cast<const void*>(_gettop) },
+        { "lua_settop",       reinterpret_cast<const void*>(_settop) },
+    };
+
+    for (const auto& requirement : required) {
+        if (requirement.value) continue;
+
+        Logger::getInstance().error("LuaCall: registerNativeFunction({}.{}): {} is unavailable.",
+                                    tableName, fieldName, requirement.name);
         return false;
+    }
 
     constexpr int kLuaGlobalsIndex = -10002; // LUA_GLOBALSINDEX in 5.1
     int savedTop = _gettop(L);
@@ -289,6 +302,30 @@ bool LuaCall::registerNativeFunction(void* L, const char* tableName, const char*
 const char* LuaCall::argToString(void* L, int idx) const
 {
     return _tolstring ? _tolstring(L, idx, nullptr) : nullptr;
+}
+
+double LuaCall::argToNumber(void* L, int idx, double fallback) const
+{
+    if (!_tonumber) return fallback;
+
+    // lua_tonumber returns 0 for a non-number too; callers that care pass a
+    // fallback they can recognise (e.g. -1 for an index).
+    return _tonumber(L, idx);
+}
+
+void LuaCall::pushString(void* L, const std::string& value) const
+{
+    if (_pushlstring) _pushlstring(L, value.c_str(), value.size());
+}
+
+void LuaCall::pushNumber(void* L, double value) const
+{
+    if (_pushnumber) _pushnumber(L, value);
+}
+
+bool LuaCall::hasReturnSupport() const
+{
+    return _pushlstring != nullptr && _pushnumber != nullptr;
 }
 
 bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) const

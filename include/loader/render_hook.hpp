@@ -15,16 +15,9 @@
 #include "overlay/overlay.hpp"
 #include "loader/hook.hpp"
 
-// Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's real D3D11
-// device/context/HWND -- there is no other way to get them from inside an
-// injected DLL -- and drives the per-frame ImGui render sequence from there.
-//
-// RenderHook owns every D3D11/Win32 hooking detail; Overlay only owns the
-// ImGui context and the UI content drawn each frame. This mirrors how LuaCall
-// owns Lua hook mechanics while Loader owns mod logic.
-// No native in the whole game exposes window/fullscreen state to Lua (see
-// docs/nativedb.md) -- this is a pure Win32 concern, hence it lives here
-// rather than as a Game.* wrapper.
+// Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's D3D11
+// device/context/HWND from inside an injected DLL, and drives the per-frame
+// ImGui render sequence from there. Owns all D3D11/Win32 hooking detail.
 enum class WindowMode {
     Windowed,
     BorderlessWindowed,
@@ -40,11 +33,8 @@ class RenderHook {
         void toggleMenu();
         bool isMenuOpen() const;
 
-        // Thread-safe: called from the Lua-owning thread (a registered native),
-        // not the render thread. Only records the request; hkPresent applies it
-        // on the next frame, since Win32 window calls belong on the thread that
-        // owns the window and touching D3D state off the render thread is asking
-        // for trouble.
+        // Thread-safe; only records the request. hkPresent applies it next
+        // frame, since window calls must happen on the thread that owns it.
         void requestWindowMode(WindowMode mode);
 
     protected:
@@ -54,10 +44,8 @@ class RenderHook {
         RenderHook(const RenderHook&) = delete;
         RenderHook& operator=(const RenderHook&) = delete;
 
-        // Resolves Present (vtable slot 8) and ResizeBuffers (slot 13) by
-        // standing up a throwaway device+swapchain on a hidden window and
-        // reading its vtable: the returned pointers point into the graphics
-        // driver, so they stay valid after the dummy objects are released.
+        // Resolves Present/ResizeBuffers via a throwaway device+swapchain's
+        // vtable; the pointers stay valid after the dummy objects are freed.
         static bool resolveSwapChainFunctions(uintptr_t& outPresent, uintptr_t& outResizeBuffers);
 
         void ensureBackendInit(IDXGISwapChain* swapChain);
