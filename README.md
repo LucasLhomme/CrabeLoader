@@ -8,7 +8,7 @@ memory through anything but that API.
 CrabeLoader itself ships no gameplay mods — it's the platform. See
 [docs/modding.md](docs/modding.md) to write one, and
 [docs/nativedb.md](docs/nativedb.md) for the game's native function catalog.
-[CrabeLoader-Splitscreen](https://github.com/LucasLhomme/CrabeLoader-Splitscreen) (not working for now)
+[DisneyInfinity-SplitScreenMods](https://github.com/LucasLhomme/DisneyInfinity-SplitScreenMods) (not working for now)
 is an example real mod built on top of it.
 
 ## Building
