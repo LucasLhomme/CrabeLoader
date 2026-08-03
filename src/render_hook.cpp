@@ -173,11 +173,9 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
     if (!_hwnd)
         return;
 
-    // The alt-tab "screen flips" symptom is exclusive fullscreen: the window
-    // style controls what the desktop compositor draws, but DXGI's exclusive
-    // fullscreen bypasses the compositor and owns the display mode directly.
-    // Changing GWL_STYLE alone leaves that ownership in place. Dropping out of
-    // it first is what actually makes this borderless-*windowed*.
+    // Exclusive fullscreen bypasses the compositor and owns the display mode
+    // directly; drop out of it first or GWL_STYLE alone won't make this
+    // borderless-*windowed*.
     BOOL wasFullscreen = FALSE;
     swapChain->GetFullscreenState(&wasFullscreen, nullptr);
     if (wasFullscreen)
@@ -204,18 +202,16 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
                     SWP_FRAMECHANGED | SWP_NOZORDER);
     }
 
-    // The window just changed size; the swap chain's back buffer did not.
-    // Without this the render stays clipped/stretched to its old dimensions.
-    // Every view onto the old back buffer must be released first, same
-    // constraint as hkResizeBuffers -- the next Present recreates it.
+    // The swap chain's back buffer didn't resize with the window; release
+    // every view onto it first (same constraint as hkResizeBuffers).
     DXGI_SWAP_CHAIN_DESC desc{};
     swapChain->GetDesc(&desc);
     releaseRenderTarget();
     swapChain->ResizeBuffers(0, targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
                             DXGI_FORMAT_UNKNOWN, desc.Flags);
 
-    Logger::getInstance().info("RenderHook: window mode set to {}.",
-                                _requestedWindowMode.load() == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
+    bool isBorderless = _requestedWindowMode.load() == WindowMode::BorderlessWindowed;
+    Logger::getInstance().info("RenderHook: window mode set to {}.", isBorderless ? "borderless" : "windowed");
 }
 
 RenderHook::t_Present RenderHook::originalPresent() const

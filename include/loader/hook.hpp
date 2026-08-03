@@ -9,16 +9,9 @@
 
 #include <windows.h>
 
-// A single inline detour hook, backed by MinHook.
-//
-// install() replaces `src` with a detour to `dst` and keeps the MinHook-built
-// trampoline that still runs the original stolen instructions.
-// getOriginal() returns that trampoline, so a detour can call through to the
-// real function.
-//
-// MinHook is reference-counted process-wide (MH_Initialize/MH_Uninitialize):
-// each installed Hook holds one reference, so unrelated Hook instances can be
-// created and destroyed independently without tearing down hooks still in use.
+// A single inline detour hook, backed by MinHook. install() redirects `src`
+// to `dst`; getOriginal() returns the trampoline for calling through to the
+// real function. MinHook itself is reference-counted process-wide.
 class Hook {
     public:
         Hook() = default;

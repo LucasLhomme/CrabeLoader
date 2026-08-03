@@ -25,15 +25,9 @@ function Game.GetHostPlayerID()
     return Players_GetHostPlayerID()
 end
 
--- Closes the "no death event" gap documented in docs/nativedb.md: the engine
--- never tells Lua an entity died, so this is a direct native check, not an
--- event. Game.onDeath (20_hooks.lua) builds the actual edge-triggered
--- notification on top of it.
---
--- Takes 2 arguments (confirmed in-game: "bad argument #2 ... number expected,
--- got no value" with only one). The decompiled call site (revive.lua) has
--- "playerNum" next to it but no second name; characterIndex is a guess and
--- still needs in-game confirmation -- see docs/nativedb.md.
+-- Direct native check, not an event -- the engine never tells Lua an entity
+-- died. Game.onDeath (20_hooks.lua) builds edge-triggered notification on
+-- top of it. characterIndex is an unconfirmed guess, see docs/nativedb.md.
 function Game.IsCharacterDead(playerId, characterIndex)
     return Players_IsCharacterDead(playerId, characterIndex or 0)
 end
@@ -83,12 +77,8 @@ function Game.AddToInventory(id, amount)
     error("Game.AddToInventory: item '" .. tostring(id) .. "' has an unknown kind", 2)
 end
 
--- Unlocks a catalog entry (menus/Toy Box list) rather than spawning it, unlike
--- Game.AddToInventory's "spawn" kind. Confirmed in-game that arg #2 is a
--- NUMBER, not the item's string name as first guessed ("bad argument #2 ...
--- number expected, got string") -- catalog entries are referenced by a
--- numeric id, still unknown. Still needs a real id to confirm the call itself
--- works; the pcall stays until then. See docs/nativedb.md.
+-- Unlocks a catalog entry (menus/Toy Box) rather than spawning it. itemId is
+-- a numeric catalog id, unconfirmed -- see docs/nativedb.md.
 function Game.UnlockItem(itemId, playerId)
     playerId = playerId or Players_GetHostPlayerID()
     local ok, err = pcall(Catalog_UnlockCatalogItem, playerId, itemId)

@@ -15,13 +15,8 @@
 #include "loader/hook.hpp"
 
 // Resolved addresses of the Lua C API. loadfile/loadbuffer/pcall are hooked
-// (to observe the game); everything else is only ever called.
-//
-// Several of these are unused so far. They are resolved anyway: the cost is one
-// scan at startup, whereas recovering an address afterwards means redoing the
-// whole wrapper-dump exercise. The set below is exactly what a native
-// (C++-side) Game API needs -- read the arguments, push the result, register
-// the function in a table.
+// (to observe the game); everything else is only ever called. Some fields
+// are unused so far but resolved anyway -- cheap now, expensive to redo.
 struct LuaApiAddresses {
     // Chunk loading and calling.
     uintptr_t loadfile = 0;
@@ -75,10 +70,8 @@ class LuaCall {
 
         bool runGlobalIfExists(void* L, const std::string& functionName) const;
 
-        // Compiles and runs `code` in `L`, writing the chunk's first return
-        // value or the compile/runtime error message into `out`. Reading
-        // either back requires lua_tolstring, so this returns false with an
-        // empty `out` when that address could not be resolved.
+        // Compiles and runs `code`, writing its first return value or the
+        // error message into `out`. False if lua_tolstring never resolved.
         bool runSnippet(void* L, const std::string& code, std::string& out) const;
         bool callTick(void* L, double dt) const;
 
@@ -86,21 +79,25 @@ class LuaCall {
         // callable from Lua via lua_pushcclosure.
         typedef int(__cdecl* t_lua_cfunction)(void* L);
 
-        // Registers `cFunction` as `<tableName>.<fieldName>` in `L`, e.g.
-        // ("Crabe", "SetWindowMode", &nativeFn) for Crabe.SetWindowMode. This is
-        // a real C++ function the Lua VM calls directly -- not a Lua wrapper
-        // around one of the game's own natives, unlike everything in api/*.lua.
-        // `tableName` must already exist as a global table (api/*.lua creates
-        // Crabe/Game on load; this runs after that). Returns false if the table
-        // is missing or any of the required addresses failed to resolve.
-        bool registerNativeFunction(void* L, const char* tableName, const char* fieldName, t_lua_cfunction cFunction) const;
+        // Registers `cFunction` as `<tableName>.<fieldName>`, e.g. Crabe.SetWindowMode.
+        // `tableName` must already exist as a global table. False if missing
+        // or a required address failed to resolve.
+        bool registerNativeFunction(void* L, const char* tableName, const char* fieldName,
+                                     t_lua_cfunction cFunction) const;
 
-        // Reads argument `idx` as a string, meant to be called from inside a
-        // registered t_lua_cfunction reading its own arguments. Unlike
-        // popString, this does not pop or otherwise touch the stack height --
-        // a C function's arguments are read in place, and the VM reclaims the
-        // whole frame once it returns.
+        // Reads argument `idx` as a string/number from inside a registered
+        // t_lua_cfunction; does not touch the stack height.
         const char* argToString(void* L, int idx) const;
+
+        // `fallback` is returned on unresolved address or non-number, since
+        // lua_tonumber can't distinguish a real 0 from a failure.
+        double argToNumber(void* L, int idx, double fallback = 0.0) const;
+
+        // Pushes a return value; the caller must then return the pushed
+        // count. Check hasReturnSupport() first or the count goes wrong.
+        void pushString(void* L, const std::string& value) const;
+        void pushNumber(void* L, double value) const;
+        bool hasReturnSupport() const;
 
     protected:
     private:
@@ -117,6 +114,7 @@ class LuaCall {
         typedef void(__cdecl* t_lua_settop)(void* L, int idx);
         typedef int(__cdecl* t_lua_gettop)(void* L);
         typedef void(__cdecl* t_lua_pushnumber)(void* L, double n);
+        typedef double(__cdecl* t_lua_tonumber)(void* L, int idx);
         typedef int(__cdecl* t_lua_toboolean)(void* L, int idx);
         typedef void(__cdecl* t_lua_pushlstring)(void* L, const char* s, size_t len);
         typedef void(__cdecl* t_lua_pushcclosure)(void* L, t_lua_cfunction fn, int n);
@@ -142,6 +140,7 @@ class LuaCall {
         t_lua_settop _settop = nullptr;
         t_lua_gettop _gettop = nullptr;
         t_lua_pushnumber _pushnumber = nullptr;
+        t_lua_tonumber _tonumber = nullptr;
         t_lua_toboolean _toboolean = nullptr;
         t_lua_pushlstring _pushlstring = nullptr;
         t_lua_pushcclosure _pushcclosure = nullptr;

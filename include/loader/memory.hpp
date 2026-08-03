@@ -12,55 +12,49 @@
 #include <vector>
 #include <windows.h>
 
-// Read-only introspection of the host process' main module.
-//
-// The game exports no Lua symbol and ships no debug info, so every address the
-// loader needs is resolved at runtime. Byte signatures proved unreliable on this
-// build; the working method is findRegisteredFunction() + findNthCall(), which
-// follows the game's own Lua standard-library registration table.
+// Read-only introspection of the host process' main module. The game ships
+// no debug info, so every address is resolved at runtime instead.
 namespace Memory {
-    // Scans the mapped image for an IDA-style byte pattern
-    // (e.g. "55 8B EC ?? 8B 45 10", "?" or "??" being a wildcard byte).
-    // Returns the absolute address of the first match, or 0 if not found.
-    uintptr_t patternScan(const char* pattern, HMODULE module = nullptr);
+    // IDA-style byte pattern scan (e.g. "55 8B EC ?? 8B 45 10"). `after`
+    // walks past a previous match to find the next one.
+    uintptr_t patternScan(const char* pattern, HMODULE module = nullptr, uintptr_t after = 0);
 
     // True if [addr, addr + size) is committed and readable.
     bool isReadable(uintptr_t addr, size_t size);
 
-    // Address of the first occurrence of `text` (its terminating NUL included)
-    // in the module's readable memory strictly above `after`, or 0 if there is
-    // none. A short name like "print" occurs many times; `after` is how
-    // findRegisteredFunction() walks past the ones no registration table
-    // points at.
+    // Addresses holding a pointer equal to `value`, across the whole process
+    // (not just the image) -- how heap object instances are found.
+    std::vector<uintptr_t> findPointers(uintptr_t value, size_t limit = 32);
+
+    // First occurrence of `text` strictly above `after`, or 0. `after` lets
+    // a caller walk past occurrences no registration table points at.
     uintptr_t findString(const char* text, uintptr_t after = 0);
 
-    // Lua registers its standard library as an array of
-    // { const char* name; lua_CFunction fn; } pairs. This locates the entry whose
-    // name is `funcName` and returns its function pointer -- i.e. the *wrapper*
-    // the interpreter calls (luaB_loadfile for "loadfile", ...), not the
-    // underlying C API function. Returns 0 if not found.
+    // Address of the Lua stdlib wrapper registered under `funcName` (the
+    // wrapper, not the underlying C API function). Ambiguous names collide;
+    // prefer findRegisteredFunctions() when more than one may exist.
     uintptr_t findRegisteredFunction(const char* funcName);
 
-    // Target of the `call rel32` (opcode E8) at `addr`, or 0 if there is none.
+    // Every distinct function pointer registered under `funcName`.
+    std::vector<uintptr_t> findRegisteredFunctions(const char* funcName);
+
+    // Target of the `call rel32` (opcode E8) at `addr`, or 0 if none.
     uintptr_t resolveCall(uintptr_t addr);
 
-    // Targets of every `call rel32` in the first `maxScan` bytes of the function
-    // at `functionStart`, in order. A candidate only counts when its target
-    // lands inside readable memory: an E8 byte also occurs inside other
-    // instructions (`8B E8` = mov ebp, eax), and counting those shifts every
-    // later index.
+    // Every `call rel32` in the module targeting `target` -- the reverse of
+    // resolveCall, found by walking the whole image (no other way).
+    std::vector<uintptr_t> findCallSites(uintptr_t target, size_t limit = 32);
+
+    // Targets of every `call rel32` in the first `maxScan` bytes at
+    // `functionStart`, in order. Only counts calls landing in readable memory.
     std::vector<uintptr_t> findCalls(uintptr_t functionStart, size_t maxScan = 256);
 
-    // Target of the `n`-th `call rel32` found in the first `maxScan` bytes of the
-    // function starting at `functionStart`. This is how a wrapper is turned into
-    // the C API function it delegates to. `n` is 1-based. Returns 0 on failure.
+    // Target of the `n`-th (1-based) call found by findCalls. Turns a
+    // wrapper into the real function it delegates to.
     uintptr_t findNthCall(uintptr_t functionStart, int n, size_t maxScan = 256);
 
-    // Total size of the whole instructions covering at least `minLen` bytes at
-    // `addr`. Returns 0 if an instruction is unknown or position-dependent
-    // (relative call/jump), meaning those bytes cannot be copied verbatim into a
-    // trampoline. A hook must steal exactly this many bytes: stealing a fixed
-    // count cuts an instruction in half and crashes the host process.
+    // Size of the whole instructions covering >= minLen bytes at `addr`; 0 if
+    // one is position-dependent. A hook must steal exactly this many bytes.
     size_t prologueLength(uintptr_t addr, size_t minLen);
 }
 

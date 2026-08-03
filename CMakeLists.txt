@@ -9,7 +9,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -26,6 +26,9 @@ set(CRABELOADER_CORE_SOURCES
     src/memory.cpp
     src/overlay.cpp
     src/render_hook.cpp
+    src/input_hook.cpp
+    src/message_hook.cpp
+    src/avatar_relay_hook.cpp
     src/exception.cpp
     src/logger.cpp
 )

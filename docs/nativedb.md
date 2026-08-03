@@ -38,6 +38,16 @@ Everything below is a native the *game engine* registered in `_G` — CrabeLoade
 
 One exception: `Crabe.SetWindowMode`/`Crabe.GetWindowMode` (`src/api/05_window.lua`) wrap `Crabe._setWindowModeNative`, a real C++ function registered with `lua_pushcclosure` (`LuaRuntime::registerNatives`, `src/lua_runtime.cpp`) — not a wrapper around a game native, because no native anywhere in this dump exposes window/fullscreen/display state (exhaustive search: zero hits for `window`/`fullscreen`/`display`/`borderless`). It exists because Win32 window styling can only happen from C++, where `RenderHook` already holds the real `HWND`. Any future loader-side (as opposed to game-side) capability follows the same `_underscorePrefixed` native + ergonomic Lua wrapper pattern.
 
+`Crabe.inspect.*` (`src/api/40_inspect.lua`) follows that same pattern over a second set of C++ natives, and answers a question this database cannot: *what does a native actually compile to*. It reads the game's own memory — find a string, find the code that pushes it, read bytes, list a function's `call` targets — so the binary can be explored from the console instead of rebuilding the loader per question:
+
+```
+=Crabe.inspect.dumpNative("System_StartButtonPushed")  -- address, RVA, bytes, callees
+=string.format("%X", Crabe.inspect.native("RemovePlayer"))
+=#Crabe.inspect.xrefs(Crabe._findString("DropInBlocked"))  -- code sites using that string
+```
+
+Note `inspect.native()` uses a different lookup from the Lua standard library's `{ name, fn }` table: the game emits `mov eax, <fn>` / `xor ecx, ecx` / `push <name>` per native, so the function pointer sits 6 bytes before the push. It is read-only — nothing in `Crabe.inspect` writes to game memory. See [modding.md](modding.md) for the general workflow this enables; the splitscreen mod (separate repo) is a full worked example built on exactly this toolkit.
+
 ## Confirmed natives
 
 Verified in-game. The rest of the dump is triaged as it gets used.

@@ -1,8 +1,6 @@
--- Crabe.SetWindowMode/GetWindowMode -- the ergonomic pair around the one real
--- C++ native (Crabe._setWindowModeNative). No native anywhere in the game
--- exposes window/fullscreen state to Lua (see docs/nativedb.md), so this
--- cannot be a Game.* wrapper around an existing engine call the way
--- everything else in api/ is; RenderHook does it directly in Win32.
+-- Crabe.SetWindowMode/GetWindowMode: wraps Crabe._setWindowModeNative. No
+-- native exposes window state to Lua, so this isn't a Game.* wrapper like
+-- the rest of api/ -- RenderHook does it directly in Win32.
 
 Crabe._windowMode = "windowed"
 

@@ -1,12 +1,6 @@
--- TEMPORARY: reverse-engineering tool feeding docs/nativedb.md.
--- Delete once the NativeDB is written.
---
---   =Crabe.dump.all()          -> crabe_dump.txt
---   =Crabe.dump.natives()      -> crabe_natives.txt
---   =Crabe.dump.find("spark")  search, printed to the console
---
--- In-game only: walking _G before the engine has finished building its tables
--- crashes the game.
+-- TEMPORARY RE tool feeding docs/nativedb.md; delete once it's written.
+-- Crabe.dump.all()/.natives()/.find(pattern). In-game only -- walking _G
+-- before the engine finishes building its tables crashes the game.
 
 Crabe.dump = Crabe.dump or {}
 

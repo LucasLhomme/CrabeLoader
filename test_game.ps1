@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$gameDir = "D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition"
+$gameDir = "D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition" # change the path here to your game files folder
 $gameExe = Join-Path $gameDir "DisneyInfinity3.exe"
 $dllSource = "Release\bink2w32.dll"
 $logFile = Join-Path $gameDir "loader.log"

@@ -22,17 +22,13 @@ namespace LuaRuntime {
 
     StateKind classifyState(void* L);
 
-    // Runs every api/*.lua in filename order, which is dependency order.
-    // Returns false if any of them failed; failures are logged individually,
-    // and a failing module does not stop the ones after it (a broken helper
-    // should not cost the whole API).
+    // Runs every api/*.lua in filename order (dependency order). A failing
+    // module is logged and skipped, not fatal to the rest.
     bool injectAll(void* L);
     std::filesystem::path apiFolder();
 
-    // Registers every real C++ native (as opposed to the plain Lua wrappers
-    // in api/*.lua, which just call the game's own natives). Called after
-    // injectAll(L), since it needs the Crabe table injectAll just created,
-    // and before onLoadmods(), so mods see the natives already in place.
+    // Registers the real C++ natives. Must run after injectAll (needs the
+    // Crabe table) and before onLoadmods (mods expect natives in place).
     bool registerNatives(void* L);
 }
 
