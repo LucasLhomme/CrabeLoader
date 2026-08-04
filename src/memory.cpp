@@ -84,10 +84,6 @@ namespace {
         return bytes;
     }
 
-    // Minimal x86 instruction sizer, whitelist-based: anything not covered
-    // (notably relative call/jump) returns 0, so prologueLength() refuses
-    // rather than building a trampoline that jumps to the wrong place.
-
     // Size of the ModRM byte plus its optional SIB and displacement.
     size_t modrmLength(const uint8_t* p)
     {
@@ -216,8 +212,6 @@ std::vector<uintptr_t> Memory::findPointers(uintptr_t value, size_t limit)
         auto start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
         uintptr_t end = start + mbi.RegionSize;
 
-        // MEM_PRIVATE only: the heap, where a live object's vtable pointer
-        // sits. Skipping MEM_IMAGE/MEM_MAPPED keeps this scan in milliseconds.
         if (isReadableRegion(mbi) && mbi.Type == MEM_PRIVATE) {
             for (uintptr_t p = start; p + sizeof(uintptr_t) <= end; p += sizeof(uintptr_t)) {
                 if (*reinterpret_cast<const uintptr_t*>(p) != value) continue;
@@ -238,7 +232,7 @@ uintptr_t Memory::findString(const char* text, uintptr_t after)
     ModuleRange mod = mainModule();
     if (!mod.base) return 0;
 
-    size_t len = std::strlen(text) + 1;   // the NUL is part of the match
+    size_t len = std::strlen(text) + 1;
     uintptr_t found = 0;
 
     forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
@@ -258,6 +252,9 @@ uintptr_t Memory::findString(const char* text, uintptr_t after)
     return found;
 }
 
+// A short name can be registered by more than one library ("type" by both
+// base and io); collects every binding, since which comes first is not
+// stable between runs.
 std::vector<uintptr_t> Memory::findRegisteredFunctions(const char* funcName)
 {
     std::vector<uintptr_t> found;
@@ -265,14 +262,9 @@ std::vector<uintptr_t> Memory::findRegisteredFunctions(const char* funcName)
     ModuleRange mod = mainModule();
     if (!mod.base) return found;
 
-    // A short name can be registered by more than one library ("type" by both
-    // base and io); collect every binding, since which comes first is not
-    // stable between runs.
     for (uintptr_t nameAddr = findString(funcName); nameAddr;
         nameAddr = findString(funcName, nameAddr)) {
 
-        // Look for a pointer to that string: the pointer right after it in the
-        // registration table is the C function bound to the name.
         forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
             for (uintptr_t p = start; p + 2 * sizeof(uintptr_t) <= end; p += sizeof(uintptr_t)) {
                 if (*reinterpret_cast<const uintptr_t*>(p) != nameAddr) continue;
@@ -283,7 +275,7 @@ std::vector<uintptr_t> Memory::findRegisteredFunctions(const char* funcName)
                 if (std::find(found.begin(), found.end(), fn) == found.end())
                     found.push_back(fn);
             }
-            return false; // every region, not just the first with a hit
+            return false;
         });
     }
 
@@ -321,9 +313,6 @@ std::vector<uintptr_t> Memory::findCallSites(uintptr_t target, size_t limit)
         for (size_t i = 0; i <= limitIndex; ++i) {
             if (bytes[i] != 0xE8) continue;
 
-            // Resolve in place rather than via resolveCall(): that would
-            // re-run VirtualQuery for every one of the millions of stray E8
-            // bytes in the image, which turns this scan into minutes.
             auto rel = *reinterpret_cast<const int32_t*>(start + i + 1);
             uintptr_t callee = start + i + 5 + static_cast<uintptr_t>(rel);
 
@@ -338,6 +327,9 @@ std::vector<uintptr_t> Memory::findCallSites(uintptr_t target, size_t limit)
     return sites;
 }
 
+// Plain byte walk, not a full decoder: an E8 byte also occurs inside other
+// instructions, so a candidate only counts when its target lands inside the
+// image -- merely readable isn't enough, that shifts every later index.
 std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan)
 {
     std::vector<uintptr_t> targets;
@@ -347,9 +339,6 @@ std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan
 
     auto* code = reinterpret_cast<const uint8_t*>(functionStart);
 
-    // Plain byte walk, not a full decoder: an E8 byte also occurs inside other
-    // instructions, so a candidate only counts when its target lands inside
-    // the image -- merely readable isn't enough, that shifts every later index.
     for (size_t i = 0; i + 5 <= maxScan; ) {
         if (code[i] != 0xE8) {
             ++i;

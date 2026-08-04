@@ -18,7 +18,7 @@
 enum class Severity {
     LOG,
     WARNING,
-    ERR,    // 'ERROR' is a macro defined by <windows.h>, so we use ERR.
+    ERR,
     CRASH
 };
 
@@ -26,14 +26,12 @@ class HookException : public std::exception {
     public:
         explicit HookException(Severity severity, std::string message);
 
-        // std::exception interface: the raw message.
         const char* what() const noexcept override;
 
-        // Severity of this exception.
         Severity severity() const noexcept;
 
-        // Emit this exception to the global Logger at the matching level.
-        // If the severity is CRASH, the program is terminated afterwards.
+        // Emits this exception to the global Logger at the matching level
+        // (LOG/WARNING/ERR/CRASH); CRASH terminates the program afterwards.
         void log() const;
 
     private:

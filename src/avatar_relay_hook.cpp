@@ -109,13 +109,13 @@ bool AvatarRelayHook::relayGuarded(uintptr_t relayFn, uintptr_t gamePlayersThis,
     return true;
 }
 
+// The real resolve always runs first, unconditionally -- the relay is a side
+// effect bolted on after, never a replacement for it.
 int __cdecl AvatarRelayHook::hkResolve(int arg)
 {
     AvatarRelayHook& self = get();
     auto original = reinterpret_cast<t_Resolve>(self._hook.getOriginal());
 
-    // The real resolve always runs first, unconditionally -- the relay is a
-    // side effect bolted on after, never a replacement for it.
     int result = original ? original(arg) : 0;
     if (result == 0) return result;
 
@@ -129,8 +129,7 @@ int __cdecl AvatarRelayHook::hkResolve(int arg)
             gamePlayersThis = self._gamePlayersThis;
             targetPlayerIndex = self._targetPlayerIndex;
             shouldRelay = true;
-            self._armed = false; // disarm before relaying: a re-entrant
-                                  // resolve must not relay a second time.
+            self._armed = false;
         }
     }
 

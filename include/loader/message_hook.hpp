@@ -37,10 +37,11 @@ class MessageHook {
         MessageHook(const MessageHook&) = delete;
         MessageHook& operator=(const MessageHook&) = delete;
 
+        typedef void(__fastcall* t_dispatch)(void* self, void* edx, const char* name, int arg1, int arg2);
+
         // thiscall: `this` arrives in ecx, so __fastcall with a dummy edx is
         // the only way to express it. Argument order comes from the call site
         // in System_StartButtonPushed (pushed right to left: 0, id, name).
-        typedef void(__fastcall* t_dispatch)(void* self, void* edx, const char* name, int arg1, int arg2);
         static void __fastcall hkDispatch(void* self, void* edx, const char* name, int arg1, int arg2);
 
         // Resolves the dispatcher by following System_StartButtonPushed's 4th

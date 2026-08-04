@@ -22,10 +22,10 @@ MessageHook& MessageHook::get()
     return instance;
 }
 
+// Registered by emitted code (mov eax,<fn>; xor ecx,ecx; push <name>), so the
+// native's address sits 6 bytes before the push naming it.
 uintptr_t MessageHook::resolveDispatcher()
 {
-    // Registered by emitted code (mov eax,<fn>; xor ecx,ecx; push <name>), so
-    // the native's address sits 6 bytes before the push naming it.
     for (uintptr_t nameAddr = Memory::findString("System_StartButtonPushed"); nameAddr;
         nameAddr = Memory::findString("System_StartButtonPushed", nameAddr)) {
 
@@ -45,7 +45,6 @@ uintptr_t MessageHook::resolveDispatcher()
             auto native = *reinterpret_cast<const uintptr_t*>(push - 6);
             if (!Memory::isReadable(native, 64)) continue;
 
-            // lua_gettop, lua_tonumber, the double->int helper, then dispatch.
             std::vector<uintptr_t> calls = Memory::findCalls(native, 64);
             if (calls.size() >= 4) return calls[3];
         }

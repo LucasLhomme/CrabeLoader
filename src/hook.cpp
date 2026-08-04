@@ -12,11 +12,11 @@
 #include "logger/logger.hpp"
 
 namespace {
-    // MH_Initialize/MH_Uninitialize are process-global; Hook instances are
-    // created/destroyed independently, so reference-count them.
     int g_refCount = 0;
     std::mutex g_refMutex;
 
+    // MH_Initialize/MH_Uninitialize are process-global; Hook instances are
+    // created/destroyed independently, so reference-count them.
     bool acquireMinHook()
     {
         std::lock_guard<std::mutex> lock(g_refMutex);
@@ -45,6 +45,8 @@ Hook::~Hook()
     remove();
 }
 
+// Redirects `src` to `dst` via MinHook; getOriginal() then returns the
+// trampoline for calling through to the real function.
 bool Hook::install(void* src, void* dst)
 {
     if (_installed || !src || !dst) return false;

@@ -65,20 +65,19 @@ local function watchForBuildList(cls)
     mt.__newindex = function(t, k, v)
         rawset(t, k, v)
         if k ~= "BuildList" then return end
-        mt.__newindex = nil -- one-shot: found it, stop watching this class
+        mt.__newindex = ni
         installOption(t)
     end
 end
 
 if SettingsVideo then
-    -- Already loaded (e.g. the mod was reloaded mid-session): no race to win.
     installOption(SettingsVideo)
 else
     local rootMt = getmetatable(_G) or {}
     rootMt.__newindex = function(t, k, v)
         rawset(t, k, v)
         if k ~= "SettingsVideo" then return end
-        rootMt.__newindex = nil -- one-shot: stop watching every global write
+        rootMt.__newindex = nil
         watchForBuildList(v)
     end
     setmetatable(_G, rootMt)

@@ -14,6 +14,7 @@
 
 #include "loader/avatar_relay_hook.hpp"
 #include "loader/input_hook.hpp"
+#include "loader/loader.hpp"
 #include "loader/message_hook.hpp"
 #include "loader/lua_runtime.hpp"
 #include "loader/luacall.hpp"
@@ -33,10 +34,8 @@ namespace {
         bool borderless = mode && std::strcmp(mode, "borderless") == 0;
 
         RenderHook::get().requestWindowMode(borderless ? WindowMode::BorderlessWindowed : WindowMode::Windowed);
-        return 0; // no Lua return values
+        return 0;
     }
-
-    // ---- Binary introspection: read-only, turns RE questions into console one-liners.
 
     // Crabe._findGameNative(name) -> address, or nil. Looks in the image's
     // registration table, unlike type(_G[name]).
@@ -49,7 +48,7 @@ namespace {
         if (!name) return 0;
 
         uintptr_t address = Memory::findRegisteredFunction(name);
-        if (!address) return 0; // nil: not registered
+        if (!address) return 0;
 
         lua.pushNumber(L, static_cast<double>(address));
         return 1;
@@ -165,13 +164,13 @@ namespace {
         return 1;
     }
 
-    // Crabe._callThis(fnAddress, thisPtr, arg1, arg2, arg3) -> eax, or nil on
-    // fault. __thiscall, 3 stack args -- must match the callee's own `ret N`
-    // exactly (thiscall is callee-cleanup) or the caller's frame corrupts.
     typedef int(__thiscall* t_ThisCall3)(void* self, int a1, int a2, int a3);
     typedef int(__thiscall* t_ThisCall1)(void* self, int a1);
     typedef int(__thiscall* t_ThisCall0)(void* self);
 
+    // Crabe._callThis(fnAddress, thisPtr, arg1, arg2, arg3) -> eax, or nil on
+    // fault. __thiscall, 3 stack args -- must match the callee's own `ret N`
+    // exactly (thiscall is callee-cleanup) or the caller's frame corrupts.
     int __cdecl nativeCallThis(void* L)
     {
         LuaCall& lua = LuaCall::get();
@@ -412,6 +411,27 @@ namespace {
         return 1;
     }
 
+    // Crabe._registerLoadOverride(matchSubstring, luaSource). See
+    // Loader::registerLoadOverride/findLoadOverride.
+    int __cdecl nativeRegisterLoadOverride(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        const char* matchSubstring = lua.argToString(L, 1);
+        const char* luaSource = lua.argToString(L, 2);
+        if (!matchSubstring || !luaSource) return 0;
+
+        Loader::get().registerLoadOverride(matchSubstring, luaSource);
+        return 0;
+    }
+
+    // Crabe._clearLoadOverrides() -- drops every registered override.
+    int __cdecl nativeClearLoadOverrides(void* L)
+    {
+        (void)L;
+        Loader::get().clearLoadOverrides();
+        return 0;
+    }
+
 } // namespace
 
 std::filesystem::path LuaRuntime::apiFolder()
@@ -419,11 +439,11 @@ std::filesystem::path LuaRuntime::apiFolder()
     return std::filesystem::current_path() / kApiFolderName;
 }
 
+// Must stay answerable in a state where none of the globals it tests exist:
+// the natives are what tell the game apart from the shader compiler's state,
+// which has a full base library and none of them.
 LuaRuntime::StateKind LuaRuntime::classifyState(void* L)
 {
-    // Must stay answerable in a state where none of the globals it tests exist.
-    // The natives are what tell the game apart from the shader compiler's
-    // state, which has a full base library and none of them.
     static constexpr const char* kProbe = R"lua(
 if not (type and pairs and tostring and table and pcall and error) then return 'unusable' end
 if not (UI_GetSparks and Players_GetHostPlayerID) then return 'notgame' end
@@ -456,8 +476,6 @@ bool LuaRuntime::injectAll(void* L)
             modules.push_back(entry.path());
     }
 
-    // Dependency order is the numeric prefixes; directory iteration order is
-    // not specified.
     std::sort(modules.begin(), modules.end());
 
     if (modules.empty()) {
@@ -467,7 +485,6 @@ bool LuaRuntime::injectAll(void* L)
 
     bool allOk = true;
     for (const auto& path : modules) {
-        // Keep going: a broken module costs its own features, not the API.
         if (LuaCall::get().runFile(L, path.string().c_str())) continue;
 
         logger.error("LuaRuntime: API module '{}' failed to load.", path.filename().string());
@@ -478,11 +495,11 @@ bool LuaRuntime::injectAll(void* L)
     return allOk;
 }
 
+// All registered under underscore-prefixed names: these are the raw natives,
+// wrapped by the ergonomic API in src/api/*.lua, same as every other
+// internal detail in Crabe.
 bool LuaRuntime::registerNatives(void* L)
 {
-    // All registered under underscore-prefixed names: these are the raw natives,
-    // wrapped by the ergonomic API in src/api/*.lua, same as every other
-    // internal detail in Crabe.
     struct Entry {
         const char* name;
         LuaCall::t_lua_cfunction fn;
@@ -509,12 +526,12 @@ bool LuaRuntime::registerNatives(void* L)
         { "_armAvatarRelay",      &nativeArmAvatarRelay },
         { "_disarmAvatarRelay",   &nativeDisarmAvatarRelay },
         { "_avatarRelayStatus",   &nativeAvatarRelayStatus },
+        { "_registerLoadOverride", &nativeRegisterLoadOverride },
+        { "_clearLoadOverrides",   &nativeClearLoadOverrides },
     };
 
     bool allOk = true;
     for (const auto& entry : kNatives) {
-        // Keep going on failure: one missing native costs its own feature, not
-        // the whole API.
         if (LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
 
         Logger::getInstance().error("LuaRuntime: failed to register Crabe.{}.", entry.name);
