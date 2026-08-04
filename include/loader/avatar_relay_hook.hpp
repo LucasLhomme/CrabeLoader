@@ -38,13 +38,14 @@ class AvatarRelayHook {
         AvatarRelayHook(const AvatarRelayHook&) = delete;
         AvatarRelayHook& operator=(const AvatarRelayHook&) = delete;
 
-        // __cdecl, one stack arg, doesn't touch ecx.
         typedef int(__cdecl* t_Resolve)(int arg);
+
+        // __cdecl, one stack arg, doesn't touch ecx.
         static int __cdecl hkResolve(int arg);
 
-        // __thiscall, 3 stack args (ret 0xC) -- GamePlayers::vtable[7].
         typedef int(__thiscall* t_ThisCall3)(void* self, int a1, int a2, int a3);
 
+        // __thiscall, 3 stack args (ret 0xC) -- GamePlayers::vtable[7].
         static bool relayGuarded(uintptr_t relayFn, uintptr_t gamePlayersThis,
                                 int playerIndex, int handle, int& outResult);
 

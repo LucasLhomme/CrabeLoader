@@ -18,7 +18,6 @@
 // (to observe the game); everything else is only ever called. Some fields
 // are unused so far but resolved anyway -- cheap now, expensive to redo.
 struct LuaApiAddresses {
-    // Chunk loading and calling.
     uintptr_t loadfile = 0;
     uintptr_t loadbuffer = 0;
     uintptr_t pcall = 0;
@@ -26,11 +25,10 @@ struct LuaApiAddresses {
 
     // Stack inspection.
     uintptr_t gettop = 0;
-    uintptr_t settop = 0;       // lua_pop is a 5.1 macro over this
+    uintptr_t settop = 0;
     uintptr_t pushvalue = 0;
 
-    // Reading values off the stack.
-    uintptr_t tolstring = 0;    // lua_tostring is a 5.1 macro over this
+    uintptr_t tolstring = 0;
     uintptr_t tonumber = 0;
     uintptr_t toboolean = 0;
     uintptr_t touserdata = 0;
@@ -39,12 +37,11 @@ struct LuaApiAddresses {
     // Pushing values onto the stack.
     uintptr_t pushnil = 0;
     uintptr_t pushnumber = 0;
-    uintptr_t pushlstring = 0;  // lua_pushstring is a 5.1 macro over this
+    uintptr_t pushlstring = 0;
     uintptr_t pushboolean = 0;
-    uintptr_t pushcclosure = 0; // what makes a C++ function callable from Lua
+    uintptr_t pushcclosure = 0;
 
-    // Table access.
-    uintptr_t getfield = 0;     // lua_getglobal is a 5.1 macro over this
+    uintptr_t getfield = 0;
     uintptr_t rawget = 0;
     uintptr_t rawset = 0;
     uintptr_t rawequal = 0;
@@ -70,13 +67,15 @@ class LuaCall {
 
         bool runGlobalIfExists(void* L, const std::string& functionName) const;
 
+        // Compiles and runs `patchSource` against whatever chunk hkPcall just
+        // executed. Failure is logged and swallowed, never propagated.
+        bool runPatch(void* L, const std::string& patchSource) const;
+
         // Compiles and runs `code`, writing its first return value or the
         // error message into `out`. False if lua_tolstring never resolved.
         bool runSnippet(void* L, const std::string& code, std::string& out) const;
         bool callTick(void* L, double dt) const;
 
-        // Raw lua_CFunction signature: what a C++ function must look like to be
-        // callable from Lua via lua_pushcclosure.
         typedef int(__cdecl* t_lua_cfunction)(void* L);
 
         // Registers `cFunction` as `<tableName>.<fieldName>`, e.g. Crabe.SetWindowMode.

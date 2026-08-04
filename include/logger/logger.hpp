@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <string>
+#include <string_view>
 #include <fstream>
 #include <mutex>
 #include <iostream>
@@ -28,7 +29,7 @@ enum class LogLevel {
 // it, filtering on ERR already covers it.
 struct LogEntry {
     LogLevel level;
-    std::string text; // fully formatted: "[time] [LEVEL] message"
+    std::string text;
 };
 
 class Logger {

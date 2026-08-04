@@ -23,11 +23,11 @@ Overlay::~Overlay()
 
 void Overlay::setupFlag()
 {
-    ImGuiWindowFlags window_flags = 
-        ImGuiWindowFlags_NoDecoration | 
-        ImGuiWindowFlags_AlwaysAutoResize | 
-        ImGuiWindowFlags_NoSavedSettings | 
-        ImGuiWindowFlags_NoFocusOnAppearing | 
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoNav;
 }
 
@@ -37,7 +37,7 @@ void Overlay::defaultSettings()
     ImVec2 work_pos = viewport->WorkPos;
 
     ImVec2 window_pos = ImVec2(work_pos.x + 10.0f, work_pos.y + 10.0f);
-    ImVec2 window_pos_pivot = ImVec2(0.0f, 0.0f); // top-left pivot
+    ImVec2 window_pos_pivot = ImVec2(0.0f, 0.0f);
 
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_FirstUseEver, window_pos_pivot);
     ImGui::SetNextWindowSize(ImVec2(420.0f, 320.0f), ImGuiCond_FirstUseEver);
@@ -85,11 +85,11 @@ void Overlay::drawConsoleTab()
     ImGui::PopItemWidth();
 }
 
+// Trimming, the "> {}" echo and the "=expr" -> "return tostring(expr)"
+// rewrite all live in Loader::queueConsoleSnippet now, shared with
+// Loader::drainRemoteCommandFile so both entry points behave identically.
 void Overlay::submitConsoleInput()
 {
-    // Trimming, the "> {}" echo and the "=expr" -> "return tostring(expr)"
-    // rewrite all live in Loader::queueConsoleSnippet now, shared with
-    // Loader::drainRemoteCommandFile so both entry points behave identically.
     Loader::get().queueConsoleSnippet(_consoleInputBuffer);
 }
 

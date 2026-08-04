@@ -27,6 +27,9 @@ class RenderHook {
     public:
         static RenderHook& get();
 
+        // Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's D3D11
+        // device/context/HWND from inside an injected DLL, then drives the
+        // per-frame ImGui render sequence from there.
         bool initialize();
         void uninitialize();
 
@@ -78,9 +81,6 @@ class RenderHook {
         std::atomic<bool> _backendInitialized{false};
         std::atomic<bool> _menuOpen{false};
 
-        // The window's style/rect as the game created it, captured once so
-        // Game.SetWindowMode("windowed") can restore it exactly rather than
-        // guessing a size.
         LONG_PTR _originalStyle = 0;
         RECT _originalRect{};
 

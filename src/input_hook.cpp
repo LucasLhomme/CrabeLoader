@@ -17,13 +17,13 @@ InputHook& InputHook::get()
     return instance;
 }
 
+// The game imports from XINPUT9_1_0.dll specifically (confirmed: the other
+// xinput DLL names do not appear in the image), so hook the module it
+// actually uses rather than whichever one happens to be loaded.
 bool InputHook::initialize()
 {
     Logger& logger = Logger::getInstance();
 
-    // The game imports from XINPUT9_1_0.dll specifically (confirmed: the other
-    // xinput DLL names do not appear in the image), so hook the module it
-    // actually uses rather than whichever one happens to be loaded.
     HMODULE module = GetModuleHandleW(L"XINPUT9_1_0.dll");
     if (!module) {
         logger.warning("InputHook: XINPUT9_1_0.dll is not loaded; controller polling will not be observed.");
@@ -55,7 +55,7 @@ uint32_t __stdcall InputHook::hkXInputGetState(uint32_t userIndex, void* state)
     InputHook& self = get();
 
     auto original = reinterpret_cast<t_XInputGetState>(self._hookGetState.getOriginal());
-    if (!original) return 1; // ERROR_DEVICE_NOT_CONNECTED
+    if (!original) return 1;
 
     uint32_t result = original(userIndex, state);
 

@@ -20,6 +20,9 @@ class Hook {
         Hook(const Hook&) = delete;
         Hook& operator=(const Hook&) = delete;
 
+        // Redirects `src` to `dst` via MinHook; getOriginal() then returns the
+        // trampoline for calling through to the real function. MinHook itself
+        // is reference-counted process-wide.
         bool install(void* src, void* dst);
         void remove();
 

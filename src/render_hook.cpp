@@ -166,6 +166,9 @@ void RenderHook::requestWindowMode(WindowMode mode)
     _windowModeDirty = true;
 }
 
+// Exclusive fullscreen bypasses the compositor and owns the display mode
+// directly; drops out of it first, since GWL_STYLE alone won't make this
+// borderless-*windowed*.
 void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
 {
     if (!_windowModeDirty.exchange(false))
@@ -173,9 +176,6 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
     if (!_hwnd)
         return;
 
-    // Exclusive fullscreen bypasses the compositor and owns the display mode
-    // directly; drop out of it first or GWL_STYLE alone won't make this
-    // borderless-*windowed*.
     BOOL wasFullscreen = FALSE;
     swapChain->GetFullscreenState(&wasFullscreen, nullptr);
     if (wasFullscreen)
@@ -202,8 +202,6 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
                     SWP_FRAMECHANGED | SWP_NOZORDER);
     }
 
-    // The swap chain's back buffer didn't resize with the window; release
-    // every view onto it first (same constraint as hkResizeBuffers).
     DXGI_SWAP_CHAIN_DESC desc{};
     swapChain->GetDesc(&desc);
     releaseRenderTarget();
@@ -253,8 +251,6 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     swapChain->GetDesc(&desc);
     _hwnd = desc.OutputWindow;
 
-    // Captured once, before anything ever changes it, so a later "windowed"
-    // request has something exact to restore rather than guessing a size.
     _originalStyle = GetWindowLongPtrW(_hwnd, GWL_STYLE);
     GetWindowRect(_hwnd, &_originalRect);
 
@@ -298,14 +294,14 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     return self.originalPresent()(swapChain, syncInterval, flags);
 }
 
+// All views onto the back buffer (our RTV) must be released before the real
+// ResizeBuffers runs, or it fails; the next Present recreates it.
 HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
                                             UINT width, UINT height, DXGI_FORMAT newFormat,
                                             UINT swapChainFlags)
 {
     RenderHook& self = RenderHook::get();
 
-    // All views onto the back buffer (our RTV) must be released before the
-    // real ResizeBuffers runs, or it fails; the next Present recreates it.
     self.releaseRenderTarget();
 
     return self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);
@@ -323,8 +319,6 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         bool isKeyboardMsg = (msg == WM_KEYDOWN || msg == WM_KEYUP ||
                             msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP || msg == WM_CHAR);
 
-        // Overlay open: keep clicks/keys the player uses to drive the ImGui
-        // UI from also reaching the game underneath.
         if ((isMouseMsg && io.WantCaptureMouse) || (isKeyboardMsg && io.WantCaptureKeyboard))
             return 0;
     }

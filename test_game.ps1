@@ -40,7 +40,7 @@ Copy-Item -Path $dllSource -Destination $targetDllPath -Force
 #   api/  = the loader's own runtime (src/api/), loaded before anything else
 #   mods/ = user mods, run once the game's Lua state is up
 # Both targets are purged first so no stale or deleted file lingers.
-foreach ($folder in @(@{ Source = "src\api"; Name = "api" }, @{ Source = "mods"; Name = "mods" })) {
+foreach ($folder in @(@{ Source = "src\api"; Name = "api" }, @{ Source = "mods"; Name = "mods" }, @{ Source = "skilltrees"; Name = "skilltrees" }, @{ Source = "characters"; Name = "characters" })) {
     if (!(Test-Path $folder.Source)) { continue }
 
     Write-Host "Copying $($folder.Name)/ ..."
