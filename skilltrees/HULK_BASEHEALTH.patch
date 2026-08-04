@@ -1,0 +1,16 @@
+-- Crabe skill-tree patch. Plain Lua, run against the ProgressionTable
+-- global right after gamedb/core/in2_avg_hulk.lua sets it -- only touches
+-- the fields listed here, nothing else needs extracting/maintaining.
+--
+-- HULK_BASEHEALTH is both the filename/match hint and one of the table keys
+-- already in the original file, so it's guaranteed to appear in the
+-- compiled bytecode being matched against (see skilltrees/README.md).
+
+ProgressionTable.BaseValues.HULK_BASEHEALTH.Value = 100000
+
+-- Same syntax reaches ability/move nodes, not just BaseValues -- this is
+-- how you'd give a character an existing ranged attack, uncomment and point
+-- at real Upgrades.* fields once you know which ones you want (see
+-- Crabe.inspect / the decompiled file for the full key list):
+-- ProgressionTable.Upgrades.HULK_RANGED_DMG2.Value = "0.9,0.9"
+-- ProgressionTable.Upgrades.HULK_RANGED_DMG2.PCCoreAbility = 1
