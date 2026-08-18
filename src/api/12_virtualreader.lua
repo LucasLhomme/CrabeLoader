@@ -1,46 +1,41 @@
--- VirtualReader roster. VirtualReaderPC_Data.AvatarData (game Lua, loaded by
--- Presentation/VirtualReaderPC_Data.lua) is a plain global table the engine
--- reads to populate the character-select grid. It only exists in the
--- front-end/menu Lua state (the game runs one Lua state per screen context,
--- see docs/modding.md); a world/gameplay state never has it.
+-- VirtualReader roster -- the character-select grid.
 --
--- Call these from characters/*.lua, not from a mod's Game.onTick: confirmed
--- live that a mod-time table.insert draws a correct-looking tile (name/icon/
--- description) but the game still treats it as unowned -- an upsell/purchase
--- screen instead of selecting it, some native-side catalog build has already
--- run by the time a mod gets to run. characters/*.lua runs earlier (right
--- after VirtualReaderPC_Data.lua itself finishes), see characters/README.md.
+-- VirtualReaderPC_Data.AvatarData is a plain global table the engine reads to
+-- build the grid. It exists only in the front-end/menu Lua state (the game runs
+-- one state per screen context, see docs/modding.md); a world state never has
+-- it.
 --
--- sku_id resolution is the other hard constraint, confirmed live: the grid
--- (VirtualReaderPC_GetItemByPage) reads this same Lua table for display, so a
--- made-up sku_id still draws a correct-looking tile -- but selecting it calls
--- VirtualReaderPC_SetCurrentCharacter(sku_id), which resolves against a
--- separate, native-side catalog of real characters and falls back to
--- whatever avatar was last active if the id isn't in it. There is no
--- data-driven way to introduce a brand new 3D model. A "new" character is
--- therefore always: a new identity (Name/Icon/Description/MetaData) and its
--- own skill tree (ProgressionTree, see skilltrees/), riding on an existing,
--- real character's model via a borrowed sku_id (entry.baseCharacter below) --
--- exactly how this has historically been done in the DI3 modding scene.
--- A synthetic Name shows a real icon only if entry.Icon names an existing
--- HUD_PlayerIcons_* asset (reuse the base character's, or another real
--- character's); a genuinely new icon image is an asset-drop question, not
--- something this API can do on its own.
+-- Call these from characters/*.lua, never from a mod's Game.onTick. A row
+-- inserted at mod time draws a correct-looking tile, but the game treats it as
+-- unowned and opens an upsell screen instead of selecting it -- a native
+-- catalog build has already run by then. characters/*.lua runs early enough,
+-- right after Presentation/VirtualReaderPC_Data.lua itself finishes.
 --
--- A synthetic row is otherwise a normal-looking tile that the grid still
--- shows as locked (upsell/purchase screen on click) -- three row fields were
--- tried and confirmed live to have no effect (IsLocked/IsTrialPlayable,
--- SteamDLCAppId/PCSKU/WINRTSKU, calling VirtualReaderPC_SetCurrentCharacter
--- directly). The actual gate turned out to be plain Lua in the grid SCREEN
--- itself (presentation/virtualreaderpc_gridcharacter.lua's DoSelectGridItem/
--- GetGridButtonState), found by diffing that file's vanilla decompile
--- against the shipped "Breeze" DI3 mod's patched copy of the same file:
--- Breeze hardcodes the lock check to false instead of reading it back from
--- the grid's list data. installGridUnlock() below ports that patch as a
--- runtime monkey-patch (same technique mods/window_mode.lua uses on
--- SettingsVideo:BuildList), called unconditionally from
--- src/api/21_virtualreader_unlock.lua (see that file for why not here) --
--- addCharacter's callers don't need to know any of this exists.
+-- What resolves the 3D model:
+--
+--   sku_id  ->  this table (pushed native by VirtualReaderPC_SetData)
+--           ->  Name
+--           ->  Name:lower() in the engine's ActorList
+--               (assets/gamedb/core/<zone>_actors.lua, Type = "Avatar")
+--           ->  that entry's DNAFile  ->  assets/characters/<x>.dnax
+--
+-- Name is the key, not sku_id. An invented sku_id works; an unknown Name does
+-- not. The one rule that must hold: Name:lower() exists in the ActorList with
+-- Type = "Avatar". A row naming no actor is the usual cause of "the tile shows
+-- but the character never loads".
+--
+-- Two operations follow from that, kept apart on purpose:
+--   addCharacter    -- a new identity over an existing character's model,
+--                      borrowing its sku_id. Cosmetic, always works.
+--   exposeCharacter -- surface a character whose actor, .dnax, assets and
+--                      skill tree already ship, but which has no catalog row.
+--                      Its own model, its own abilities.
+-- New 3D geometry is out of scope here -- see characters/README.md.
+--
+-- Selectability is handled separately: a synthetic row is drawn locked, and the
+-- gate is plain Lua inside the grid screen (virtualreaderpc_gridcharacter.lua).
+-- installGridUnlock() below patches it at runtime; src/api/21_virtualreader_unlock.lua
+-- calls it, so callers here never deal with it.
 
 Crabe.VirtualReader = Crabe.VirtualReader or {}
 
@@ -77,16 +72,10 @@ function Crabe.VirtualReader.findCharacter(nameOrSkuId)
     return nil
 end
 
--- entry.Name (string) is required. For the sku_id (the one field that must
--- resolve to a real character, see file header), pass exactly one of:
---   entry.baseCharacter = "AVG_Thor"   -- Name of an existing row; its
---                                         sku_id is copied automatically
---   entry.sku_id = "1000103"           -- a real sku_id directly
--- ProgressionTree should name a real gamedb/core entry for this new identity
--- to have its own abilities (see skilltrees/README.md) -- reusing the base
--- character's own ProgressionTree is fine too and is the default if
--- baseCharacter is given and ProgressionTree is not.
--- Returns the row actually inserted.
+-- Adds a row reusing an existing character's model and sku_id, and returns it.
+-- Requires entry.Name plus exactly one of entry.baseCharacter (a row's Name,
+-- whose sku_id, Icon, ProgressionTree, MetaData and store fields are inherited)
+-- or entry.sku_id. Override any inherited field by passing it in `entry`.
 function Crabe.VirtualReader.addCharacter(entry)
     if type(entry) ~= "table" or type(entry.Name) ~= "string" or entry.Name == "" then
         error("Crabe.VirtualReader.addCharacter: expected a table with at least Name (string)", 2)
@@ -111,11 +100,8 @@ function Crabe.VirtualReader.addCharacter(entry)
         row.Icon = base.Icon
         row.ProgressionTree = base.ProgressionTree
         row.MetaData = base.MetaData
-        -- Entitlement/ownership is plausibly checked against one of these
-        -- (Steam DLC ownership, PC/WinRT store SKU), not sku_id alone --
-        -- confirmed live that sku_id alone still leaves the tile locked
-        -- (see characters/CRABE_Thanos.lua). defaultFields left them at ""
-        -- for a synthetic row; ride the base character's real values instead.
+        -- Ownership is checked against the store fields, not sku_id alone, so
+        -- inherit the base character's rather than the empty defaults.
         row.SteamDLCAppId = base.SteamDLCAppId
         row.PCSKU = base.PCSKU
         row.WINRTSKU = base.WINRTSKU
@@ -135,11 +121,77 @@ function Crabe.VirtualReader.addCharacter(entry)
     return row
 end
 
--- Mutates fields on an EXISTING character's row in place -- e.g. add
--- "StarWars" to MetaData so it shows up in that category/filter, or
--- relabel/re-icon it. sku_id is left untouched, so selection always keeps
--- working; this is the reliable way to change how a real character is
--- presented without any of addCharacter's sku_id caveats.
+-- sku_id derived from a character name, inside the range reserved for mods.
+-- Must match Gateway::allocateSku (src/gateway.cpp) exactly, or a row selects
+-- an id with no registry slot behind it. Multiply-and-add, never XOR: Lua 5.1
+-- has no bitwise operators, and doubles hold these intermediates exactly.
+local SKU_LO, SKU_HI = 1000340, 1000999
+
+function Crabe.VirtualReader.skuForName(name)
+    local h = 0
+    for i = 1, #name do
+        h = (h * 31 + string.byte(name, i)) % 2147483648
+    end
+    return tostring(SKU_LO + h % (SKU_HI - SKU_LO + 1))
+end
+
+-- Surfaces a character the game ships in full -- actor row, .dnax, 3D assets
+-- and skill tree -- but never gave a catalog row. Unlike addCharacter this is
+-- no re-skin: the model, animations, voice and abilities are its own. Returns
+-- the row inserted.
+--
+-- entry.Name             required; must match an ActorList entry with
+--                        Type = "Avatar", compared lowercased. It cannot be
+--                        checked from here -- the ActorList lives in the gamedb
+--                        state -- so verify it against *_actors.lua by hand.
+-- entry.sku_id           optional; derived from Name when omitted.
+-- entry.ProgressionTree  a real assets/gamedb/core/<x>.lua, lowercased.
+-- entry.Icon             optional; the grid falls back to the default icon.
+function Crabe.VirtualReader.exposeCharacter(entry)
+    if type(entry) ~= "table" or type(entry.Name) ~= "string" or entry.Name == "" then
+        error("Crabe.VirtualReader.exposeCharacter: expected a table with at least Name (string), " ..
+            "matching an ActorList actor with Type = \"Avatar\"", 2)
+    end
+    -- Omitted is the normal case: the row and the loader's registry slot then
+    -- derive the same id. An explicit one must stay written in the file, since
+    -- that is where the loader reads it from.
+    if entry.sku_id == nil then
+        entry.sku_id = Crabe.VirtualReader.skuForName(entry.Name)
+    elseif type(entry.sku_id) ~= "string" or entry.sku_id == "" then
+        error("Crabe.VirtualReader.exposeCharacter: entry.sku_id must be a non-empty string " ..
+            "(or omitted, to derive one from Name)", 2)
+    end
+    if entry.baseCharacter then
+        error("Crabe.VirtualReader.exposeCharacter: baseCharacter has no meaning here -- this " ..
+            "character has its own model. Use addCharacter for a borrowed-model identity", 2)
+    end
+    if not (VirtualReaderPC_Data and VirtualReaderPC_Data.AvatarData) then
+        error("Crabe.VirtualReader.exposeCharacter: VirtualReaderPC_Data.AvatarData not present in " ..
+            "this Lua state (call this from characters/*.lua, see characters/README.md)", 2)
+    end
+
+    local clash = Crabe.VirtualReader.findCharacter(entry.Name)
+    if clash then
+        error("Crabe.VirtualReader.exposeCharacter: '" .. entry.Name .. "' is already in the grid", 2)
+    end
+    clash = Crabe.VirtualReader.findCharacter(entry.sku_id)
+    if clash then
+        error("Crabe.VirtualReader.exposeCharacter: sku_id " .. entry.sku_id .. " is already used by '" ..
+            tostring(clash.Name) .. "' -- pick another", 2)
+    end
+
+    local row = {}
+    for k, v in pairs(defaultFields) do row[k] = v end
+    -- defaultFields points Icon at HUD_PlayerIcons_Default already, which is
+    -- exactly the fallback we want when the character has no icon art.
+    for k, v in pairs(entry) do row[k] = v end
+
+    table.insert(VirtualReaderPC_Data.AvatarData, row)
+    return row
+end
+
+-- Mutates an existing row in place -- re-tag, re-icon or relabel a shipped
+-- character. sku_id is left untouched, so selection keeps working.
 function Crabe.VirtualReader.editCharacter(nameOrSkuId, patch)
     if type(patch) ~= "table" then
         error("Crabe.VirtualReader.editCharacter: patch must be a table", 2)
@@ -152,8 +204,8 @@ function Crabe.VirtualReader.editCharacter(nameOrSkuId, patch)
     return row
 end
 
--- Disables the character-select grid's lock check (see this file's header
--- for how that was found) so every tile is selectable, real or synthetic.
+-- Disables the grid's lock check so every tile is selectable, real or
+-- synthetic. See this file's header for where the gate lives.
 -- VirtualReaderPC_GridCharacter only exists once the character-select
 -- screen has been opened at least once, hence the poll; re-checks the
 -- identity in case the screen's class table gets reassigned on reload.

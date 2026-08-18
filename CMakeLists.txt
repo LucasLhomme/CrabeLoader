@@ -20,15 +20,19 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CRABELOADER_CORE_SOURCES
     src/main.cpp
     src/Loader.cpp
+    src/loader_content.cpp
+    src/lua_symbols.cpp
     src/hook.cpp
     src/luacall.cpp
     src/lua_runtime.cpp
+    src/lua_natives.cpp
     src/memory.cpp
     src/overlay.cpp
     src/render_hook.cpp
     src/input_hook.cpp
     src/message_hook.cpp
     src/avatar_relay_hook.cpp
+    src/gateway.cpp
     src/exception.cpp
     src/logger.cpp
 )

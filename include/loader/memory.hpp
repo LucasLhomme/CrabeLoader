@@ -30,9 +30,9 @@ namespace Memory {
     // a caller walk past occurrences no registration table points at.
     uintptr_t findString(const char* text, uintptr_t after = 0);
 
-    // Address of the Lua stdlib wrapper registered under `funcName` (the
-    // wrapper, not the underlying C API function). Ambiguous names collide;
-    // prefer findRegisteredFunctions() when more than one may exist.
+    // Address of the Lua stdlib wrapper registered under `funcName` -- the
+    // wrapper itself, not the underlying C API function. Names can be
+    // ambiguous, so prefer findRegisteredFunctions when several may exist.
     uintptr_t findRegisteredFunction(const char* funcName);
 
     // Every distinct function pointer registered under `funcName`.
