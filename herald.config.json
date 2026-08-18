@@ -4,6 +4,9 @@
     "tools",
     "build",
     "Release",
+    "backups",
+    "mods",
+    ".claude",
     "minhook",
     "imgui"
   ],

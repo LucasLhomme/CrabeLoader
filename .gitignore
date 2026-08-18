@@ -1,5 +1,8 @@
 build/
 Release/
-tools
+tools/*
+!tools/di3_gateway/
 herald-report.txt
 mods/
+__pycache__/
+backups/

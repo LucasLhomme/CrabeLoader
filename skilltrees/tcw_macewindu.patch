@@ -1,0 +1,50 @@
+-- Example: editing the engine's ActorList at load time without touching a game
+-- file. Vanilla already ships tcw_macewindu as Type = "Avatar", so this is a
+-- no-op on a clean install. It exists as the worked example skilltrees/README.md
+-- points at, and it repairs installs where that row was hand-edited to "NPC" --
+-- an actor that is not Type = "Avatar" is never selectable, so the catalog row
+-- in characters/CRABE_MaceWindu.lua would draw a tile resolving to nothing.
+--
+-- It also demotes a "TCW_MaceWindu_Premium" row, added by some tools, whose
+-- Parms names a .dnax that is not on disk. Demoted rather than removed, so no
+-- index in Data.Records shifts under the engine.
+--
+-- NO STANDARD LIBRARY HERE. The Lua state that compiles gamedb chunks loads no
+-- base library: type, string.*, print, pairs and ipairs are all nil. Everything
+-- below uses core syntax only -- indexing, comparison, a numeric while loop and
+-- the # operator.
+--
+-- Name is compared against both casings rather than lowercased, and Parms by
+-- exact equality rather than substring search, so the mission-giver rows
+-- (tcw_macewindumg, tcw_macewindumg_tb) and the team-up NPC
+-- (tcw_macewindu_teamup) are never touched.
+--
+-- The filename stem is the match hint: the loader arms this patch when that
+-- literal appears in a chunk being compiled, and runs it right after that
+-- chunk's own pcall returns. The hint is not unique to toybox_actors.lua, so
+-- every branch is guarded and idempotent.
+
+if Data and Data.Records then
+    local recs = Data.Records
+    local i = 1
+    local n = #recs
+    while i <= n do
+        local rec = recs[i]
+        if rec then
+            local nm = rec.Name
+            if nm == "tcw_macewindu" or nm == "TCW_MaceWindu" then
+                local p = rec.Parms
+                if (p == "DNAFile=characters/TCW_MaceWindu.dnax"
+                    or p == "DNAFile=characters/TCW_MaceWindu.dnax;")
+                   and rec.Type ~= "Avatar" then
+                    rec.Type = "Avatar"
+                end
+            elseif nm == "TCW_MaceWindu_Premium" or nm == "tcw_macewindu_premium" then
+                if rec.Type == "Avatar" then
+                    rec.Type = "Other"
+                end
+            end
+        end
+        i = i + 1
+    end
+end
