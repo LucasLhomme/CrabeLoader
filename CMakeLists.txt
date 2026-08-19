@@ -33,7 +33,6 @@ set(CRABELOADER_CORE_SOURCES
     src/message_hook.cpp
     src/avatar_relay_hook.cpp
     src/gateway.cpp
-    src/exception.cpp
     src/logger.cpp
 )
 

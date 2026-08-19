@@ -11,26 +11,8 @@
 #include "loader/loader.hpp"
 #include "logger/logger.hpp"
 
-namespace {
-    // A resolved address of 0 means "not found": skip it rather than patch a
-    // guess, since a wrong address overwrites live code and crashes the host
-    // process on the next execution.
-    bool installOne(Hook& hook, uintptr_t addr, void* detour, const char* name)
-    {
-        Logger& logger = Logger::getInstance();
-
-        if (addr == 0) {
-            logger.warning("LuaCall: {} skipped (address not resolved).", name);
-            return false;
-        }
-        if (!hook.install(reinterpret_cast<void*>(addr), detour)) {
-            logger.error("LuaCall: failed to hook {} at 0x{:X}.", name, addr);
-            return false;
-        }
-        logger.debug("LuaCall: {} hooked.", name);
-        return true;
-    }
-}
+// Lua's LUA_MULTRET: return every value the chunk produced.
+constexpr int kLuaMultret = -1;
 
 LuaCall& LuaCall::get()
 {
@@ -40,19 +22,18 @@ LuaCall& LuaCall::get()
 
 // Stack-reading/pushing addresses are stored even when unresolved: they are
 // called directly, never hooked, so a missing one degrades a feature instead
-// of breaking installOne's hooks.
+// of breaking the hooks installed above.
 bool LuaCall::initialize(const LuaApiAddresses& addresses)
 {
     bool anyInstalled = false;
 
-    anyInstalled |= installOne(_hookLoadfile, addresses.loadfile,
-                            reinterpret_cast<void*>(&LuaCall::hkLoadfile), "luaL_loadfile");
-    anyInstalled |= installOne(_hookLoadbuffer, addresses.loadbuffer,
-                            reinterpret_cast<void*>(&LuaCall::hkLoadbuffer), "luaL_loadbuffer");
-    anyInstalled |= installOne(_hookPcall, addresses.pcall,
-                            reinterpret_cast<void*>(&LuaCall::hkPcall), "lua_pcall");
+    anyInstalled |= _hookLoadfile.installLogged(addresses.loadfile,
+                            reinterpret_cast<void*>(&LuaCall::hkLoadfile), "LuaCall", "luaL_loadfile");
+    anyInstalled |= _hookLoadbuffer.installLogged(addresses.loadbuffer,
+                            reinterpret_cast<void*>(&LuaCall::hkLoadbuffer), "LuaCall", "luaL_loadbuffer");
+    anyInstalled |= _hookPcall.installLogged(addresses.pcall,
+                            reinterpret_cast<void*>(&LuaCall::hkPcall), "LuaCall", "lua_pcall");
 
-    _api = addresses;
     _getfield = reinterpret_cast<t_lua_getfield>(addresses.getfield);
     _tolstring = reinterpret_cast<t_lua_tolstring>(addresses.tolstring);
     _settop = reinterpret_cast<t_lua_settop>(addresses.settop);
@@ -154,7 +135,8 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
     int result = LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
 
     if (loader.hasArmedPatch()) {
-        LuaCall::get().runPatch(L, loader.takeArmedPatch());
+        Loader::ChunkRule armed = loader.takeArmedPatch();
+        LuaCall::get().runPatch(L, armed.source, armed.label);
     }
 
     return result;
@@ -172,31 +154,16 @@ bool LuaCall::runFile(void* L, const char* path) const
         return false;
     }
 
-    int savedTop = _gettop ? _gettop(L) : 0;
+    ChunkResult result = runChunk(L, kLuaMultret, [&]() { return loadfile(L, path); });
 
-    constexpr int kLuaOk = 0;
-    constexpr int kLuaMultret = -1;
-
-    auto restoreTop = [&]() {
-        if (_gettop && _settop) _settop(L, savedTop);
-    };
-
-    int loadStatus = loadfile(L, path);
-    if (loadStatus != kLuaOk) {
+    if (result.stage == ChunkResult::Stage::LoadFailed) {
         Logger::getInstance().error("LuaCall: luaL_loadfile('{}') failed (status {}): {}",
-                                    path, loadStatus, popString(L, -1));
-        restoreTop();
-        return false;
-    }
-
-    int callStatus = pcall(L, 0, kLuaMultret, 0);
-    if (callStatus != kLuaOk) {
+                                    path, result.status, result.text);
+    } else if (result.stage == ChunkResult::Stage::CallFailed) {
         Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}): {}",
-                                    path, callStatus, popString(L, -1));
+                                    path, result.status, result.text);
     }
-
-    restoreTop();
-    return callStatus == kLuaOk;
+    return static_cast<bool>(result);
 }
 
 bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
@@ -209,28 +176,18 @@ bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
 
     std::string chunk = std::format("if {0} then {0}() end", functionName);
 
-    int savedTop = _gettop ? _gettop(L) : 0;
-    auto restoreTop = [&]() {
-        if (_gettop && _settop) _settop(L, savedTop);
-    };
+    ChunkResult result = runChunk(L, kLuaMultret, [&]() {
+        return loadbuffer(L, chunk.c_str(), chunk.size(), functionName.c_str());
+    });
 
-    constexpr int kLuaOk = 0;
-    constexpr int kLuaMultret = -1;
-
-    int loadStatus = loadbuffer(L, chunk.c_str(), chunk.size(), functionName.c_str());
-    if (loadStatus != kLuaOk) {
+    if (result.stage == ChunkResult::Stage::LoadFailed) {
         Logger::getInstance().error("LuaCall: failed to compile keybind chunk for '{}' (status {}).",
-                                    functionName, loadStatus);
-        restoreTop();
-        return false;
+                                    functionName, result.status);
     }
-
-    int callStatus = pcall(L, 0, kLuaMultret, 0);
-    restoreTop();
-    return callStatus == kLuaOk;
+    return static_cast<bool>(result);
 }
 
-bool LuaCall::runPatch(void* L, const std::string& patchSource) const
+bool LuaCall::runPatch(void* L, const std::string& patchSource, const std::string& label) const
 {
     t_luaL_loadbuffer loadbuffer = originalLoadbuffer();
     t_lua_pcall pcall = originalPcall();
@@ -238,32 +195,25 @@ bool LuaCall::runPatch(void* L, const std::string& patchSource) const
     if (!L || !loadbuffer || !pcall)
         return false;
 
-    int savedTop = _gettop ? _gettop(L) : 0;
-    auto restoreTop = [&]() {
-        if (_gettop && _settop) _settop(L, savedTop);
-    };
+    // The label becomes the chunk name, so a Lua traceback inside the patch
+    // points at whatever registered it instead of a generic "patch".
+    std::string chunkName = "=" + (label.empty() ? std::string("crabe_patch") : label);
 
-    constexpr int kLuaOk = 0;
-    constexpr int kLuaMultret = -1;
+    ChunkResult result = runChunk(L, kLuaMultret, [&]() {
+        return loadbuffer(L, patchSource.c_str(), patchSource.size(), chunkName.c_str());
+    });
 
-    int loadStatus = loadbuffer(L, patchSource.c_str(), patchSource.size(), "=skilltree_patch");
-    if (loadStatus != kLuaOk) {
-        Logger::getInstance().error("LuaCall: skill-tree patch failed to compile (status {}): {}",
-                                    loadStatus, popString(L, -1));
-        restoreTop();
-        return false;
-    }
-
-    int callStatus = pcall(L, 0, kLuaMultret, 0);
-    if (callStatus != kLuaOk) {
-        Logger::getInstance().error("LuaCall: skill-tree patch failed to run (status {}): {}",
-                                    callStatus, popString(L, -1));
+    if (result.stage == ChunkResult::Stage::LoadFailed) {
+        Logger::getInstance().error("LuaCall: patch '{}' failed to compile (status {}): {}",
+                                    label, result.status, result.text);
+    } else if (result.stage == ChunkResult::Stage::CallFailed) {
+        Logger::getInstance().error("LuaCall: patch '{}' failed to run (status {}): {}",
+                                    label, result.status, result.text);
     } else {
-        Logger::getInstance().info("LuaCall: skill-tree patch applied ({} bytes).", patchSource.size());
+        Logger::getInstance().info("LuaCall: patch '{}' applied ({} bytes).",
+                                   label, patchSource.size());
     }
-
-    restoreTop();
-    return callStatus == kLuaOk;
+    return static_cast<bool>(result);
 }
 
 // lua_toboolean stands in for a type check: false for nil, and no lua_type is
@@ -386,30 +336,60 @@ bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) con
         return false;
     }
 
+    ChunkResult result = runChunk(L, 1, [&]() {
+        return loadbuffer(L, code.c_str(), code.size(), "=console");
+    });
+
+    out = std::move(result.text);
+    if (result)
+        return true;
+
+    if (out.empty()) {
+        out = result.stage == ChunkResult::Stage::LoadFailed
+            ? std::format("compile failed (status {}).", result.status)
+            : std::format("runtime error (status {}).", result.status);
+    }
+    return false;
+}
+
+LuaCall::ChunkResult LuaCall::runChunk(void* L, int nresults,
+                                       const std::function<int()>& load) const
+{
     constexpr int kLuaOk = 0;
+
+    ChunkResult result;
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !pcall) {
+        result.stage = ChunkResult::Stage::LoadFailed;
+        result.text = "Lua state or hooks unavailable.";
+        return result;
+    }
 
     int savedTop = _gettop ? _gettop(L) : 0;
     auto restoreTop = [&]() {
         if (_gettop && _settop) _settop(L, savedTop);
     };
 
-    int loadStatus = loadbuffer(L, code.c_str(), code.size(), "=console");
-    if (loadStatus != kLuaOk) {
-        out = popString(L, -1);
-        if (out.empty())
-            out = std::format("compile failed (status {}).", loadStatus);
+    result.status = load();
+    if (result.status != kLuaOk) {
+        result.stage = ChunkResult::Stage::LoadFailed;
+        result.text = popString(L, -1);
         restoreTop();
-        return false;
+        return result;
     }
 
-    int callStatus = pcall(L, 0, 1, 0);
-    out = popString(L, -1);
+    result.status = pcall(L, 0, nresults, 0);
+
+    // Only read a value that is actually there: with LUA_MULTRET a chunk may
+    // return nothing, and popString would then read past the top and pop a
+    // slot that belongs to the caller.
+    if (!_gettop || _gettop(L) > savedTop)
+        result.text = popString(L, -1);
+
     restoreTop();
 
-    if (callStatus != kLuaOk) {
-        if (out.empty())
-            out = std::format("runtime error (status {}).", callStatus);
-        return false;
-    }
-    return true;
+    if (result.status != kLuaOk)
+        result.stage = ChunkResult::Stage::CallFailed;
+    return result;
 }

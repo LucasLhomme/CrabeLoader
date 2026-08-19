@@ -91,6 +91,22 @@ void Hook::remove()
     _installed = false;
 }
 
+bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const char* name)
+{
+    Logger& logger = Logger::getInstance();
+
+    if (addr == 0) {
+        logger.warning("{}: {} skipped (address not resolved).", owner, name);
+        return false;
+    }
+    if (!install(reinterpret_cast<void*>(addr), detour)) {
+        logger.error("{}: failed to hook {} at 0x{:X}.", owner, name, addr);
+        return false;
+    }
+    logger.debug("{}: {} hooked.", owner, name);
+    return true;
+}
+
 bool Hook::isInstalled() const
 {
     return _installed;
