@@ -46,6 +46,11 @@ std::vector<Entry> parseExposedCharacters(const std::string& luaSource);
 // a Lua state with no base library loaded.
 std::string buildInjectionLua(const std::vector<Entry>& entries);
 
+// Lua source defining the Name -> sku_id table for these entries, so the Lua
+// API can look ids up instead of re-deriving them. Keeping the hash on one
+// side only is what stops a row and its registry slot from disagreeing.
+std::string buildSkuTableLua(const std::vector<Entry>& entries);
+
 // AES-128-CBC + PKCS7 under the gateway's fixed key and IV, behind the game's
 // type tag. Exposed for tests and diagnostics.
 std::string encryptString(const std::string& value);

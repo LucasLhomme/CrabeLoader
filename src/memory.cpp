@@ -85,61 +85,6 @@ namespace {
     }
 
     // Size of the ModRM byte plus its optional SIB and displacement.
-    size_t modrmLength(const uint8_t* p)
-    {
-        uint8_t mod = static_cast<uint8_t>(p[0] >> 6);
-        uint8_t rm = static_cast<uint8_t>(p[0] & 7);
-        size_t len = 1;
-
-        if (mod != 3 && rm == 4) len += 1;              // SIB byte
-        if (mod == 1) len += 1;                         // disp8
-        else if (mod == 2) len += 4;                    // disp32
-        else if (mod == 0 && rm == 5) len += 4;         // absolute disp32
-
-        return len;
-    }
-
-    size_t instructionLength(const uint8_t* p)
-    {
-        switch (p[0]) {
-            case 0x64:                                  // FS segment prefix
-                return 1 + instructionLength(p + 1);
-
-            case 0x50: case 0x51: case 0x52: case 0x53: // push r32
-            case 0x54: case 0x55: case 0x56: case 0x57:
-            case 0x58: case 0x59: case 0x5A: case 0x5B: // pop r32
-            case 0x5C: case 0x5D: case 0x5E: case 0x5F:
-            case 0x90:                                  // nop
-                return 1;
-
-            case 0x6A:                                  // push imm8
-                return 2;
-
-            case 0x68:                                  // push imm32
-            case 0xA1: case 0xA3:                       // mov eax, moffs32
-            case 0xB8: case 0xB9: case 0xBA: case 0xBB: // mov r32, imm32
-            case 0xBC: case 0xBD: case 0xBE: case 0xBF:
-                return 5;
-
-            case 0x03: case 0x2B: case 0x31: case 0x33: // add/sub/xor r32
-            case 0x39: case 0x3B: case 0x85:            // cmp / test
-            case 0x88: case 0x8A: case 0x89: case 0x8B: // mov
-            case 0x8D:                                  // lea
-                return 1 + modrmLength(p + 1);
-
-            case 0x83:                                  // group1 r/m32, imm8
-            case 0xC6:                                  // mov r/m8, imm8
-                return 1 + modrmLength(p + 1) + 1;
-
-            case 0x81:                                  // group1 r/m32, imm32
-            case 0xC7:                                  // mov r/m32, imm32
-                return 1 + modrmLength(p + 1) + 4;
-
-            default:
-                return 0;                               // unknown: refuse
-        }
-    }
-
 } // namespace
 
 uintptr_t Memory::patternScan(const char* pattern, HMODULE module, uintptr_t after)
@@ -357,29 +302,4 @@ std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan
         i += 5;
     }
     return targets;
-}
-
-uintptr_t Memory::findNthCall(uintptr_t functionStart, int n, size_t maxScan)
-{
-    if (n <= 0) return 0;
-
-    std::vector<uintptr_t> targets = findCalls(functionStart, maxScan);
-    if (static_cast<size_t>(n) > targets.size()) return 0;
-
-    return targets[static_cast<size_t>(n) - 1];
-}
-
-size_t Memory::prologueLength(uintptr_t addr, size_t minLen)
-{
-    if (!isReadable(addr, minLen + 16)) return 0;
-
-    auto* code = reinterpret_cast<const uint8_t*>(addr);
-    size_t total = 0;
-
-    while (total < minLen) {
-        size_t len = instructionLength(code + total);
-        if (len == 0) return 0;
-        total += len;
-    }
-    return total;
 }

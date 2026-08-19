@@ -21,16 +21,6 @@ Overlay::~Overlay()
     uninitialize();
 }
 
-void Overlay::setupFlag()
-{
-    ImGuiWindowFlags window_flags =
-        ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav;
-}
-
 void Overlay::defaultSettings()
 {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -95,7 +85,6 @@ void Overlay::submitConsoleInput()
 
 void Overlay::renderOverlay()
 {
-    Overlay::setupFlag();
     Overlay::defaultSettings();
 
     ImGui::Begin("CrabeLoader Overlay");

@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <format>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "loader/lua_symbols.hpp"
@@ -26,41 +28,49 @@ namespace {
         size_t scanBytes = 256;  // how far into the wrapper to look
     };
 
-    // Index is a hint, RVA is the contract: a mismatch refuses rather than
-    // hooking a wrong address. "type" resolves to io.type (found before
-    // luaB_type); "wrap" is coroutine.wrap.
-    constexpr LuaSymbol kLoadfile     { "luaL_loadfile",     "loadfile",   2,  0xF0EBF0 };
-    constexpr LuaSymbol kLoadbuffer   { "luaL_loadbuffer",   "loadstring", 3,  0xF0EDE0 };
-    constexpr LuaSymbol kPcall        { "lua_pcall",         "xpcall",     4,  0xF0DF60 };
+    // Which LuaApiAddresses field each symbol fills, stated once so the pairing
+    // cannot drift. Index is a hint, RVA is the contract: a mismatch refuses
+    // rather than hooking a wrong address. "type" resolves to io.type (found
+    // before luaB_type); "wrap" is coroutine.wrap.
+    struct Binding {
+        uintptr_t LuaApiAddresses::* field;
+        LuaSymbol symbol;
+    };
 
-    constexpr LuaSymbol kGettop       { "lua_gettop",        "print",      1,  0xF0D0E0 };
-    constexpr LuaSymbol kGetfield     { "lua_getfield",      "print",      2,  0xF0DA00 };
-    constexpr LuaSymbol kPushvalue    { "lua_pushvalue",     "print",      3,  0xF0D2A0 };
-    constexpr LuaSymbol kCall         { "lua_call",          "print",      5,  0xF0DF00 };
-    constexpr LuaSymbol kTolstring    { "lua_tolstring",     "print",      6,  0xF0D5A0, 512 };
-    constexpr LuaSymbol kSettop       { "lua_settop",        "print",      11, 0xF0D0F0, 512 };
+    constexpr Binding kBindings[] = {
+        { &LuaApiAddresses::loadfile,     { "luaL_loadfile",     "loadfile",   2,  0xF0EBF0 } },
+        { &LuaApiAddresses::loadbuffer,   { "luaL_loadbuffer",   "loadstring", 3,  0xF0EDE0 } },
+        { &LuaApiAddresses::pcall,        { "lua_pcall",         "xpcall",     4,  0xF0DF60 } },
 
-    constexpr LuaSymbol kPushcclosure { "lua_pushcclosure",  "wrap",       2,  0xF0D8E0 };
+        { &LuaApiAddresses::gettop,       { "lua_gettop",        "print",      1,  0xF0D0E0 } },
+        { &LuaApiAddresses::getfield,     { "lua_getfield",      "print",      2,  0xF0DA00 } },
+        { &LuaApiAddresses::pushvalue,    { "lua_pushvalue",     "print",      3,  0xF0D2A0 } },
+        { &LuaApiAddresses::call,         { "lua_call",          "print",      5,  0xF0DF00 } },
+        { &LuaApiAddresses::tolstring,    { "lua_tolstring",     "print",      6,  0xF0D5A0, 512 } },
+        { &LuaApiAddresses::settop,       { "lua_settop",        "print",      11, 0xF0D0F0, 512 } },
 
-    constexpr LuaSymbol kChecktype    { "luaL_checktype",    "rawset",     1,  0xF0EFE0 };
-    constexpr LuaSymbol kCheckany     { "luaL_checkany",     "rawset",     2,  0xF0F010 };
-    constexpr LuaSymbol kRawset       { "lua_rawset",        "rawset",     5,  0xF0DCA0 };
-    constexpr LuaSymbol kRawget       { "lua_rawget",        "rawget",     4,  0xF0DA60 };
+        { &LuaApiAddresses::pushcclosure, { "lua_pushcclosure",  "wrap",       2,  0xF0D8E0 } },
 
-    constexpr LuaSymbol kChecklstring { "luaL_checklstring", "require",    1,  0xF0F040 };
-    constexpr LuaSymbol kToboolean    { "lua_toboolean",     "require",    5,  0xF0D570 };
+        { &LuaApiAddresses::checktype,    { "luaL_checktype",    "rawset",     1,  0xF0EFE0 } },
+        { &LuaApiAddresses::checkany,     { "luaL_checkany",     "rawset",     2,  0xF0F010 } },
+        { &LuaApiAddresses::rawset,       { "lua_rawset",        "rawset",     5,  0xF0DCA0 } },
+        { &LuaApiAddresses::rawget,       { "lua_rawget",        "rawget",     4,  0xF0DA60 } },
 
-    constexpr LuaSymbol kIsnumber     { "lua_isnumber",      "tonumber",   3,  0xF0D350 };
-    constexpr LuaSymbol kTonumber     { "lua_tonumber",      "tonumber",   4,  0xF0D4F0 };
-    constexpr LuaSymbol kPushnumber   { "lua_pushnumber",    "tonumber",   5,  0xF0D7C0 };
+        { &LuaApiAddresses::checklstring, { "luaL_checklstring", "require",    1,  0xF0F040 } },
+        { &LuaApiAddresses::toboolean,    { "lua_toboolean",     "require",    5,  0xF0D570 } },
 
-    constexpr LuaSymbol kTouserdata   { "lua_touserdata",    "type",       2,  0xF0D6D0 };
-    constexpr LuaSymbol kGetmetatable { "lua_getmetatable",  "type",       4,  0xF0DB20 };
-    constexpr LuaSymbol kRawequal     { "lua_rawequal",      "type",       5,  0xF0D3F0 };
-    constexpr LuaSymbol kPushlstring  { "lua_pushlstring",   "type",       6,  0xF0D800 };
-    constexpr LuaSymbol kPushnil      { "lua_pushnil",       "type",       8,  0xF0D7A0 };
+        { &LuaApiAddresses::isnumber,     { "lua_isnumber",      "tonumber",   3,  0xF0D350 } },
+        { &LuaApiAddresses::tonumber,     { "lua_tonumber",      "tonumber",   4,  0xF0D4F0 } },
+        { &LuaApiAddresses::pushnumber,   { "lua_pushnumber",    "tonumber",   5,  0xF0D7C0 } },
 
-    constexpr LuaSymbol kPushboolean  { "lua_pushboolean",   "rawequal",   4,  0xF0D960 };
+        { &LuaApiAddresses::touserdata,   { "lua_touserdata",    "type",       2,  0xF0D6D0 } },
+        { &LuaApiAddresses::getmetatable, { "lua_getmetatable",  "type",       4,  0xF0DB20 } },
+        { &LuaApiAddresses::rawequal,     { "lua_rawequal",      "type",       5,  0xF0D3F0 } },
+        { &LuaApiAddresses::pushlstring,  { "lua_pushlstring",   "type",       6,  0xF0D800 } },
+        { &LuaApiAddresses::pushnil,      { "lua_pushnil",       "type",       8,  0xF0D7A0 } },
+
+        { &LuaApiAddresses::pushboolean,  { "lua_pushboolean",   "rawequal",   4,  0xF0D960 } },
+    };
 
     std::string firstBytes(uintptr_t addr, size_t count)
     {
@@ -79,20 +89,20 @@ namespace {
     // Tries every stdlib binding of symbol.stdlibName and keeps the one whose
     // call #callIndex lands on expectedRva; a mismatch refuses rather than
     // hooking a wrong address.
-    uintptr_t resolveLuaFunction(const LuaSymbol& symbol, uintptr_t base)
+    uintptr_t resolveLuaFunction(const LuaSymbol& symbol, uintptr_t base,
+                                const std::vector<uintptr_t>& wrappers)
     {
         Logger& logger = Logger::getInstance();
 
-        std::vector<uintptr_t> wrappers = Memory::findRegisteredFunctions(symbol.stdlibName);
         if (wrappers.empty()) {
-            logger.error("Loader: {}: no '{}' entry in the Lua stdlib table.",
+            logger.error("LuaSymbols: {}: no '{}' entry in the Lua stdlib table.",
                         symbol.name, symbol.stdlibName);
             return 0;
         }
 
         auto index = static_cast<size_t>(symbol.callIndex);
         if (symbol.callIndex <= 0) {
-            logger.error("Loader: {}: invalid call index {}.", symbol.name, symbol.callIndex);
+            logger.error("LuaSymbols: {}: invalid call index {}.", symbol.name, symbol.callIndex);
             return 0;
         }
 
@@ -111,27 +121,27 @@ namespace {
             }
             if (rva != symbol.expectedRva) continue;
 
-            logger.debug("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
+            logger.debug("LuaSymbols: {} @ 0x{:X} (RVA 0x{:X}) [{}]",
                         symbol.name, addr, rva, firstBytes(addr, 8));
             return addr;
         }
 
         if (!symbol.expectedRva && fallback) {
-            logger.debug("Loader: {} @ 0x{:X} (RVA 0x{:X}) [{}] (unverified: no expected RVA)",
+            logger.debug("LuaSymbols: {} @ 0x{:X} (RVA 0x{:X}) [{}] (unverified: no expected RVA)",
                         symbol.name, fallback, fallback - base, firstBytes(fallback, 8));
             return fallback;
         }
 
-        logger.error("Loader: {}: no '{}' binding ({} candidate(s)) whose call #{} lands on RVA 0x{:X}; refusing.",
+        logger.error("LuaSymbols: {}: no '{}' binding ({} candidate(s)) whose call #{} lands on RVA 0x{:X}; refusing.",
                     symbol.name, symbol.stdlibName, wrappers.size(), symbol.callIndex, symbol.expectedRva);
 
         for (uintptr_t wrapper : wrappers) {
             std::vector<uintptr_t> calls = Memory::findCalls(wrapper, symbol.scanBytes);
-            logger.debug("Loader: {}: candidate '{}' @ 0x{:X}, {} call(s)",
+            logger.debug("LuaSymbols: {}: candidate '{}' @ 0x{:X}, {} call(s)",
                         symbol.name, symbol.stdlibName, wrapper, calls.size());
 
             for (size_t i = 0; i < calls.size(); ++i) {
-                logger.debug("Loader: {}:   call #{} -> RVA 0x{:X}",
+                logger.debug("LuaSymbols: {}:   call #{} -> RVA 0x{:X}",
                             symbol.name, i + 1, calls[i] - base);
             }
         }
@@ -144,37 +154,19 @@ namespace LuaSymbols {
 
 LuaApiAddresses resolveAll(uintptr_t base)
 {
+    // Twenty-five symbols share eleven stdlib names ("print" alone carries
+    // six). Each lookup walks the whole image, so they are cached here and
+    // every symbol on the same name reuses one walk.
+    std::unordered_map<std::string_view, std::vector<uintptr_t>> wrappers;
     LuaApiAddresses addresses;
-    addresses.loadfile = resolveLuaFunction(kLoadfile, base);
-    addresses.loadbuffer = resolveLuaFunction(kLoadbuffer, base);
-    addresses.pcall = resolveLuaFunction(kPcall, base);
-    addresses.call = resolveLuaFunction(kCall, base);
 
-    addresses.gettop = resolveLuaFunction(kGettop, base);
-    addresses.settop = resolveLuaFunction(kSettop, base);
-    addresses.pushvalue = resolveLuaFunction(kPushvalue, base);
+    for (const Binding& binding : kBindings) {
+        auto [it, inserted] = wrappers.try_emplace(binding.symbol.stdlibName);
+        if (inserted)
+            it->second = Memory::findRegisteredFunctions(binding.symbol.stdlibName);
 
-    addresses.tolstring = resolveLuaFunction(kTolstring, base);
-    addresses.tonumber = resolveLuaFunction(kTonumber, base);
-    addresses.toboolean = resolveLuaFunction(kToboolean, base);
-    addresses.touserdata = resolveLuaFunction(kTouserdata, base);
-    addresses.isnumber = resolveLuaFunction(kIsnumber, base);
-
-    addresses.pushnil = resolveLuaFunction(kPushnil, base);
-    addresses.pushnumber = resolveLuaFunction(kPushnumber, base);
-    addresses.pushlstring = resolveLuaFunction(kPushlstring, base);
-    addresses.pushboolean = resolveLuaFunction(kPushboolean, base);
-    addresses.pushcclosure = resolveLuaFunction(kPushcclosure, base);
-
-    addresses.getfield = resolveLuaFunction(kGetfield, base);
-    addresses.rawget = resolveLuaFunction(kRawget, base);
-    addresses.rawset = resolveLuaFunction(kRawset, base);
-    addresses.rawequal = resolveLuaFunction(kRawequal, base);
-    addresses.getmetatable = resolveLuaFunction(kGetmetatable, base);
-
-    addresses.checkany = resolveLuaFunction(kCheckany, base);
-    addresses.checktype = resolveLuaFunction(kChecktype, base);
-    addresses.checklstring = resolveLuaFunction(kChecklstring, base);
+        addresses.*binding.field = resolveLuaFunction(binding.symbol, base, it->second);
+    }
 
     return addresses;
 }
