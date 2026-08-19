@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <string>
 
@@ -69,7 +70,7 @@ class LuaCall {
 
         // Compiles and runs `patchSource` against whatever chunk hkPcall just
         // executed. Failure is logged and swallowed, never propagated.
-        bool runPatch(void* L, const std::string& patchSource) const;
+        bool runPatch(void* L, const std::string& patchSource, const std::string& label) const;
 
         // Compiles and runs `code`, writing its first return value or the
         // error message into `out`. False if lua_tolstring never resolved.
@@ -124,6 +125,25 @@ class LuaCall {
         static int __cdecl hkPcall(void* L, int nargs, int nresults, int errfunc);
 
         t_luaL_loadfile originalLoadfile() const;
+        // Outcome of loading and calling one chunk. `text` is the first
+        // result on success, or the error message -- the same stack slot in
+        // both cases.
+        struct ChunkResult {
+            enum class Stage { Ok, LoadFailed, CallFailed };
+
+            Stage stage = Stage::Ok;
+            int status = 0;
+            std::string text;
+
+            explicit operator bool() const { return stage == Stage::Ok; }
+        };
+
+        // The one place a chunk is loaded, called, and the stack put back.
+        // `load` does the load and returns its Lua status; every caller
+        // differs only in that and in what it logs. Stack balance lives here
+        // alone -- it is what silently corrupts the game when it drifts.
+        ChunkResult runChunk(void* L, int nresults, const std::function<int()>& load) const;
+
         t_luaL_loadbuffer originalLoadbuffer() const;
         t_lua_pcall originalPcall() const;
         std::string popString(void* L, int index) const;
@@ -133,7 +153,6 @@ class LuaCall {
         Hook _hookPcall;
 
         // Every resolved address, including the ones nothing calls yet.
-        LuaApiAddresses _api;
         t_lua_getfield _getfield = nullptr;
         t_lua_tolstring _tolstring = nullptr;
         t_lua_settop _settop = nullptr;
@@ -144,7 +163,6 @@ class LuaCall {
         t_lua_pushlstring _pushlstring = nullptr;
         t_lua_pushcclosure _pushcclosure = nullptr;
         t_lua_rawset _rawset = nullptr;
-        std::mutex _stateMutex;
 
 };
 

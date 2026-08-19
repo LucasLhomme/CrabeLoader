@@ -49,13 +49,6 @@ namespace Memory {
     // `functionStart`, in order. Only counts calls landing in readable memory.
     std::vector<uintptr_t> findCalls(uintptr_t functionStart, size_t maxScan = 256);
 
-    // Target of the `n`-th (1-based) call found by findCalls. Turns a
-    // wrapper into the real function it delegates to.
-    uintptr_t findNthCall(uintptr_t functionStart, int n, size_t maxScan = 256);
-
-    // Size of the whole instructions covering >= minLen bytes at `addr`; 0 if
-    // one is position-dependent. A hook must steal exactly this many bytes.
-    size_t prologueLength(uintptr_t addr, size_t minLen);
 }
 
 #endif /* !MEMORY_HPP_ */

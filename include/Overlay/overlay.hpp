@@ -18,11 +18,8 @@ class Overlay {
         ~Overlay();
         void initialize();
         void uninitialize();
-        void setupFlag();
         void defaultSettings();
         void renderOverlay();
-        void openOverlay();
-        void closeOverlay();
 
     protected:
     private:

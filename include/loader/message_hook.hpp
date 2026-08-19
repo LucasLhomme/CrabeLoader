@@ -8,6 +8,7 @@
 #define MESSAGE_HOOK_HPP_
 
 #include <cstdint>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -51,6 +52,9 @@ class MessageHook {
         Hook _hook;
         mutable std::mutex _mutex;
         std::vector<std::string> _watched;
+        // Mirrors _watched.size() so the dispatch hook can rule itself out
+        // without taking the lock. The engine dispatches constantly.
+        std::atomic<size_t> _watchCount{0};
         std::vector<std::string> _recorded;
 };
 

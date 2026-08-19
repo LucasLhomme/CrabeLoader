@@ -121,18 +121,16 @@ function Crabe.VirtualReader.addCharacter(entry)
     return row
 end
 
--- sku_id derived from a character name, inside the range reserved for mods.
--- Must match Gateway::allocateSku (src/gateway.cpp) exactly, or a row selects
--- an id with no registry slot behind it. Multiply-and-add, never XOR: Lua 5.1
--- has no bitwise operators, and doubles hold these intermediates exactly.
-local SKU_LO, SKU_HI = 1000340, 1000999
-
+-- sku_id the loader allocated for a character name, or nil.
+--
+-- The loader derives the id in C++ (Gateway::allocateSku) when it builds the
+-- registry slot, and writes the resulting Name -> sku_id table into this state
+-- just before characters/*.lua runs. Reading it back -- rather than computing
+-- the same hash a second time here -- is what guarantees a row and its slot
+-- can never disagree.
 function Crabe.VirtualReader.skuForName(name)
-    local h = 0
-    for i = 1, #name do
-        h = (h * 31 + string.byte(name, i)) % 2147483648
-    end
-    return tostring(SKU_LO + h % (SKU_HI - SKU_LO + 1))
+    local skus = Crabe.VirtualReader._skus
+    return skus and skus[name] or nil
 end
 
 -- Surfaces a character the game ships in full -- actor row, .dnax, 3D assets
@@ -157,6 +155,15 @@ function Crabe.VirtualReader.exposeCharacter(entry)
     -- that is where the loader reads it from.
     if entry.sku_id == nil then
         entry.sku_id = Crabe.VirtualReader.skuForName(entry.Name)
+        -- No slot was built for this Name. The loader scans characters/*.lua
+        -- for literal exposeCharacter{ Name = "..." } calls, so a name it
+        -- could not read is a name with no figure behind it -- which the game
+        -- would report much later as "Figurine Disney Infinity manquante".
+        if entry.sku_id == nil then
+            error("Crabe.VirtualReader.exposeCharacter: no figure registry slot was built for '" ..
+                entry.Name .. "'. Write the Name as a literal in characters/*.lua, or pass " ..
+                "sku_id explicitly", 2)
+        end
     elseif type(entry.sku_id) ~= "string" or entry.sku_id == "" then
         error("Crabe.VirtualReader.exposeCharacter: entry.sku_id must be a non-empty string " ..
             "(or omitted, to derive one from Name)", 2)

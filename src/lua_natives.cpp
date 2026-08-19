@@ -27,6 +27,21 @@
 
 namespace {
 
+    // Pushes addresses as the comma-joined string the Lua side parses
+    // (src/api/40_inspect.lua). One wire format, defined here only.
+    int pushJoined(LuaCall& lua, void* L, const std::vector<uintptr_t>& values)
+    {
+        std::string joined;
+
+        for (size_t i = 0; i < values.size(); ++i) {
+            if (i) joined += ',';
+            joined += std::format("{}", values[i]);
+        }
+
+        lua.pushString(L, joined);
+        return 1;
+    }
+
     // No native exposes window/fullscreen state to Lua; window calls must
     // happen on the render thread, not here, hence just posting a request.
     int __cdecl nativeSetWindowMode(void* L)
@@ -313,16 +328,7 @@ namespace {
         constexpr size_t kMaxHits = 256;
         if (limit == 0 || limit > kMaxHits) limit = kMaxHits;
 
-        std::vector<uintptr_t> hits = Memory::findPointers(value, limit);
-        std::string joined;
-
-        for (size_t i = 0; i < hits.size(); ++i) {
-            if (i) joined += ',';
-            joined += std::format("{}", hits[i]);
-        }
-
-        lua.pushString(L, joined);
-        return 1;
+        return pushJoined(lua, L, Memory::findPointers(value, limit));
     }
 
     // Crabe._findCallSites(target [, limit]) -> "addr1,addr2,..." of every
@@ -339,16 +345,7 @@ namespace {
         constexpr size_t kMaxSites = 256;
         if (limit == 0 || limit > kMaxSites) limit = kMaxSites;
 
-        std::vector<uintptr_t> sites = Memory::findCallSites(target, limit);
-        std::string joined;
-
-        for (size_t i = 0; i < sites.size(); ++i) {
-            if (i) joined += ',';
-            joined += std::format("{}", sites[i]);
-        }
-
-        lua.pushString(L, joined);
-        return 1;
+        return pushJoined(lua, L, Memory::findCallSites(target, limit));
     }
 
     // Crabe._findString(text [, after]) -> address above `after`, or nil.
@@ -400,16 +397,7 @@ namespace {
         constexpr size_t kMaxScan = 4096;
         if (maxScan == 0 || maxScan > kMaxScan) maxScan = kMaxScan;
 
-        std::vector<uintptr_t> calls = Memory::findCalls(address, maxScan);
-        std::string joined;
-
-        for (size_t i = 0; i < calls.size(); ++i) {
-            if (i) joined += ',';
-            joined += std::format("{}", calls[i]);
-        }
-
-        lua.pushString(L, joined);
-        return 1;
+        return pushJoined(lua, L, Memory::findCalls(address, maxScan));
     }
 
     // Crabe._registerLoadOverride(matchSubstring, luaSource). See

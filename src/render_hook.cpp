@@ -19,24 +19,6 @@ namespace {
     constexpr int kResizeBuffersVtableIndex = 13;
     constexpr wchar_t kDummyClassName[] = L"CrabeLoaderDummyWindow";
 
-    // A resolved address of 0 means "not found": skip it rather than patch a
-    // guess, since a wrong address overwrites live code and crashes the host
-    // process on the next execution.
-    bool installOne(Hook& hook, uintptr_t addr, void* detour, const char* name)
-    {
-        Logger& logger = Logger::getInstance();
-
-        if (addr == 0) {
-            logger.warning("RenderHook: {} skipped (address not resolved).", name);
-            return false;
-        }
-        if (!hook.install(reinterpret_cast<void*>(addr), detour)) {
-            logger.error("RenderHook: failed to hook {} at 0x{:X}.", name, addr);
-            return false;
-        }
-        logger.debug("RenderHook: {} hooked.", name);
-        return true;
-    }
 }
 
 RenderHook& RenderHook::get()
@@ -116,10 +98,12 @@ bool RenderHook::initialize()
     }
 
     bool anyInstalled = false;
-    anyInstalled |= installOne(_hookPresent, presentAddr,
-                            reinterpret_cast<void*>(&RenderHook::hkPresent), "IDXGISwapChain::Present");
-    anyInstalled |= installOne(_hookResizeBuffers, resizeBuffersAddr,
-                            reinterpret_cast<void*>(&RenderHook::hkResizeBuffers), "IDXGISwapChain::ResizeBuffers");
+    anyInstalled |= _hookPresent.installLogged(presentAddr,
+                            reinterpret_cast<void*>(&RenderHook::hkPresent),
+                            "RenderHook", "IDXGISwapChain::Present");
+    anyInstalled |= _hookResizeBuffers.installLogged(resizeBuffersAddr,
+                            reinterpret_cast<void*>(&RenderHook::hkResizeBuffers),
+                            "RenderHook", "IDXGISwapChain::ResizeBuffers");
 
     return anyInstalled;
 }
