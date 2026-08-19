@@ -77,6 +77,81 @@ function Game.AddToInventory(id, amount)
     error("Game.AddToInventory: item '" .. tostring(id) .. "' has an unknown kind", 2)
 end
 
+-- Removes a registered item. Only "currency" can be taken back: a spawned
+-- object exists in the world and is not the inventory's to remove.
+function Game.RemoveFromInventory(id, amount)
+    local entry = Game._itemRegistry[id]
+    if not entry then
+        error("Game.RemoveFromInventory: unknown item id '" .. tostring(id) .. "'", 2)
+    end
+    if entry.kind ~= "currency" then
+        error("Game.RemoveFromInventory: '" .. tostring(id) .. "' is not currency", 2)
+    end
+
+    amount = amount or 1
+    entry.apply(-amount)
+    return amount
+end
+
+-- Game.UnlockGame used to live here and was wrong: UI_UnlockGame lifts the
+-- online session lock (its only call sites are pausemenu.lua:509 and
+-- onlinemp_options.lua:222, both facing UI_LockGame under a UI_GameIsLocked
+-- test) and unlocks no content at all. The honest version is
+-- Game.SetSessionLocked in 22_system.lua; content unlocking is 17_unlock.lua.
+
+-- Resolves an inventory item name to the rrofile the placer needs. The
+-- per-player database answers first; the global one covers items the player
+-- does not own. nil when neither knows the name.
+function Game.ResolveItemFile(invName, playerId)
+    playerId = playerId or Players_GetHostPlayerID()
+
+    if type(UI_GetItemDetailsForPlayer) == "function" then
+        local rro = UI_GetItemDetailsForPlayer("Inventory", playerId, invName, "rrofile")
+        if type(rro) == "string" and #rro > 0 then return rro end
+    end
+    if type(UI_GetItemDetails) == "function" then
+        local rro = UI_GetItemDetails("Inventory", invName, "rrofile")
+        if type(rro) == "string" and #rro > 0 then return rro end
+    end
+    return nil
+end
+
+-- Spawns an inventory item by name. Reuses AddToInventory's placer, so the
+-- StopPlaceMode cleanup still runs on failure -- without it the player stays
+-- locked in editor mode.
+function Game.SpawnItem(invName, playerId)
+    local rro = Game.ResolveItemFile(invName, playerId)
+    if not rro then
+        error("Game.SpawnItem: no rrofile for '" .. tostring(invName) .. "'", 2)
+    end
+
+    local id = "spawn." .. invName
+    Game.registerItem(id, { kind = "spawn", rrofile = rro })
+    return Game.AddToInventory(id, 1)
+end
+
+-- Every inventory item with the game's own metadata, as { name, details }
+-- rows -- what a spawn catalog is generated from.
+function Game.ListInventory(playerId, category)
+    playerId = playerId or Players_GetHostPlayerID()
+
+    local raw = UI_ListInventoryToys(playerId, category or 0)
+    if type(raw) ~= "string" then
+        error("Game.ListInventory: expected a string, got " .. type(raw), 2)
+    end
+
+    local rows = {}
+    for name in string.gmatch(raw, "[^,]+") do
+        local details = ""
+        if type(UI_GetItemDetailsForPlayer) == "function" then
+            local value = UI_GetItemDetailsForPlayer("Inventory", playerId, name, "type,LevelFilter")
+            if type(value) == "string" then details = value end
+        end
+        rows[#rows + 1] = { name = name, details = details }
+    end
+    return rows
+end
+
 -- Unlocks a catalog entry (menus/Toy Box) rather than spawning it. itemId is
 -- a numeric catalog id, unconfirmed -- see docs/nativedb.md.
 function Game.UnlockItem(itemId, playerId)
@@ -176,7 +251,6 @@ for _, entry in ipairs({
     { "GetRoundCoins",        "Players_GetRoundCoin",       "player" },
     { "SetRoundCoins",        "Players_SetRoundCoins",      "item"   },
     { "GetAvatarLevel",       "Players_GetAvatarLevel",     "player" },
-    { "LevelUpAvatar",        "Players_AvatarLevelUp",      "player" },
     { "NumLocalPlayers",      "Players_NumLocalPlayers",    "none"   },
     { "NumPlayers",           "Players_NumPlayers",         "none"   },
     { "IsPlayerValid",        "Players_IsValid",            "player" },

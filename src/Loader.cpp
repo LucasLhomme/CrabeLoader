@@ -20,6 +20,7 @@
 #include "loader/lua_runtime.hpp"
 #include "loader/lua_symbols.hpp"
 #include "loader/luacall.hpp"
+#include "loader/menu.hpp"
 #include "loader/memory.hpp"
 #include "loader/avatar_relay_hook.hpp"
 #include "loader/input_hook.hpp"
@@ -239,6 +240,10 @@ void Loader::runTicks(void* L)
     _lastTick = now;
     double dt = std::chrono::duration<double>(elapsed).count();
     LuaCall::get().callTick(L, dt);
+
+    // Whatever the player clicked in the overlay runs here, on the Lua thread.
+    // Returns immediately when nothing was queued.
+    Menu::get().drain(L);
 }
 
 void Loader::drainPendingSnippets(void* L)
@@ -332,7 +337,8 @@ void Loader::drainLuaOutput(void* L)
 void Loader::registerDefaultKeybinds()
 {
     static constexpr std::pair<int, const char*> kLuaKeybinds[] = {
-        { VK_F1, "OnKeyF1" }, { VK_F2, "OnKeyF2" }, { VK_F3, "OnKeyF3" }, { VK_F4, "OnKeyF4" }, { VK_F5, "OnKeyF5" },
+        // F5 is absent on purpose: it opens the mod menu, registered below.
+        { VK_F1, "OnKeyF1" }, { VK_F2, "OnKeyF2" }, { VK_F3, "OnKeyF3" }, { VK_F4, "OnKeyF4" },
         { VK_F6, "OnKeyF6" }, { VK_F7, "OnKeyF7" }, { VK_F8, "OnKeyF8" }, { VK_F9, "OnKeyF9" },
         { VK_F10, "OnKeyF10" }, { VK_F11, "OnKeyF11" }, { VK_F12, "OnKeyF12" },
     };
@@ -342,6 +348,10 @@ void Loader::registerDefaultKeybinds()
 
     registerKeybind(VK_INSERT, []() {
         RenderHook::get().toggleMenu();
+    });
+
+    registerKeybind(VK_F5, []() {
+        RenderHook::get().toggleModMenu();
     });
 }
 

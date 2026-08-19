@@ -27,7 +27,10 @@ set(CRABELOADER_CORE_SOURCES
     src/lua_runtime.cpp
     src/lua_natives.cpp
     src/memory.cpp
+    src/codecave.cpp
+    src/cheats.cpp
     src/overlay.cpp
+    src/menu.cpp
     src/render_hook.cpp
     src/input_hook.cpp
     src/message_hook.cpp
