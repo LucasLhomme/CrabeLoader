@@ -130,13 +130,33 @@ void RenderHook::uninitialize()
     if (_device) { _device->Release(); _device = nullptr; }
 }
 
+void RenderHook::updateCursorVisibility()
+{
+    bool wanted = _menuOpen || _modMenuOpen;
+
+    ImGui::GetIO().MouseDrawCursor = wanted;
+    if (wanted) ClipCursor(nullptr);
+}
+
 void RenderHook::toggleMenu()
 {
     _menuOpen = !_menuOpen;
-    ImGui::GetIO().MouseDrawCursor = _menuOpen;
-    if (_menuOpen) ClipCursor(nullptr);
+    updateCursorVisibility();
 
     Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
+}
+
+void RenderHook::toggleModMenu()
+{
+    _modMenuOpen = !_modMenuOpen;
+    updateCursorVisibility();
+
+    Logger::getInstance().debug("RenderHook: mod menu {}.", _modMenuOpen ? "opened" : "closed");
+}
+
+bool RenderHook::isModMenuOpen() const
+{
+    return _modMenuOpen;
 }
 
 bool RenderHook::isMenuOpen() const
@@ -269,6 +289,15 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
         if (self._menuOpen)
             self._overlay.renderOverlay();
+
+        if (self._modMenuOpen) {
+            bool stayOpen = true;
+            self._overlay.renderModMenu(&stayOpen);
+
+            // The window's own close button has to agree with the F5 toggle.
+            if (!stayOpen)
+                self.toggleModMenu();
+        }
 
         ImGui::Render();
         self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);

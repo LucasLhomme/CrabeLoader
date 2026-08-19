@@ -33,8 +33,15 @@ class RenderHook {
         bool initialize();
         void uninitialize();
 
+        // The debug overlay (console, log): Insert.
         void toggleMenu();
         bool isMenuOpen() const;
+
+        // The mod menu: F5. A separate window with its own visibility, so the
+        // two can be open independently -- a player wants the menu without the
+        // developer console behind it.
+        void toggleModMenu();
+        bool isModMenuOpen() const;
 
         // Thread-safe; only records the request. hkPresent applies it next
         // frame, since window calls must happen on the thread that owns it.
@@ -50,6 +57,9 @@ class RenderHook {
         // Resolves Present/ResizeBuffers via a throwaway device+swapchain's
         // vtable; the pointers stay valid after the dummy objects are freed.
         static bool resolveSwapChainFunctions(uintptr_t& outPresent, uintptr_t& outResizeBuffers);
+
+        // ImGui draws the cursor whenever either window wants the mouse.
+        void updateCursorVisibility();
 
         void ensureBackendInit(IDXGISwapChain* swapChain);
         void releaseRenderTarget();
@@ -80,6 +90,7 @@ class RenderHook {
         WNDPROC _originalWndProc = nullptr;
         std::atomic<bool> _backendInitialized{false};
         std::atomic<bool> _menuOpen{false};
+        std::atomic<bool> _modMenuOpen{false};
 
         LONG_PTR _originalStyle = 0;
         RECT _originalRect{};

@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include "loader/avatar_relay_hook.hpp"
+#include "loader/cheats.hpp"
 #include "loader/input_hook.hpp"
 #include "loader/loader.hpp"
 #include "loader/lua_runtime.hpp"
@@ -454,6 +455,12 @@ bool LuaRuntime::registerNatives(void* L)
         { "_armAvatarRelay",      &nativeArmAvatarRelay },
         { "_disarmAvatarRelay",   &nativeDisarmAvatarRelay },
         { "_avatarRelayStatus",   &nativeAvatarRelayStatus },
+        { "_setGodMode",          &CheatNatives::setGodMode },
+        { "_getGodMode",          &CheatNatives::getGodMode },
+        { "_setSpeedMultiplier",  &CheatNatives::setSpeedMultiplier },
+        { "_getSpeedMultiplier",  &CheatNatives::getSpeedMultiplier },
+        { "_playerObject",        &CheatNatives::playerObject },
+        { "_playerFloat",         &CheatNatives::playerFloat },
         { "_registerLoadOverride", &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",   &nativeClearLoadOverrides },
     };

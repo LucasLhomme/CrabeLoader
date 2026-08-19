@@ -9,6 +9,7 @@
 
 #include "overlay/overlay.hpp"
 #include "loader/loader.hpp"
+#include "loader/menu.hpp"
 #include "logger/logger.hpp"
 
 Overlay::Overlay()
@@ -42,6 +43,61 @@ bool Overlay::isLevelVisible(LogLevel level) const
         case LogLevel::ERR:     return _showError;
         default:                return true;
     }
+}
+
+// Draws the view the game thread last reported, and turns clicks into queued
+// requests. Nothing here touches Lua: the render thread must not.
+void Overlay::renderModMenu(bool* open)
+{
+    ImGui::SetNextWindowSize(ImVec2(360.0f, 420.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Crabe Menu", open)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!_menuRequested) {
+        _menuRequested = true;
+        Menu::get().requestRefresh();
+    }
+
+    Menu::View view = Menu::get().view();
+
+    if (view.items.empty()) {
+        ImGui::TextDisabled("No mod has registered a menu entry.");
+        ImGui::TextDisabled("Mods declare them with Crabe.Menu.register{...}.");
+        ImGui::End();
+        return;
+    }
+
+    ImGui::TextUnformatted(view.title.c_str());
+    ImGui::Separator();
+
+    const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing() * 2.0f;
+    ImGui::BeginChild("MenuScroll", ImVec2(0.0f, -footerHeight), false);
+
+    for (size_t i = 0; i < view.items.size(); ++i) {
+        // Lua indexes from 1.
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::Selectable(view.items[i].c_str()))
+            Menu::get().requestActivate(static_cast<int>(i) + 1);
+        ImGui::PopID();
+    }
+
+    ImGui::EndChild();
+    ImGui::Separator();
+
+    if (ImGui::Button("Back"))
+        Menu::get().requestBack();
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh"))
+        Menu::get().requestRefresh();
+
+    if (!view.status.empty()) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted(view.status.c_str());
+    }
+
+    ImGui::End();
 }
 
 void Overlay::drawConsoleTab()
