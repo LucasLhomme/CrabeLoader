@@ -39,22 +39,35 @@ class Loader {
         void runTicks(void* L);
         bool isGameState(void* L) const;
 
+        // One rule against one chunk. `label` names the rule in the log --
+        // "skilltrees/hulk", "characters/", "figure registry" -- since `key`
+        // may be binary and tells a reader nothing.
+        struct ChunkRule {
+            std::string key;
+            std::string source;
+            std::string label;
+        };
+
         // Replaces the next content-matched loadbuffer chunk outright, before
         // compilation. See skilltrees/README.md.
-        void registerLoadOverride(std::string matchSubstring, std::string replacement);
+        void registerLoadOverride(std::string matchSubstring, std::string replacement,
+                                  std::string label = {});
         void clearLoadOverrides();
         const std::string* findLoadOverride(const char* buff, size_t size) const;
 
         // Runs `patchSource` against the next content-matched chunk right
-        // after that chunk's own call returns. See skilltrees/README.md.
-        void registerSkillTreePatch(std::string matchSubstring, std::string patchSource);
+        // after that chunk's own call returns. Not limited to skill trees --
+        // the figure registry is injected this way too. See skilltrees/README.md.
+        void registerChunkPatch(std::string matchSubstring, std::string patchSource,
+                                std::string label = {});
         void armPatchIfMatched(const char* buff, size_t size);
         bool hasArmedPatch() const;
-        std::string takeArmedPatch();
+        ChunkRule takeArmedPatch();
 
-        // Same as registerSkillTreePatch/armPatchIfMatched, keyed on the
-        // chunk's exact loadbuffer name instead of its content.
-        void registerNamedPatch(std::string exactName, std::string patchSource);
+        // Same as registerChunkPatch/armPatchIfMatched, keyed on the chunk's
+        // exact loadbuffer name instead of its content.
+        void registerNamedPatch(std::string exactName, std::string patchSource,
+                                std::string label = {});
         void armPatchIfNameMatched(const char* name);
 
     protected:
@@ -97,11 +110,14 @@ class Loader {
         std::atomic<bool> _runtimeReady{false};
         bool _sawForeignState = false;
         std::unordered_set<void*> _initializedStates;
+        // States that answered the probe and are not the game's. Their answer
+        // cannot change, so they are never probed again.
+        std::unordered_set<void*> _rejectedStates;
 
-        std::vector<std::pair<std::string, std::string>> _loadOverrides;
-        std::vector<std::pair<std::string, std::string>> _skillTreePatches;
-        std::vector<std::pair<std::string, std::string>> _namedPatches;
-        std::string _armedPatchSource;
+        std::vector<ChunkRule> _loadOverrides;
+        std::vector<ChunkRule> _chunkPatches;
+        std::vector<ChunkRule> _namedPatches;
+        ChunkRule _armedPatch;
 };
 
 

@@ -24,6 +24,13 @@ class Hook {
         // trampoline for calling through to the real function. MinHook itself
         // is reference-counted process-wide.
         bool install(void* src, void* dst);
+
+        // install() at a resolved address, with the outcome logged as
+        // "<owner>: <name> ...". An address of 0 means "not found" and is
+        // skipped rather than patched: a wrong address overwrites live code
+        // and crashes the host process on the next execution.
+        bool installLogged(uintptr_t addr, void* detour, const char* owner, const char* name);
+
         void remove();
 
         bool isInstalled() const;

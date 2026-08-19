@@ -87,67 +87,6 @@ function Game.UnlockItem(itemId, playerId)
     end
 end
 
--- Everything below is unconfirmed: guessed from the native's name and the
--- (playerID, ...) convention every confirmed native so far follows. Each call
--- goes through pcall for that reason -- see docs/nativedb.md "To verify".
-
--- Grants possession directly, as opposed to Game.UnlockItem which only makes
--- the entry selectable in menus. Same numeric-id correction as UnlockItem.
-function Game.AwardItem(itemId, playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Catalog_AwardInventoryItem, playerId, itemId)
-    if not ok then error("Game.AwardItem: " .. tostring(result), 2) end
-    return result
-end
-
--- Confirmed callable with a string name and no error; returned an empty
--- string for "Test" (not a real item), so this may well take an id like the
--- two above once one is known -- not yet confirmed either way.
-function Game.GetItemInfo(itemName)
-    local ok, result = pcall(Catalog_GetItemInfo, itemName)
-    if not ok then error("Game.GetItemInfo: " .. tostring(result), 2) end
-    return result
-end
-
--- Confirmed callable with zero arguments and no error; returned an empty
--- string in this save (likely nothing purchasable pending, or the list is
--- context-dependent on a screen this console call doesn't have open).
-function Game.GetCatalogList()
-    local ok, result = pcall(Catalog_GetList)
-    if not ok then error("Game.GetCatalogList: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.QuitGame()
-    return pcall(UI_QuitGame)
-end
-
-function Game.ReturnToHub()
-    return pcall(UI_ReturnToHub)
-end
-
-function Game.GetCurrentWorldName()
-    local ok, result = pcall(UI_CurrentWorldName)
-    if not ok then error("Game.GetCurrentWorldName: " .. tostring(result), 2) end
-    return result
-end
-
--- Confirmed callable and no error; returned an empty string in this session,
--- plausibly because it is not signed into a platform identity offline/in test.
-function Game.GetGamerTag(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(UI_GetGamerTag, playerId)
-    if not ok then error("Game.GetGamerTag: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.GetPlayerZoneName(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(UI_GetPlayerZoneName, playerId)
-    if not ok then error("Game.GetPlayerZoneName: " .. tostring(result), 2) end
-    return result
-end
-
 -- Confirmed in-game that this takes 2 arguments, not 1 ("bad argument #2 ...
 -- number expected, got no value"). What the second number selects (category?
 -- page?) is unknown -- 0 is an untested guess.
@@ -158,109 +97,89 @@ function Game.ListInventoryToys(playerId, category)
     return result
 end
 
-function Game.GetInventoryToyCount(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(UI_GetInventoryToyCount, playerId)
-    if not ok then error("Game.GetInventoryToyCount: " .. tostring(result), 2) end
-    return result
+-- These two return the raw pcall pair rather than raising: a caller wants to
+-- know the request was refused, not to be thrown out of its own code.
+function Game.QuitGame()
+    return pcall(UI_QuitGame)
 end
 
--- Round Coins are the physical Power Disc currency, distinct from Sparks
--- (Game.GetSparks/AddToInventory's "Items.money") -- see the false-friend
--- warning in docs/nativedb.md. Untested.
-function Game.GetRoundCoins(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Players_GetRoundCoin, playerId)
-    if not ok then error("Game.GetRoundCoins: " .. tostring(result), 2) end
-    return result
+function Game.ReturnToHub()
+    return pcall(UI_ReturnToHub)
 end
 
-function Game.SetRoundCoins(amount, playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Players_SetRoundCoins, playerId, amount)
-    if not ok then error("Game.SetRoundCoins: " .. tostring(result), 2) end
-    return result
+-- Everything below is a thin wrapper over one native, and they were all the
+-- same four lines: default the player id, pcall, re-raise with the Game.*
+-- name in front, return the result. The pcall is not defensive habit -- most
+-- of these natives are guesses at an argument shape that has never been
+-- confirmed (see docs/nativedb.md "To verify"), so a wrong guess must surface
+-- as a named Lua error rather than take the game down.
+--
+-- Shapes, by how the native wants the player id:
+--   "none"    Game.X()           -> native()
+--   "arg"     Game.X(a)          -> native(a)
+--   "player"  Game.X(playerId)   -> native(playerId)
+--   "item"    Game.X(a, playerId) -> native(playerId, a)
+--
+-- The native is looked up by name at call time, not captured here, so this
+-- module stays loadable in a state where the game's natives are not up yet.
+local function defineNative(name, nativeName, shape)
+    Game[name] = function(a, b)
+        local native = _G[nativeName]
+        local ok, result
+
+        if shape == "player" then
+            ok, result = pcall(native, a or Players_GetHostPlayerID())
+        elseif shape == "item" then
+            ok, result = pcall(native, b or Players_GetHostPlayerID(), a)
+        elseif shape == "arg" then
+            ok, result = pcall(native, a)
+        else
+            ok, result = pcall(native)
+        end
+
+        if not ok then error("Game." .. name .. ": " .. tostring(result), 2) end
+        return result
+    end
 end
 
-function Game.GetAvatarLevel(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Players_GetAvatarLevel, playerId)
-    if not ok then error("Game.GetAvatarLevel: " .. tostring(result), 2) end
-    return result
-end
+for _, entry in ipairs({
+    -- Grants possession directly, where UnlockItem only makes the entry
+    -- selectable in menus. Same numeric-id guess as UnlockItem.
+    { "AwardItem",            "Catalog_AwardInventoryItem", "item"   },
+    -- Confirmed callable with a string name and no error; returned "" for a
+    -- name that is not a real item, so it may take an id like the two above.
+    { "GetItemInfo",          "Catalog_GetItemInfo",        "arg"    },
+    -- Confirmed callable, returned "" in this save -- likely nothing pending,
+    -- or the list depends on a screen a console call does not have open.
+    { "GetCatalogList",       "Catalog_GetList",            "none"   },
+    -- Same numeric-id guess as UnlockItem/AwardItem.
+    { "BuyItem",              "Catalog_BuyItem",            "item"   },
 
-function Game.LevelUpAvatar(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Players_AvatarLevelUp, playerId)
-    if not ok then error("Game.LevelUpAvatar: " .. tostring(result), 2) end
-    return result
-end
+    { "GetCurrentWorldName",  "UI_CurrentWorldName",        "none"   },
+    -- Confirmed callable; returned "" here, plausibly because the session has
+    -- no platform identity signed in.
+    { "GetGamerTag",          "UI_GetGamerTag",             "player" },
+    { "GetPlayerZoneName",    "UI_GetPlayerZoneName",       "player" },
+    { "GetInventoryToyCount", "UI_GetInventoryToyCount",    "player" },
+    { "GetEarnedStarCount",   "UI_GetEarnedStarCount",      "player" },
+    { "GetTotalStarCount",    "UI_GetTotalStarCount",       "player" },
+    { "IsHost",               "UI_IsHost",                  "none"   },
+    { "GetCurrentLanguage",   "UI_GetCurrentLanguage",      "none"   },
+    -- Sound feedback for a mod reacting to something. `handle` is a guess at
+    -- the argument shape -- it could be a sound bank name instead.
+    { "PlayAudio",            "UI_PlayAudio",               "arg"    },
+    { "KillAudio",            "UI_KillAudio",               "arg"    },
 
-function Game.NumLocalPlayers()
-    local ok, result = pcall(Players_NumLocalPlayers)
-    if not ok then error("Game.NumLocalPlayers: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.NumPlayers()
-    local ok, result = pcall(Players_NumPlayers)
-    if not ok then error("Game.NumPlayers: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.IsPlayerValid(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Players_IsValid, playerId)
-    if not ok then error("Game.IsPlayerValid: " .. tostring(result), 2) end
-    return result
-end
-
--- Same numeric-id guess as Game.UnlockItem/AwardItem -- Catalog_ entries seem
--- to be referenced by number, not by their string name.
-function Game.BuyItem(itemId, playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(Catalog_BuyItem, playerId, itemId)
-    if not ok then error("Game.BuyItem: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.GetEarnedStarCount(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(UI_GetEarnedStarCount, playerId)
-    if not ok then error("Game.GetEarnedStarCount: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.GetTotalStarCount(playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(UI_GetTotalStarCount, playerId)
-    if not ok then error("Game.GetTotalStarCount: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.IsHost()
-    local ok, result = pcall(UI_IsHost)
-    if not ok then error("Game.IsHost: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.GetCurrentLanguage()
-    local ok, result = pcall(UI_GetCurrentLanguage)
-    if not ok then error("Game.GetCurrentLanguage: " .. tostring(result), 2) end
-    return result
-end
-
--- Sound feedback for a mod reacting to something (an item picked up, a spawn
--- succeeding, ...). `handle` is a guess at the argument shape -- could well be
--- a sound bank name string instead of whatever a "handle" is here.
-function Game.PlayAudio(handle)
-    local ok, result = pcall(UI_PlayAudio, handle)
-    if not ok then error("Game.PlayAudio: " .. tostring(result), 2) end
-    return result
-end
-
-function Game.KillAudio(handle)
-    local ok, result = pcall(UI_KillAudio, handle)
-    if not ok then error("Game.KillAudio: " .. tostring(result), 2) end
-    return result
+    -- Round Coins are the physical Power Disc currency, distinct from Sparks
+    -- (Game.GetSparks / "Items.money") -- see the false-friend warning in
+    -- docs/nativedb.md. Untested.
+    { "GetRoundCoins",        "Players_GetRoundCoin",       "player" },
+    { "SetRoundCoins",        "Players_SetRoundCoins",      "item"   },
+    { "GetAvatarLevel",       "Players_GetAvatarLevel",     "player" },
+    { "LevelUpAvatar",        "Players_AvatarLevelUp",      "player" },
+    { "NumLocalPlayers",      "Players_NumLocalPlayers",    "none"   },
+    { "NumPlayers",           "Players_NumPlayers",         "none"   },
+    { "IsPlayerValid",        "Players_IsValid",            "player" },
+}) do
+    defineNative(entry[1], entry[2], entry[3])
 end

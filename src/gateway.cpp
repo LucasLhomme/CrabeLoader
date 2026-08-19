@@ -286,6 +286,29 @@ std::vector<Entry> parseExposedCharacters(const std::string& luaSource)
     return out;
 }
 
+std::string buildSkuTableLua(const std::vector<Entry>& entries)
+{
+    if (entries.empty())
+        return {};
+
+    // Runs in the front-end state, where the API is already loaded -- but
+    // guard anyway so the chunk cannot fail on an unexpected load order.
+    std::string lua = "Crabe = Crabe or {}\n"
+                      "Crabe.VirtualReader = Crabe.VirtualReader or {}\n"
+                      "Crabe.VirtualReader._skus = {\n";
+
+    for (const Entry& entry : entries) {
+        lua += "  [";
+        lua += luaLiteral(entry.name);
+        lua += "] = \"";
+        lua += entry.sku.empty() ? allocateSku(entry.name) : entry.sku;
+        lua += "\",\n";
+    }
+
+    lua += "}\n";
+    return lua;
+}
+
 std::string buildInjectionLua(const std::vector<Entry>& entries)
 {
     if (entries.empty())

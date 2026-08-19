@@ -98,31 +98,32 @@ bool Loader::isGameState(void* L) const
 
 void Loader::onLoadmods()
 {
+    Logger& logger = Logger::getInstance();
     std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
 
-    if (!Loader::get().isInjected()) {
-        Logger::getInstance().error("Loader: Lua state not injected, skipping mod loading.");
+    if (!isInjected()) {
+        logger.error("Loader: Lua state not injected, skipping mod loading.");
         return;
-    } else {
-        Logger::getInstance().debug("Loader: Reading mods folder...");
-        if (!std::filesystem::exists(modsFolder)) {
-            Logger::getInstance().info("Loader: Mods folder does not exist, creating...");
-            std::filesystem::create_directory(modsFolder);
-        } else {
-            // here is the part where we iterate over the mods folder and execute any .lua files found
-            for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
-                if (entry.is_regular_file() && entry.path().extension() == ".lua") {
-                    std::string filename = entry.path().filename().string();
-                    Logger::getInstance().info("Loader: Found mod: {}", filename);
+    }
 
-                    if (LuaCall::get().runFile(_luaState, entry.path().string().c_str())) {
-                        Logger::getInstance().debug("Loader: mod '{}' executed.", filename);
-                    } else {
-                        Logger::getInstance().warning("Loader: mod '{}' failed to execute.", filename);
-                    }
-                }
-            }
-        }
+    logger.debug("Loader: Reading mods folder...");
+    if (!std::filesystem::exists(modsFolder)) {
+        logger.info("Loader: Mods folder does not exist, creating...");
+        std::filesystem::create_directory(modsFolder);
+        return;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".lua")
+            continue;
+
+        std::string filename = entry.path().filename().string();
+        logger.info("Loader: Found mod: {}", filename);
+
+        if (LuaCall::get().runFile(_luaState, entry.path().string().c_str()))
+            logger.debug("Loader: mod '{}' executed.", filename);
+        else
+            logger.warning("Loader: mod '{}' failed to execute.", filename);
     }
 }
 
@@ -194,10 +195,12 @@ void Loader::drainRemoteCommandFile(void* L)
         return;
     _lastRemoteCommandProbe = now;
 
-    constexpr const char* kRemoteCommandFileName = "crabe_remote_cmd.txt";
-    std::filesystem::path path = std::filesystem::current_path() / kRemoteCommandFileName;
+    // Derived once: current_path() is a syscall, and this runs 4x/s for the
+    // life of the process against a file that usually is not there.
+    static const std::filesystem::path kPath =
+        std::filesystem::current_path() / "crabe_remote_cmd.txt";
 
-    std::ifstream file(path);
+    std::ifstream file(kPath);
     if (!file)
         return;
 
@@ -205,10 +208,10 @@ void Loader::drainRemoteCommandFile(void* L)
     file.close();
 
     std::error_code removeError;
-    std::filesystem::remove(path, removeError);
+    std::filesystem::remove(kPath, removeError);
     if (removeError) {
         Logger::getInstance().warning("Loader: could not consume {} ({}); skipping it to avoid a crash loop.",
-            kRemoteCommandFileName, removeError.message());
+            kPath.filename().string(), removeError.message());
         return;
     }
 
@@ -265,7 +268,7 @@ void Loader::drainPendingSnippets(void* L)
 
 void Loader::ensureRuntimeReady(void* L)
 {
-    if (isGameState(L))
+    if (isGameState(L) || _rejectedStates.count(L) != 0)
         return;
     constexpr auto kInterval = std::chrono::milliseconds(250);
 
@@ -276,10 +279,16 @@ void Loader::ensureRuntimeReady(void* L)
 
     LuaRuntime::StateKind kind = LuaRuntime::classifyState(L);
     if (kind != LuaRuntime::StateKind::Game) {
-        if (kind == LuaRuntime::StateKind::NotTheGame && !_sawForeignState) {
-            _sawForeignState = true;
-            Logger::getInstance().debug(
-                "Loader: skipping a Lua state without the game's natives (shader compiler); still waiting.");
+        if (kind == LuaRuntime::StateKind::NotTheGame) {
+            // It answered, and it has no game natives -- that verdict is final,
+            // so stop re-probing this state four times a second forever.
+            _rejectedStates.insert(L);
+
+            if (!_sawForeignState) {
+                _sawForeignState = true;
+                Logger::getInstance().debug(
+                    "Loader: skipping a Lua state without the game's natives (shader compiler); still waiting.");
+            }
         }
         return;
     }

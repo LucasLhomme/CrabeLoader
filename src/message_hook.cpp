@@ -81,6 +81,7 @@ void MessageHook::watch(const std::string& substring)
 {
     std::lock_guard<std::mutex> lock(_mutex);
     _watched.push_back(substring);
+    _watchCount.store(_watched.size(), std::memory_order_relaxed);
 }
 
 void MessageHook::clear()
@@ -93,6 +94,13 @@ void __fastcall MessageHook::hkDispatch(void* self, void* edx, const char* name,
 {
     MessageHook& hook = get();
     auto original = reinterpret_cast<t_dispatch>(hook._hook.getOriginal());
+
+    // Nothing watched is the normal case, and this runs on every message the
+    // engine dispatches -- return before the isReadable syscall and the lock.
+    if (hook._watchCount.load(std::memory_order_relaxed) == 0) {
+        if (original) original(self, edx, name, arg1, arg2);
+        return;
+    }
 
     if (name && Memory::isReadable(reinterpret_cast<uintptr_t>(name), 1)) {
         std::lock_guard<std::mutex> lock(hook._mutex);
