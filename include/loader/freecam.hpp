@@ -34,9 +34,7 @@ public:
         x = _x; y = _y; z = _z;
     }
 
-    void setPosition(float x, float y, float z) noexcept {
-        _x = x; _y = y; _z = z;
-    }
+    void setPosition(float x, float y, float z) noexcept;
 
     void getRotation(float& pitch, float& yaw, float& roll) const noexcept {
         pitch = _pitch; yaw = _yaw; roll = _roll;
@@ -92,6 +90,7 @@ namespace FreecamNatives {
     int __cdecl isWorldFrozen(void* L);
     int __cdecl setSensitivity(void* L);
     int __cdecl getSensitivity(void* L);
+    bool registerAll(void* L);
 }
 
 #endif /* !FREECAM_HPP_ */

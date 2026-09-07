@@ -459,12 +459,6 @@ bool LuaRuntime::registerNatives(void* L)
         { "_armAvatarRelay",      &nativeArmAvatarRelay },
         { "_disarmAvatarRelay",   &nativeDisarmAvatarRelay },
         { "_avatarRelayStatus",   &nativeAvatarRelayStatus },
-        { "_freecamToggle",       &FreecamNatives::toggle },
-        { "_freecamSetEnabled",   &FreecamNatives::setEnabled },
-        { "_freecamIsEnabled",    &FreecamNatives::isEnabled },
-        { "_freecamSetSpeed",     &FreecamNatives::setSpeed },
-        { "_freecamGetSpeed",     &FreecamNatives::getSpeed },
-        { "_freecamUpdate",       &FreecamNatives::update },
         { "_registerLoadOverride", &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",   &nativeClearLoadOverrides },
     };
@@ -472,6 +466,7 @@ bool LuaRuntime::registerNatives(void* L)
     bool allOk = DebugWatchNatives::registerAll(L);
     allOk = SpeedHackNatives::registerAll(L) && allOk;
     allOk = CheatNatives::registerAll(L) && allOk;
+    allOk = FreecamNatives::registerAll(L) && allOk;
     for (const auto& entry : kNatives) {
         if (LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
 
