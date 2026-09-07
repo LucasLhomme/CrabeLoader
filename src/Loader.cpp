@@ -25,6 +25,7 @@
 #include "loader/avatar_relay_hook.hpp"
 #include "loader/input_hook.hpp"
 #include "loader/message_hook.hpp"
+#include "loader/multiplayer/application/MultiplayerManager.hpp"
 #include "loader/render_hook.hpp"
 #include "logger/logger.hpp"
 
@@ -401,6 +402,7 @@ bool Loader::initialize()
     InputHook::get().initialize();
     MessageHook::get().initialize();
     AvatarRelayHook::get().initialize();
+    Multiplayer::Application::MultiplayerManager::getInstance().initialize();
 
     std::thread(&Loader::inputLoop, this).detach();
     return true;
@@ -408,6 +410,7 @@ bool Loader::initialize()
 
 void Loader::uninitialize()
 {
+    Multiplayer::Application::MultiplayerManager::getInstance().uninitialize();
     InputHook::get().uninitialize();
     MessageHook::get().uninitialize();
     AvatarRelayHook::get().uninitialize();

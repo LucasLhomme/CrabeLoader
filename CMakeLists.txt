@@ -46,6 +46,10 @@ set(CRABELOADER_CORE_SOURCES
     src/freecam_natives.cpp
     src/gateway.cpp
     src/logger.cpp
+    src/multiplayer/MemoryPatcher.cpp
+    src/multiplayer/WinHttpRedirector.cpp
+    src/multiplayer/MultiplayerManager.cpp
+    src/multiplayer/multiplayer_natives.cpp
 )
 
 set(CRABELOADER_MINHOOK_SOURCES
@@ -112,5 +116,6 @@ if(CRABELOADER_BUILD_IMGUI)
             d3dcompiler
             user32
             gdi32
+            winhttp
     )
 endif()

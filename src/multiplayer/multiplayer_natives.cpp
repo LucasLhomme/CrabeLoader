@@ -1,0 +1,94 @@
+/*
+** CrabeLoader
+** File description:
+** multiplayer_natives implementation
+*/
+
+#include "loader/multiplayer/application/multiplayer_natives.hpp"
+
+#include <string>
+#include <windows.h>
+
+#include "loader/luacall.hpp"
+#include "loader/multiplayer/application/MultiplayerManager.hpp"
+#include "logger/logger.hpp"
+
+namespace Multiplayer::Natives {
+
+    int __cdecl getStatus(void* L) {
+        LuaCall& lua = LuaCall::get();
+        if (!lua.hasReturnSupport()) {
+            return 0;
+        }
+
+        auto& mp = Application::MultiplayerManager::getInstance();
+        bool patchesActive = mp.arePatchesActive();
+        unsigned patchedCount = mp.getPatchedCount();
+        bool redirectorActive = mp.isRedirectorActive();
+        std::wstring hostW = mp.getTargetHost();
+        uint16_t port = mp.getTargetPort();
+
+        char hostA[128]{};
+        WideCharToMultiByte(CP_UTF8, 0, hostW.c_str(), -1, hostA, sizeof(hostA), nullptr, nullptr);
+
+        // Return multiple values: patchesActive (1/0), patchedCount (num), redirectorActive (1/0), host (string), port (num)
+        lua.pushNumber(L, patchesActive ? 1.0 : 0.0);
+        lua.pushNumber(L, static_cast<double>(patchedCount));
+        lua.pushNumber(L, redirectorActive ? 1.0 : 0.0);
+        lua.pushString(L, hostA);
+        lua.pushNumber(L, static_cast<double>(port));
+        return 5;
+    }
+
+    int __cdecl setTarget(void* L) {
+        LuaCall& lua = LuaCall::get();
+        const char* hostStr = lua.argToString(L, 1);
+        double portNum = lua.argToNumber(L, 2, 3000.0);
+
+        if (!hostStr) {
+            return 0;
+        }
+
+        wchar_t hostW[128]{};
+        MultiByteToWideChar(CP_UTF8, 0, hostStr, -1, hostW, sizeof(hostW) / sizeof(wchar_t));
+
+        auto& mp = Application::MultiplayerManager::getInstance();
+        mp.setTargetServer(hostW, static_cast<uint16_t>(portNum));
+
+        Logger::getInstance().info("MultiplayerNatives: updated target server to {}:{}", hostStr, static_cast<int>(portNum));
+        if (lua.hasReturnSupport()) {
+            lua.pushNumber(L, 1.0);
+            return 1;
+        }
+        return 0;
+    }
+
+    int __cdecl applyPatches(void* L) {
+        LuaCall& lua = LuaCall::get();
+        auto& mp = Application::MultiplayerManager::getInstance();
+        bool ok = mp.initialize();
+
+        if (lua.hasReturnSupport()) {
+            lua.pushNumber(L, ok ? 1.0 : 0.0);
+            return 1;
+        }
+        return 0;
+    }
+
+    bool registerAll(void* L) {
+        LuaCall& lua = LuaCall::get();
+        bool ok = true;
+
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpGetStatus", &getStatus) && ok;
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpSetTarget", &setTarget) && ok;
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpApplyPatches", &applyPatches) && ok;
+
+        if (ok) {
+            Logger::getInstance().info("MultiplayerNatives: registered Crabe._mp* natives.");
+        } else {
+            Logger::getInstance().error("MultiplayerNatives: failed to register some Crabe._mp* natives.");
+        }
+        return ok;
+    }
+
+} // namespace Multiplayer::Natives
