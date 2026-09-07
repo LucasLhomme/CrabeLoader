@@ -144,12 +144,6 @@ void Overlay::renderModMenu(bool* open)
         ImGui::TextDisabled("Arrows move  -  Enter selects  -  Backspace goes back");
     }
 
-    if (ImGui::Button("Back"))
-        Menu::get().requestBack();
-    ImGui::SameLine();
-    if (ImGui::Button("Refresh"))
-        Menu::get().requestRefresh();
-
     ImGui::End();
 }
 
