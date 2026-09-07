@@ -11,23 +11,10 @@
 
 Game = Game or {}
 
-local function hostPlayer(playerId)
-    if playerId then return playerId end
-    return Players_GetHostPlayerID()
-end
-
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
 -- Most list natives answer with one comma-joined string plus a count. Splitting
 -- here keeps every caller from re-implementing it, and drops the empty trailing
 -- field a trailing comma would otherwise produce.
-local function splitList(csv)
+local function Crabe.splitList(csv)
     local out = {}
     if type(csv) ~= "string" then return out end
 
@@ -43,11 +30,11 @@ end
 -- ---------------------------------------------------------------------------
 
 function Game.CurrentWorld()
-    return native("UI_CurrentWorldName", "Game.CurrentWorld")()
+    return Crabe.native("UI_CurrentWorldName", "Game.CurrentWorld")()
 end
 
 function Game.CurrentZone(playerId)
-    return native("UI_GetPlayerZoneName", "Game.CurrentZone")(hostPlayer(playerId))
+    return Crabe.native("UI_GetPlayerZoneName", "Game.CurrentZone")(Crabe.hostPlayer(playerId))
 end
 
 -- Zone metadata. The zone argument accepts the literal "<current>", which is
@@ -56,21 +43,21 @@ function Game.ZoneString(key, zone)
     if type(key) ~= "string" or key == "" then
         error("Game.ZoneString: key must be a non-empty string", 2)
     end
-    return native("UI_GetZoneMgrString", "Game.ZoneString")(zone or "<current>", key)
+    return Crabe.native("UI_GetZoneMgrString", "Game.ZoneString")(zone or "<current>", key)
 end
 
 function Game.ZoneBool(key, zone)
     if type(key) ~= "string" or key == "" then
         error("Game.ZoneBool: key must be a non-empty string", 2)
     end
-    return native("UI_GetZoneMgrBool", "Game.ZoneBool")(zone or "<current>", key)
+    return Crabe.native("UI_GetZoneMgrBool", "Game.ZoneBool")(zone or "<current>", key)
 end
 
 function Game.ZoneInt(key, zone)
     if type(key) ~= "string" or key == "" then
         error("Game.ZoneInt: key must be a non-empty string", 2)
     end
-    return native("UI_GetZoneMgrInt", "Game.ZoneInt")(zone or "<current>", key)
+    return Crabe.native("UI_GetZoneMgrInt", "Game.ZoneInt")(zone or "<current>", key)
 end
 
 -- Rolls the world-shape predicates into one table. Each is optional: a build
@@ -102,16 +89,16 @@ end
 -- calls it with "sortedList" (:193) and "filters" (:194) as well as a world
 -- filter (:173), so the filter is a mode selector, not just a search string.
 function Game.ListLevels(filter, playerId)
-    local csv, count = native("UI_GetListPlayerIndx", "Game.ListLevels")(
-        "Levels", filter or "", hostPlayer(playerId))
-    return splitList(csv), count
+    local csv, count = Crabe.native("UI_GetListPlayerIndx", "Game.ListLevels")(
+        "Levels", filter or "", Crabe.hostPlayer(playerId))
+    return Crabe.splitList(csv), count
 end
 
 function Game.CanLoadLevel(levelName)
     if type(levelName) ~= "string" or levelName == "" then
         error("Game.CanLoadLevel: levelName must be a non-empty string", 2)
     end
-    return native("UI_CanTransitionToLevel", "Game.CanLoadLevel")(levelName) == true
+    return Crabe.native("UI_CanTransitionToLevel", "Game.CanLoadLevel")(levelName) == true
 end
 
 -- The five-argument form is what levelselectmenu.lua:70 and :111 use. The
@@ -130,16 +117,16 @@ function Game.LoadLevel(levelName, force)
         error("Game.LoadLevel: the game refuses to transition to '" .. levelName .. "'", 2)
     end
 
-    native("UI_LaunchLevel", "Game.LoadLevel")(levelName, "world", true, true, false)
+    Crabe.native("UI_LaunchLevel", "Game.LoadLevel")(levelName, "world", true, true, false)
     return levelName
 end
 
 function Game.LoadMainMenu()
-    native("UI_LaunchMainMenu", "Game.LoadMainMenu")()
+    Crabe.native("UI_LaunchMainMenu", "Game.LoadMainMenu")()
 end
 
 function Game.LoadDefaultLevel()
-    native("UI_LaunchDefaultLevel", "Game.LoadDefaultLevel")()
+    Crabe.native("UI_LaunchDefaultLevel", "Game.LoadDefaultLevel")()
 end
 
 -- ---------------------------------------------------------------------------
@@ -147,17 +134,17 @@ end
 -- ---------------------------------------------------------------------------
 
 function Game.ReturnToHub()
-    native("UI_ReturnToHub", "Game.ReturnToHub")()
+    Crabe.native("UI_ReturnToHub", "Game.ReturnToHub")()
 end
 
 -- Destructive. Kept separate from ReturnToHub so no menu can wire them to
 -- neighbouring entries by accident.
 function Game.ResetToyBox()
-    native("UI_ResetToyBox", "Game.ResetToyBox")()
+    Crabe.native("UI_ResetToyBox", "Game.ResetToyBox")()
 end
 
 function Game.ResetPlayset()
-    native("UI_ResetPlayset", "Game.ResetPlayset")()
+    Crabe.native("UI_ResetPlayset", "Game.ResetPlayset")()
 end
 
 -- Storage.ForceStartOver is the hardest reset reachable from Lua -- it is what

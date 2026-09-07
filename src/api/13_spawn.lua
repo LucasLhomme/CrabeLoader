@@ -22,21 +22,6 @@ local CATALOG_PATHS = {
     "spawn_catalog.lua",
 }
 
-local function hostPlayer(playerId)
-    if playerId then return playerId end
-    return Players_GetHostPlayerID()
-end
-
--- Level 3 so the error points at whoever called the Game.* function, not at
--- this helper and not at the Game.* function itself.
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
 local function requireName(value, caller, what)
     if type(value) ~= "string" or value == "" then
         error(caller .. ": " .. what .. " must be a non-empty string", 3)
@@ -87,13 +72,13 @@ end
 -- points below all funnel through here.
 function Game.SpawnByFile(rrofile, count, playerId)
     requireName(rrofile, "Game.SpawnByFile", "rrofile")
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
     count = count or 1
 
-    native("Place_SetEditorState", "Game.SpawnByFile")
-    native("Place_CreateGhost", "Game.SpawnByFile")
-    native("Place_PlaceObject", "Game.SpawnByFile")
-    native("Place_StopPlaceMode", "Game.SpawnByFile")
+    Crabe.native("Place_SetEditorState", "Game.SpawnByFile")
+    Crabe.native("Place_CreateGhost", "Game.SpawnByFile")
+    Crabe.native("Place_PlaceObject", "Game.SpawnByFile")
+    Crabe.native("Place_StopPlaceMode", "Game.SpawnByFile")
 
     local placed, err = runPlacement(playerId, count, nil, nil, nil, rrofile)
     if err then error("Game.SpawnByFile: " .. tostring(err), 2) end
@@ -105,7 +90,7 @@ end
 -- entered and left once.
 function Game.SpawnItemMany(invName, count, playerId)
     requireName(invName, "Game.SpawnItemMany", "invName")
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
     local rro = Game.ResolveItemFile(invName, playerId)
     if not rro then
@@ -122,13 +107,13 @@ function Game.SpawnItemAt(invName, x, y, z, playerId)
     if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
         error("Game.SpawnItemAt: x, y and z must be numbers", 2)
     end
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
     local rro = Game.ResolveItemFile(invName, playerId)
     if not rro then
         error("Game.SpawnItemAt: no rrofile for '" .. invName .. "'", 2)
     end
-    native("Place_CreateGhostAtLocation", "Game.SpawnItemAt")
+    Crabe.native("Place_CreateGhostAtLocation", "Game.SpawnItemAt")
 
     local placed, err = runPlacement(playerId, 1, x, y, z, rro)
     if err then error("Game.SpawnItemAt: " .. tostring(err), 2) end
@@ -146,7 +131,7 @@ Game._invCache = Game._invCache or nil
 -- and catNames as the ordered category list. The three nils are the exclude
 -- and filter maps the shipped screens also leave empty (inventorysourcegrid).
 local function enumerate(playerId, meta)
-    local getInv = native("Place_GetInvItems", "Game.RefreshInventory")
+    local getInv = Crabe.native("Place_GetInvItems", "Game.RefreshInventory")
     local typeList, catNames = {}, {}
 
     getInv(false, "", playerId, nil, nil, nil, typeList, catNames, {}, false, meta)
@@ -182,7 +167,7 @@ end
 -- this after the player gains items; meta is the ribbon's super-category,
 -- "MCAT_Classic" being the one that yields the whole classic Toy Box set.
 function Game.RefreshInventory(playerId, meta)
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
     meta = meta or DEFAULT_META
 
     local cache = enumerate(playerId, meta)
@@ -196,7 +181,7 @@ function Game.RefreshInventory(playerId, meta)
 end
 
 local function cacheFor(playerId, meta, caller)
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
     meta = meta or DEFAULT_META
 
     local cache = Game._invCache
@@ -284,7 +269,7 @@ function Game.CanSummonVehicle(invName, summonTag, playerId, meta)
     if not summonTag then
         error("Game.CanSummonVehicle: '" .. invName .. "' has no summonTag", 2)
     end
-    return native("Place_CanSummonVehicle", "Game.CanSummonVehicle")(invName, summonTag)
+    return Crabe.native("Place_CanSummonVehicle", "Game.CanSummonVehicle")(invName, summonTag)
 end
 
 -- Summons a vehicle the player rides, which is a different engine path from
@@ -292,7 +277,7 @@ end
 -- inventory enumeration when the caller does not supply one.
 function Game.SummonVehicle(invName, summonTag, playerId, meta)
     requireName(invName, "Game.SummonVehicle", "invName")
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
     if not summonTag then
         local row = Game.GetInventoryEntry(invName, playerId, meta)
@@ -302,7 +287,7 @@ function Game.SummonVehicle(invName, summonTag, playerId, meta)
         error("Game.SummonVehicle: '" .. invName .. "' has no summonTag; "
               .. "it is a placeable prop, use Game.SpawnItemMany", 2)
     end
-    return native("Place_SummonVehicle", "Game.SummonVehicle")(playerId, invName, summonTag)
+    return Crabe.native("Place_SummonVehicle", "Game.SummonVehicle")(playerId, invName, summonTag)
 end
 
 -- ---------------------------------------------------------------------------
@@ -353,14 +338,14 @@ end
 -- preview ghost (ribbonbase.lua:92 passes true on exit, modeselect.lua:387
 -- passes false mid-session).
 function Game.ClearEditorObjects(includeGhosts, playerId)
-    playerId = hostPlayer(playerId)
-    native("Place_ClearEditorObjects", "Game.ClearEditorObjects")(playerId, includeGhosts and true or false)
+    playerId = Crabe.hostPlayer(playerId)
+    Crabe.native("Place_ClearEditorObjects", "Game.ClearEditorObjects")(playerId, includeGhosts and true or false)
 end
 
 -- Takes one argument only (ribbontoybox.lua:1185), unlike ClearEditorObjects.
 function Game.RemoveEditorObjects(playerId)
-    playerId = hostPlayer(playerId)
-    native("Place_RemoveEditorObjects", "Game.RemoveEditorObjects")(playerId)
+    playerId = Crabe.hostPlayer(playerId)
+    Crabe.native("Place_RemoveEditorObjects", "Game.RemoveEditorObjects")(playerId)
 end
 
 -- objectHandle is a placed/ghost handle as returned by Place_CreateGhost or
@@ -370,23 +355,23 @@ function Game.DeletePlacedObject(objectHandle, playerId)
     if objectHandle == nil then
         error("Game.DeletePlacedObject: objectHandle is required", 2)
     end
-    playerId = hostPlayer(playerId)
-    native("Place_DeletePickedObject", "Game.DeletePlacedObject")(playerId, objectHandle)
+    playerId = Crabe.hostPlayer(playerId)
+    Crabe.native("Place_DeletePickedObject", "Game.DeletePlacedObject")(playerId, objectHandle)
 end
 
 -- Favourites take the item name first and the player second, the reverse of
 -- every other Place_ native (ribbonbase.lua:428).
 function Game.IsFavorite(invName, playerId)
     requireName(invName, "Game.IsFavorite", "invName")
-    return native("Place_IsFavorite", "Game.IsFavorite")(invName, hostPlayer(playerId))
+    return Crabe.native("Place_IsFavorite", "Game.IsFavorite")(invName, Crabe.hostPlayer(playerId))
 end
 
 function Game.SetFavorite(invName, on, playerId)
     requireName(invName, "Game.SetFavorite", "invName")
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
     local fnName = on and "Place_AddFavorite" or "Place_RemoveFavorite"
-    native(fnName, "Game.SetFavorite")(invName, playerId)
+    Crabe.native(fnName, "Game.SetFavorite")(invName, playerId)
     return on and true or false
 end
 
@@ -394,29 +379,29 @@ end
 -- the rrofile, not the inventory name (ribbontoybox.lua:357).
 function Game.CanPlaceItem(invName, playerId)
     requireName(invName, "Game.CanPlaceItem", "invName")
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
     local rro = Game.ResolveItemFile(invName, playerId)
     if not rro then
         error("Game.CanPlaceItem: no rrofile for '" .. invName .. "'", 2)
     end
-    return native("Place_LimitManagerCanPlace", "Game.CanPlaceItem")(playerId, rro)
+    return Crabe.native("Place_LimitManagerCanPlace", "Game.CanPlaceItem")(playerId, rro)
 end
 
 -- The budget cost the same item counts for, same rrofile argument.
 function Game.GetPlacementValue(invName, playerId)
     requireName(invName, "Game.GetPlacementValue", "invName")
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
     local rro = Game.ResolveItemFile(invName, playerId)
     if not rro then
         error("Game.GetPlacementValue: no rrofile for '" .. invName .. "'", 2)
     end
-    return native("Place_LimitManagerTotalValue", "Game.GetPlacementValue")(playerId, rro)
+    return Crabe.native("Place_LimitManagerTotalValue", "Game.GetPlacementValue")(playerId, rro)
 end
 
 function Game.GetPlacedObjectCount()
-    return native("VirtualReader_GetPlacedObjectCount", "Game.GetPlacedObjectCount")()
+    return Crabe.native("VirtualReader_GetPlacedObjectCount", "Game.GetPlacedObjectCount")()
 end
 
 -- ---------------------------------------------------------------------------
@@ -435,8 +420,8 @@ end
 -- Opens the game's own enemy chooser for the player (lootgridenemies.lua:44).
 -- It only lands somewhere if a wave/loot toy selection is already in progress.
 function Game.OpenEnemyPicker(playerId)
-    playerId = hostPlayer(playerId)
-    native("UI_DisplayEnemyList", "Game.OpenEnemyPicker")(playerId)
+    playerId = Crabe.hostPlayer(playerId)
+    Crabe.native("UI_DisplayEnemyList", "Game.OpenEnemyPicker")(playerId)
 end
 
 -- Adds an enemy to the wave list currently being edited. One argument, the
@@ -444,14 +429,14 @@ end
 -- (lootlist.lua:55). It affects the pending selection, it does not spawn.
 function Game.AddEnemyToWaveList(enemyName)
     requireName(enemyName, "Game.AddEnemyToWaveList", "enemyName")
-    native("UI_AddEnemyToList", "Game.AddEnemyToWaveList")(enemyName)
+    Crabe.native("UI_AddEnemyToList", "Game.AddEnemyToWaveList")(enemyName)
 end
 
 -- listType is "Loot" in the only call site (lootgridenemies.lua:55); "Chest"
 -- is the other value the sibling UI_AddToyToLoot uses.
 function Game.RemoveEnemyFromLoot(enemyName, listType)
     requireName(enemyName, "Game.RemoveEnemyFromLoot", "enemyName")
-    native("UI_RemoveEnemyFromLoot", "Game.RemoveEnemyFromLoot")(enemyName, listType or "Loot")
+    Crabe.native("UI_RemoveEnemyFromLoot", "Game.RemoveEnemyFromLoot")(enemyName, listType or "Loot")
 end
 
 -- toyHandle must come from a Sidekick Creator screen's DataTable.ToyHandle
@@ -460,8 +445,8 @@ function Game.SpawnSideKick(toyHandle, id, playerId)
     if toyHandle == nil or id == nil then
         error("Game.SpawnSideKick: toyHandle and id are both required", 2)
     end
-    playerId = hostPlayer(playerId)
-    native("UI_SpawnSideKick", "Game.SpawnSideKick")(playerId, toyHandle, id)
+    playerId = Crabe.hostPlayer(playerId)
+    Crabe.native("UI_SpawnSideKick", "Game.SpawnSideKick")(playerId, toyHandle, id)
 end
 
 -- Same toyHandle problem as SpawnSideKick (logiccategories.lua:316): opens the
@@ -470,6 +455,6 @@ function Game.TriggerWaveEnemySelection(toyHandle, playerId)
     if toyHandle == nil then
         error("Game.TriggerWaveEnemySelection: toyHandle is required", 2)
     end
-    playerId = hostPlayer(playerId)
-    native("UI_TriggerWaveEnemySelection", "Game.TriggerWaveEnemySelection")(playerId, toyHandle)
+    playerId = Crabe.hostPlayer(playerId)
+    Crabe.native("UI_TriggerWaveEnemySelection", "Game.TriggerWaveEnemySelection")(playerId, toyHandle)
 end
