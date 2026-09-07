@@ -42,3 +42,44 @@ if not Crabe._printHooked then
         if originalPrint then originalPrint(...) end
     end
 end
+
+-- Window Mode (merged from 05_window.lua)
+Crabe._windowMode = "windowed"
+
+function Crabe.SetWindowMode(mode)
+    if mode ~= "windowed" and mode ~= "borderless" then
+        error("Crabe.SetWindowMode: expected 'windowed' or 'borderless', got '" .. tostring(mode) .. "'", 2)
+    end
+
+    Crabe._setWindowModeNative(mode)
+    Crabe._windowMode = mode
+    return true
+end
+
+function Crabe.GetWindowMode()
+    return Crabe._windowMode
+end
+
+-- Generic helpers
+function Crabe.native(name, caller)
+    local fn = rawget(_G, name)
+    if type(fn) ~= "function" then
+        error((caller or "Crabe.native") .. ": game engine native '" .. name .. "' is not present in this Lua state", 3)
+    end
+    return fn
+end
+
+function Crabe.hostPlayer(playerId)
+    return playerId or (type(Players_GetHostPlayerID) == "function" and Players_GetHostPlayerID() or 0)
+end
+
+function Crabe.splitList(csv)
+    local out = {}
+    if type(csv) ~= "string" then return out end
+
+    for field in string.gmatch(csv, "([^,]+)") do
+        field = string.gsub(field, "^%s*(.-)%s*$", "%1")
+        if field ~= "" then out[#out + 1] = field end
+    end
+    return out
+end

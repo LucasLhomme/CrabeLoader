@@ -8,19 +8,6 @@
 
 Game = Game or {}
 
-local function hostPlayer(playerId)
-    if playerId then return playerId end
-    return Players_GetHostPlayerID()
-end
-
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
 -- ---------------------------------------------------------------------------
 -- HUD and display
 -- ---------------------------------------------------------------------------
@@ -32,7 +19,7 @@ function Game.SuppressHud(suppressed, playerId)
     if type(suppressed) ~= "boolean" then
         error("Game.SuppressHud: expected a boolean", 2)
     end
-    native("UI_SuppressHud", "Game.SuppressHud")(suppressed, hostPlayer(playerId))
+    Crabe.native("UI_SuppressHud", "Game.SuppressHud")(suppressed, Crabe.hostPlayer(playerId))
     return suppressed
 end
 
@@ -42,12 +29,12 @@ function Game.ReloadHud(playerId)
     if type(System) ~= "table" or type(System.ReloadHUD) ~= "function" then
         error("Game.ReloadHud: System.ReloadHUD is not available in this Lua state", 2)
     end
-    System.ReloadHUD(hostPlayer(playerId))
+    System.ReloadHUD(Crabe.hostPlayer(playerId))
 end
 
 function Game.ScreenSize()
-    return native("UI_ScreenWidth", "Game.ScreenSize")(),
-           native("UI_ScreenHeight", "Game.ScreenSize")()
+    return Crabe.native("UI_ScreenWidth", "Game.ScreenSize")(),
+           Crabe.native("UI_ScreenHeight", "Game.ScreenSize")()
 end
 
 -- ---------------------------------------------------------------------------
@@ -68,13 +55,13 @@ Game.VideoToggles = {}
 for label, suffix in pairs(VIDEO_TOGGLES) do
     Game.VideoToggles[label] = {
         get = function()
-            return native("Settings_Get" .. suffix .. "Enabled", "Game.VideoToggles." .. label)() == true
+            return Crabe.native("Settings_Get" .. suffix .. "Enabled", "Game.VideoToggles." .. label)() == true
         end,
         set = function(on)
             if type(on) ~= "boolean" then
                 error("Game.VideoToggles." .. label .. ".set: expected a boolean", 2)
             end
-            native("Settings_Set" .. suffix .. "Enabled", "Game.VideoToggles." .. label)(on)
+            Crabe.native("Settings_Set" .. suffix .. "Enabled", "Game.VideoToggles." .. label)(on)
             return on
         end,
     }
@@ -83,34 +70,34 @@ end
 -- Commits every pending video setting. Nothing above takes visible effect
 -- until this runs.
 function Game.ApplyVideoSettings()
-    native("Settings_ApplyVideoSettings", "Game.ApplyVideoSettings")()
+    Crabe.native("Settings_ApplyVideoSettings", "Game.ApplyVideoSettings")()
 end
 
 function Game.SaveSettings()
-    native("Settings_Save", "Game.SaveSettings")()
+    Crabe.native("Settings_Save", "Game.SaveSettings")()
 end
 
 function Game.GetGamma()
-    return native("Settings_GetGamma", "Game.GetGamma")()
+    return Crabe.native("Settings_GetGamma", "Game.GetGamma")()
 end
 
 function Game.SetGamma(value)
     value = tonumber(value)
     if not value then error("Game.SetGamma: expected a number", 2) end
-    native("Settings_SetGamma", "Game.SetGamma")(value)
+    Crabe.native("Settings_SetGamma", "Game.SetGamma")(value)
     return value
 end
 
 -- settings.lua:129 passes difficultyIndex - 1, so the native is 0-based while
 -- the screen above it counts from 1. This wrapper speaks the native's index.
 function Game.GetDifficulty()
-    return native("Settings_GetDifficulty", "Game.GetDifficulty")()
+    return Crabe.native("Settings_GetDifficulty", "Game.GetDifficulty")()
 end
 
 function Game.SetDifficulty(index)
     index = tonumber(index)
     if not index then error("Game.SetDifficulty: expected a numeric index", 2) end
-    native("Settings_SetDifficulty", "Game.SetDifficulty")(index)
+    Crabe.native("Settings_SetDifficulty", "Game.SetDifficulty")(index)
     return index
 end
 
@@ -121,15 +108,15 @@ end
 -- pausemenu.lua:16 passes (playerNum, false, false); what the two booleans
 -- select is not explained by any call site, and every site passes false.
 function Game.PauseGame(playerId)
-    native("Pause_PauseGame", "Game.PauseGame")(hostPlayer(playerId), false, false)
+    Crabe.native("Pause_PauseGame", "Game.PauseGame")(Crabe.hostPlayer(playerId), false, false)
 end
 
 function Game.UnpauseGame()
-    native("Pause_UnPauseFromPausedScreenIfPaused", "Game.UnpauseGame")()
+    Crabe.native("Pause_UnPauseFromPausedScreenIfPaused", "Game.UnpauseGame")()
 end
 
 function Game.QuitGame()
-    native("UI_QuitGame", "Game.QuitGame")()
+    Crabe.native("UI_QuitGame", "Game.QuitGame")()
 end
 
 -- ---------------------------------------------------------------------------
@@ -137,11 +124,11 @@ end
 -- ---------------------------------------------------------------------------
 
 function Game.CanSave()
-    return native("SaveLoad_CanSave", "Game.CanSave")() == true
+    return Crabe.native("SaveLoad_CanSave", "Game.CanSave")() == true
 end
 
 function Game.IsSaving()
-    return native("SaveLoad_IsSaving", "Game.IsSaving")() == true
+    return Crabe.native("SaveLoad_IsSaving", "Game.IsSaving")() == true
 end
 
 -- Refuses to start a save the engine says it cannot take, and refuses to
@@ -153,15 +140,15 @@ function Game.SaveWorld()
     if Game.IsSaving() then
         error("Game.SaveWorld: a save is already in progress", 2)
     end
-    native("SaveLoad_AutoSaveWorld", "Game.SaveWorld")()
+    Crabe.native("SaveLoad_AutoSaveWorld", "Game.SaveWorld")()
 end
 
 function Game.SaveProfile()
-    native("SaveLoad_SaveProfile", "Game.SaveProfile")()
+    Crabe.native("SaveLoad_SaveProfile", "Game.SaveProfile")()
 end
 
 function Game.ListSaves()
-    return native("SaveLoad_GetSavedGamesList", "Game.ListSaves")()
+    return Crabe.native("SaveLoad_GetSavedGamesList", "Game.ListSaves")()
 end
 
 -- ---------------------------------------------------------------------------
@@ -173,7 +160,7 @@ end
 -- 17_unlock.lua for that.
 
 function Game.IsSessionLocked()
-    return native("UI_GameIsLocked", "Game.IsSessionLocked")() == true
+    return Crabe.native("UI_GameIsLocked", "Game.IsSessionLocked")() == true
 end
 
 function Game.SetSessionLocked(locked)
@@ -182,9 +169,9 @@ function Game.SetSessionLocked(locked)
     end
 
     if locked then
-        native("UI_LockGame", "Game.SetSessionLocked")()
+        Crabe.native("UI_LockGame", "Game.SetSessionLocked")()
     else
-        native("UI_UnlockGame", "Game.SetSessionLocked")()
+        Crabe.native("UI_UnlockGame", "Game.SetSessionLocked")()
     end
     return locked
 end
@@ -193,14 +180,14 @@ function Game.KickPlayer(playerNumber)
     if not tonumber(playerNumber) then
         error("Game.KickPlayer: expected a player number", 2)
     end
-    native("UI_KickPlayer", "Game.KickPlayer")(tonumber(playerNumber))
+    Crabe.native("UI_KickPlayer", "Game.KickPlayer")(tonumber(playerNumber))
 end
 
 function Game.PlayerCounts()
     return {
-        total = native("Players_NumPlayers", "Game.PlayerCounts")(),
-        localPlayers = native("Players_NumLocalPlayers", "Game.PlayerCounts")(),
-        max = native("Players_MaxPlayers", "Game.PlayerCounts")(),
+        total = Crabe.native("Players_NumPlayers", "Game.PlayerCounts")(),
+        localPlayers = Crabe.native("Players_NumLocalPlayers", "Game.PlayerCounts")(),
+        max = Crabe.native("Players_MaxPlayers", "Game.PlayerCounts")(),
     }
 end
 
@@ -212,15 +199,15 @@ end
 -- (pausemenu.lua:772); it does not gate the native. So this reports what the
 -- build claims while OpenTestUI ignores it.
 function Game.TestUIAllowed()
-    return native("UI_AllowTestUI", "Game.TestUIAllowed")() == true
+    return Crabe.native("UI_AllowTestUI", "Game.TestUIAllowed")() == true
 end
 
 function Game.OpenTestUI(playerId)
-    native("UI_TriggerTestUI", "Game.OpenTestUI")(hostPlayer(playerId))
+    Crabe.native("UI_TriggerTestUI", "Game.OpenTestUI")(Crabe.hostPlayer(playerId))
 end
 
 function Game.OpenToyTree(playerId)
-    native("UI_TriggerToyTree", "Game.OpenToyTree")(hostPlayer(playerId), false)
+    Crabe.native("UI_TriggerToyTree", "Game.OpenToyTree")(Crabe.hostPlayer(playerId), false)
 end
 
 -- Persistent globals survive across sessions, which makes them the natural
@@ -229,14 +216,14 @@ function Game.GetGlobal(key)
     if type(key) ~= "string" or key == "" then
         error("Game.GetGlobal: key must be a non-empty string", 2)
     end
-    return native("PersistentData_GetGlobal", "Game.GetGlobal")(key)
+    return Crabe.native("PersistentData_GetGlobal", "Game.GetGlobal")(key)
 end
 
 function Game.SetGlobal(key, value)
     if type(key) ~= "string" or key == "" then
         error("Game.SetGlobal: key must be a non-empty string", 2)
     end
-    native("PersistentData_SetGlobal", "Game.SetGlobal")(key, value)
+    Crabe.native("PersistentData_SetGlobal", "Game.SetGlobal")(key, value)
     return value
 end
 
@@ -244,7 +231,7 @@ function Game.IsGlobalSet(name)
     if type(name) ~= "string" or name == "" then
         error("Game.IsGlobalSet: name must be a non-empty string", 2)
     end
-    return native("UI_IsGlobalSet", "Game.IsGlobalSet")(name) == true
+    return Crabe.native("UI_IsGlobalSet", "Game.IsGlobalSet")(name) == true
 end
 
 -- ---------------------------------------------------------------------------
@@ -258,7 +245,7 @@ function Game.PressButton(buttonName)
     if type(buttonName) ~= "string" or buttonName == "" then
         error("Game.PressButton: buttonName must be a non-empty string", 2)
     end
-    native("ToyboxController_ButtonDown", "Game.PressButton")(buttonName)
+    Crabe.native("ToyboxController_ButtonDown", "Game.PressButton")(buttonName)
     return buttonName
 end
 
@@ -266,7 +253,7 @@ function Game.ReleaseButton(buttonName)
     if type(buttonName) ~= "string" or buttonName == "" then
         error("Game.ReleaseButton: buttonName must be a non-empty string", 2)
     end
-    native("ToyboxController_ButtonUp", "Game.ReleaseButton")(buttonName)
+    Crabe.native("ToyboxController_ButtonUp", "Game.ReleaseButton")(buttonName)
     return buttonName
 end
 

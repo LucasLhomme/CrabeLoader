@@ -44,3 +44,8 @@ Game.onTick(function()
         end
     end
 end)
+
+-- Install the character-select grid unlock (from 21_virtualreader_unlock.lua)
+if Crabe.VirtualReader and type(Crabe.VirtualReader.installGridUnlock) == "function" then
+    Crabe.VirtualReader.installGridUnlock()
+end

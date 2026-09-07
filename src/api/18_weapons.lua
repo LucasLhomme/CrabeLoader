@@ -6,19 +6,6 @@
 
 Game = Game or {}
 
-local function hostPlayer(playerId)
-    if playerId then return playerId end
-    return (type(Players_GetHostPlayerID) == "function") and Players_GetHostPlayerID() or 0
-end
-
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
 -- ---------------------------------------------------------------------------
 -- Master Weapons & Tools Catalog
 -- ---------------------------------------------------------------------------
@@ -65,9 +52,9 @@ function Game.SetActiveTool(toolName, playerId)
     if type(toolName) ~= "string" then
         error("Game.SetActiveTool: toolName must be a string", 2)
     end
-    playerId = hostPlayer(playerId)
+    playerId = Crabe.hostPlayer(playerId)
 
-    local fn = native("SetActiveTool", "Game.SetActiveTool")
+    local fn = Crabe.native("SetActiveTool", "Game.SetActiveTool")
     fn(toolName)
     return true
 end

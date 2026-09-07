@@ -12,21 +12,6 @@
 
 Game = Game or {}
 
-local function hostPlayer(playerId)
-    if playerId then return playerId end
-    return Players_GetHostPlayerID()
-end
-
--- Level 3 so the error points at the caller of the Game.* function rather
--- than at this helper.
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
 local function requireName(value, caller, what)
     if type(value) ~= "string" or value == "" then
         error(caller .. ": " .. what .. " must be a non-empty string", 3)
@@ -42,7 +27,7 @@ end
 -- inventory name: catalog.lua:649 passes ribbonItem:RecipeCardName().
 function Game.UnlockCatalogItem(recipeCardName, playerId)
     requireName(recipeCardName, "Game.UnlockCatalogItem", "recipeCardName")
-    native("Catalog_UnlockCatalogItem", "Game.UnlockCatalogItem")(recipeCardName, hostPlayer(playerId))
+    Crabe.native("Catalog_UnlockCatalogItem", "Game.UnlockCatalogItem")(recipeCardName, Crabe.hostPlayer(playerId))
     return recipeCardName
 end
 
@@ -50,7 +35,7 @@ end
 -- player earns something, as opposed to unlocking it outright.
 function Game.RewardLock(recipeCardName, playerId)
     requireName(recipeCardName, "Game.RewardLock", "recipeCardName")
-    native("Catalog_RewardLockByName", "Game.RewardLock")(recipeCardName, hostPlayer(playerId))
+    Crabe.native("Catalog_RewardLockByName", "Game.RewardLock")(recipeCardName, Crabe.hostPlayer(playerId))
     return recipeCardName
 end
 
@@ -59,7 +44,7 @@ end
 function Game.AwardItem(name, amount, playerId)
     requireName(name, "Game.AwardItem", "name")
     amount = tonumber(amount) or 1
-    native("Catalog_AwardInventoryItem", "Game.AwardItem")(name, amount, hostPlayer(playerId))
+    Crabe.native("Catalog_AwardInventoryItem", "Game.AwardItem")(name, amount, Crabe.hostPlayer(playerId))
     return amount
 end
 
@@ -72,12 +57,12 @@ end
 -- there; this is a probe as much as a setter.
 function Game.IsLocked(lockName, playerId)
     requireName(lockName, "Game.IsLocked", "lockName")
-    return native("Lock_IsLocked", "Game.IsLocked")(lockName, hostPlayer(playerId)) == true
+    return Crabe.native("Lock_IsLocked", "Game.IsLocked")(lockName, Crabe.hostPlayer(playerId)) == true
 end
 
 function Game.SetLockAvailable(lockName, playerId)
     requireName(lockName, "Game.SetLockAvailable", "lockName")
-    native("Lock_SetAvailable", "Game.SetLockAvailable")(lockName, hostPlayer(playerId))
+    Crabe.native("Lock_SetAvailable", "Game.SetLockAvailable")(lockName, Crabe.hostPlayer(playerId))
     return lockName
 end
 
@@ -95,7 +80,7 @@ function Game.ForceUnlockData(enabled)
     if type(enabled) ~= "boolean" then
         error("Game.ForceUnlockData: expected a boolean", 2)
     end
-    native("UI_ForceRumpuseUnlockLoadData", "Game.ForceUnlockData")(enabled)
+    Crabe.native("UI_ForceRumpuseUnlockLoadData", "Game.ForceUnlockData")(enabled)
     return enabled
 end
 
@@ -120,7 +105,7 @@ function Game.GetItemLockState(itemName, playerId)
         error("Game.GetItemLockState: Inventory.GetItemState is not available in this Lua state", 2)
     end
 
-    local state = Inventory.GetItemState(itemName, hostPlayer(playerId))
+    local state = Inventory.GetItemState(itemName, Crabe.hostPlayer(playerId))
     return state, LOCK_STATE_NAMES[state] or ("inconnu (" .. tostring(state) .. ")")
 end
 
@@ -142,8 +127,8 @@ function Game.UnlockAllAsync(names, perTick, playerId)
     end
 
     perTick = tonumber(perTick) or 25
-    local player = hostPlayer(playerId)
-    local unlock = native("Catalog_UnlockCatalogItem", "Game.UnlockAllAsync")
+    local player = Crabe.hostPlayer(playerId)
+    local unlock = Crabe.native("Catalog_UnlockCatalogItem", "Game.UnlockAllAsync")
 
     local progress = { done = 0, total = #names, failed = 0, finished = false }
     local index = 1
@@ -180,11 +165,11 @@ end
 -- The getters are safe; the setters are exposed but deliberately thin.
 
 function Game.GetRoundCoins(playerId)
-    return native("Players_GetRoundCoin", "Game.GetRoundCoins")(hostPlayer(playerId))
+    return Crabe.native("Players_GetRoundCoin", "Game.GetRoundCoins")(Crabe.hostPlayer(playerId))
 end
 
 function Game.GetHexCoins(playerId)
-    return native("Players_GetHexCoin", "Game.GetHexCoins")(hostPlayer(playerId))
+    return Crabe.native("Players_GetHexCoin", "Game.GetHexCoins")(Crabe.hostPlayer(playerId))
 end
 
 -- ids is an array of up to 4 slot ids. Mirrors virtualreader.lua:805, which
@@ -193,8 +178,8 @@ function Game.SetRoundCoins(ids, playerId)
     if type(ids) ~= "table" then
         error("Game.SetRoundCoins: expected an array of slot ids", 2)
     end
-    native("Players_SetRoundCoins", "Game.SetRoundCoins")(
-        hostPlayer(playerId), #ids, ids[1], ids[2], ids[3], ids[4])
+    Crabe.native("Players_SetRoundCoins", "Game.SetRoundCoins")(
+        Crabe.hostPlayer(playerId), #ids, ids[1], ids[2], ids[3], ids[4])
     return #ids
 end
 
@@ -203,11 +188,11 @@ function Game.SetHexCoins(ids, playerId)
     if type(ids) ~= "table" then
         error("Game.SetHexCoins: expected an array of slot ids", 2)
     end
-    native("Players_SetHexCoins", "Game.SetHexCoins")(
-        hostPlayer(playerId), #ids, ids[1], ids[2], ids[3])
+    Crabe.native("Players_SetHexCoins", "Game.SetHexCoins")(
+        Crabe.hostPlayer(playerId), #ids, ids[1], ids[2], ids[3])
     return #ids
 end
 
 function Game.GetMaxCoins()
-    return native("VirtualReaderPC_GetMaxNumCoins", "Game.GetMaxCoins")()
+    return Crabe.native("VirtualReaderPC_GetMaxNumCoins", "Game.GetMaxCoins")()
 end

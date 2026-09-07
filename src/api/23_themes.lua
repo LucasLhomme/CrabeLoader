@@ -4,14 +4,6 @@
 
 Game = Game or {}
 
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
 Game.THEME_CATALOG = {
     { id = "Coruscant", label = "Coruscant Metropolis Sky" },
     { id = "Tatooine", label = "Tatooine Twin Suns" },

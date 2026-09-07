@@ -23,19 +23,6 @@ Crabe.Camera = Crabe.Camera or {}
 
 local Camera = Crabe.Camera
 
-local function native(name, caller)
-    local fn = _G[name]
-    if type(fn) ~= "function" then
-        error(caller .. ": " .. name .. " is not available in this Lua state", 3)
-    end
-    return fn
-end
-
-local function hostPlayer(playerId)
-    if playerId then return playerId end
-    return native("Players_GetHostPlayerID", "Crabe.Camera")()
-end
-
 -- ---------------------------------------------------------------------------
 -- Editor camera -- fully confirmed
 -- ---------------------------------------------------------------------------
@@ -56,7 +43,7 @@ function Camera.SetEditorState(state, playerId)
         error("Crabe.Camera.SetEditorState: unknown state '" .. tostring(state) .. "'", 2)
     end
 
-    native("Place_SetEditorState", "Crabe.Camera.SetEditorState")(hostPlayer(playerId), state)
+    Crabe.native("Place_SetEditorState", "Crabe.Camera.SetEditorState")(Crabe.hostPlayer(playerId), state)
     return state
 end
 
@@ -73,7 +60,7 @@ end
 -- refuses to start without it. Feeding that native a handle from somewhere
 -- else is untested and can take the process down.
 function Camera.StartupData(playerId)
-    return native("Customize_GetStartupData", "Crabe.Camera.StartupData")(hostPlayer(playerId))
+    return Crabe.native("Customize_GetStartupData", "Crabe.Camera.StartupData")(Crabe.hostPlayer(playerId))
 end
 
 -- Switches the player's view to the customize camera rig, aimed at `handle`.
@@ -82,13 +69,13 @@ function Camera.StartCustomizeCamera(handle, isRumpusObject, playerId)
         error("Crabe.Camera.StartCustomizeCamera: an actor handle is required", 2)
     end
 
-    native("Customize_StartCustomizeCamera", "Crabe.Camera.StartCustomizeCamera")(
-        handle, isRumpusObject == true, hostPlayer(playerId))
+    Crabe.native("Customize_StartCustomizeCamera", "Crabe.Camera.StartCustomizeCamera")(
+        handle, isRumpusObject == true, Crabe.hostPlayer(playerId))
     return true
 end
 
 function Camera.StopCustomizeCamera(playerId)
-    native("Customize_StopCustomizeCamera", "Crabe.Camera.StopCustomizeCamera")(hostPlayer(playerId))
+    Crabe.native("Customize_StopCustomizeCamera", "Crabe.Camera.StopCustomizeCamera")(Crabe.hostPlayer(playerId))
     return true
 end
 
@@ -97,8 +84,8 @@ end
 -- the one and only call site, so its meaning is unknown -- it is left at zero
 -- rather than guessed at.
 function Camera.Move(dx, dy, playerId)
-    native("Customize_MoveCamera", "Crabe.Camera.Move")(
-        hostPlayer(playerId), tonumber(dx) or 0, tonumber(dy) or 0, 0)
+    Crabe.native("Customize_MoveCamera", "Crabe.Camera.Move")(
+        Crabe.hostPlayer(playerId), tonumber(dx) or 0, tonumber(dy) or 0, 0)
 end
 
 -- ---------------------------------------------------------------------------
