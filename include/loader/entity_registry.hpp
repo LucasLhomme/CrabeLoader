@@ -9,6 +9,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 // Every health component the game touches, catalogued as it goes past.
 //
@@ -31,35 +33,36 @@ namespace EntityRegistry {
     constexpr size_t kMaxEntries = 32;
 
     struct Entry {
-        uintptr_t component;
-        float maxHealth;
-        float health;
-        uint32_t seen;
-        uint32_t damaged;
-        float lastDelta;
+        uintptr_t component{0};
+        float maxHealth{0.0f};
+        float health{0.0f};
+        uint32_t seen{0};
+        uint32_t damaged{0};
+        float lastDelta{0.0f};
     };
 
     // Address the clamp cave reads to know who it protects. Stable for the
     // lifetime of the process, which is what lets the cave bake it in.
-    uintptr_t* targetSlot();
-    uintptr_t target();
+    uintptr_t* targetSlot() noexcept;
+    uintptr_t target() noexcept;
 
     // Pins the clamp to one component. Zero hands control back to the
     // automatic pick described above.
-    void selectManual(uintptr_t component);
-    uintptr_t manualSelection();
+    void selectManual(uintptr_t component) noexcept;
+    uintptr_t manualSelection() noexcept;
 
-    // Copies out at most `max` entries, most-seen first, and returns how many
-    // were written.
-    size_t snapshot(Entry* out, size_t max);
-    size_t count();
+    // Copies out entries ordered most-seen first.
+    size_t snapshot(std::span<Entry> out) noexcept;
+    size_t snapshot(Entry* out, size_t max) noexcept;
+    std::vector<Entry> snapshot();
+    size_t count() noexcept;
 
     // The component that last lost health, and by how much. This is the
     // ground truth for identifying the player: get hit, read it back.
-    uintptr_t lastDamagedComponent();
-    float lastDamagedDelta();
+    uintptr_t lastDamagedComponent() noexcept;
+    float lastDamagedDelta() noexcept;
 
-    void clear();
+    void clear() noexcept;
 
 } // namespace EntityRegistry
 

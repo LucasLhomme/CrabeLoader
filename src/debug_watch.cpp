@@ -7,6 +7,7 @@
 #include "loader/debug_watch.hpp"
 #include "logger/logger.hpp"
 
+#include <array>
 #include <mutex>
 #include <windows.h>
 #include <tlhelp32.h>
@@ -21,8 +22,9 @@ namespace {
     DebugWatch::Access g_access = DebugWatch::Access::Write;
     bool g_armed = false;
 
-    DebugWatch::Hit g_hits[DebugWatch::kMaxHits];
+    std::array<DebugWatch::Hit, DebugWatch::kMaxHits> g_hits{};
     size_t g_used = 0;
+
 
     // DR7 bit layout for breakpoint 0: L0 enables it, LE and GE make the
     // report precise on the processors that still honour them, R/W0 picks the
@@ -211,15 +213,15 @@ void DebugWatch::refreshThreads()
     applyToAll(g_address, buildControl(g_size, g_access));
 }
 
-size_t DebugWatch::hits(Hit* out, size_t max)
+size_t DebugWatch::hits(std::span<Hit> out)
 {
-    if (!out || max == 0) return 0;
+    if (out.empty()) return 0;
 
     std::lock_guard<std::mutex> lock(g_mutex);
     size_t written = 0;
-    bool taken[kMaxHits] = {};
+    std::array<bool, kMaxHits> taken{};
 
-    while (written < max && written < g_used) {
+    while (written < out.size() && written < g_used) {
         size_t best = kMaxHits;
         for (size_t i = 0; i < g_used; ++i) {
             if (taken[i]) continue;
@@ -233,6 +235,12 @@ size_t DebugWatch::hits(Hit* out, size_t max)
     return written;
 }
 
+size_t DebugWatch::hits(Hit* out, size_t max)
+{
+    if (!out || max == 0) return 0;
+    return hits(std::span<Hit>(out, max));
+}
+
 size_t DebugWatch::hitCount()
 {
     return g_used;
@@ -243,3 +251,4 @@ void DebugWatch::reset()
     std::lock_guard<std::mutex> lock(g_mutex);
     g_used = 0;
 }
+
