@@ -276,13 +276,9 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     RenderHook& self = RenderHook::get();
 
     self.ensureBackendInit(swapChain);
+    self.applyPendingWindowMode(swapChain);
 
-    if (self._backendInitialized) {
-        self.applyPendingWindowMode(swapChain);
-
-        if (!self._renderTargetView)
-            self.createRenderTarget(swapChain);
-
+    if (self._backendInitialized && self._renderTargetView) {
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -326,7 +322,11 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 
-    if (self._menuOpen) {
+    // Both windows have to swallow input, not just the debug overlay. While
+    // the game keeps receiving mouse messages it also keeps re-centring the
+    // cursor every frame, which pins ImGui's pointer to the middle of the
+    // screen and makes clicks land nowhere near what was under the cursor.
+    if (self._menuOpen || self._modMenuOpen) {
         ImGuiIO& io = ImGui::GetIO();
         bool isMouseMsg = (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST);
         bool isKeyboardMsg = (msg == WM_KEYDOWN || msg == WM_KEYUP ||
