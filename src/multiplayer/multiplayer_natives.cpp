@@ -75,6 +75,41 @@ namespace Multiplayer::Natives {
         return 0;
     }
 
+    int __cdecl getNatInfo(void* L) {
+        LuaCall& lua = LuaCall::get();
+        if (!lua.hasReturnSupport()) {
+            return 0;
+        }
+
+        auto& mp = Application::MultiplayerManager::getInstance();
+        auto nat = mp.getNatStatus();
+
+        // Return: upnpAvailable, portForwarded, externalIp, externalPort, localIp, internalPort, statusMsg
+        lua.pushNumber(L, nat.upnpAvailable ? 1.0 : 0.0);
+        lua.pushNumber(L, nat.portForwarded ? 1.0 : 0.0);
+        lua.pushString(L, nat.externalIp.c_str());
+        lua.pushNumber(L, static_cast<double>(nat.externalPort));
+        lua.pushString(L, nat.localIp.c_str());
+        lua.pushNumber(L, static_cast<double>(nat.internalPort));
+        lua.pushString(L, nat.statusMessage.c_str());
+        return 7;
+    }
+
+    int __cdecl triggerPortForward(void* L) {
+        LuaCall& lua = LuaCall::get();
+        double port = lua.argToNumber(L, 1, 3074.0);
+        const char* proto = lua.argToString(L, 2);
+
+        auto& mp = Application::MultiplayerManager::getInstance();
+        bool ok = mp.triggerPortForward(static_cast<uint16_t>(port), proto ? proto : "UDP");
+
+        if (lua.hasReturnSupport()) {
+            lua.pushNumber(L, ok ? 1.0 : 0.0);
+            return 1;
+        }
+        return 0;
+    }
+
     bool registerAll(void* L) {
         LuaCall& lua = LuaCall::get();
         bool ok = true;
@@ -82,11 +117,13 @@ namespace Multiplayer::Natives {
         ok = lua.registerNativeFunction(L, "Crabe", "_mpGetStatus", &getStatus) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_mpSetTarget", &setTarget) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_mpApplyPatches", &applyPatches) && ok;
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpGetNatInfo", &getNatInfo) && ok;
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpTriggerPortForward", &triggerPortForward) && ok;
 
         if (ok) {
-            Logger::getInstance().info("MultiplayerNatives: registered Crabe._mp* natives.");
+            Logger::getInstance().info("MultiplayerNatives: successfully bound Crabe._mp* natives.");
         } else {
-            Logger::getInstance().error("MultiplayerNatives: failed to register some Crabe._mp* natives.");
+            Logger::getInstance().warning("MultiplayerNatives: some native bindings failed.");
         }
         return ok;
     }
