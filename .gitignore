@@ -6,3 +6,4 @@ herald-report.txt
 mods/
 __pycache__/
 backups/
+decypted/*

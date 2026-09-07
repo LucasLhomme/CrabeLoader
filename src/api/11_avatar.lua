@@ -288,3 +288,111 @@ function Game.GetAvatarInfo(playerId)
     end
     return rows
 end
+
+-- ---------------------------------------------------------------------------
+-- Master Character Roster (104 Characters)
+-- ---------------------------------------------------------------------------
+
+Game.CHARACTER_ROSTER = {
+    starwars = {
+        { name = "Anakin Skywalker", sku = 1000200 },
+        { name = "Ahsoka Tano", sku = 1000201 },
+        { name = "Obi-Wan Kenobi", sku = 1000202 },
+        { name = "Yoda", sku = 1000203 },
+        { name = "Luke Skywalker", sku = 1000204 },
+        { name = "Princess Leia", sku = 1000205 },
+        { name = "Han Solo", sku = 1000206 },
+        { name = "Chewbacca", sku = 1000207 },
+        { name = "Darth Vader", sku = 1000208 },
+        { name = "Darth Maul", sku = 1000209 },
+        { name = "Boba Fett", sku = 1000210 },
+        { name = "Ezra Bridger", sku = 1000211 },
+        { name = "Kanan Jarrus", sku = 1000212 },
+        { name = "Sabine Wren", sku = 1000213 },
+        { name = "Zeb Orrelios", sku = 1000214 },
+        { name = "Kylo Ren", sku = 1000215 },
+        { name = "Rey", sku = 1000216 },
+        { name = "Finn", sku = 1000217 },
+        { name = "Poe Dameron", sku = 1000218 },
+        { name = "Mace Windu", sku = 1000444 },
+    },
+    marvel = {
+        { name = "Iron Man", sku = 1000100 },
+        { name = "Thor", sku = 1000103 },
+        { name = "Captain America", sku = 1000104 },
+        { name = "Hulk", sku = 1000105 },
+        { name = "Hawkeye", sku = 1000106 },
+        { name = "Black Widow", sku = 1000107 },
+        { name = "Spider-Man", sku = 1000108 },
+        { name = "Venom", sku = 1000109 },
+        { name = "Star-Lord", sku = 1000110 },
+        { name = "Gamora", sku = 1000111 },
+        { name = "Drax", sku = 1000112 },
+        { name = "Rocket Raccoon", sku = 1000113 },
+        { name = "Groot", sku = 1000114 },
+        { name = "Loki", sku = 1000115 },
+        { name = "Ronan the Accuser", sku = 1000116 },
+        { name = "Green Goblin", sku = 1000117 },
+        { name = "Nick Fury", sku = 1000118 },
+        { name = "Iron Fist", sku = 1000119 },
+        { name = "Nova", sku = 1000120 },
+        { name = "Falcon", sku = 1000121 },
+        { name = "Yondu", sku = 1000122 },
+        { name = "Ultron", sku = 1000123 },
+        { name = "Hulkbuster", sku = 1000124 },
+        { name = "Black Suit Spider-Man", sku = 1000125 },
+        { name = "Vision", sku = 1000126 },
+        { name = "Ant-Man", sku = 1000127 },
+        { name = "Black Panther", sku = 1000128 },
+        { name = "Cap First Avenger", sku = 1000129 },
+    },
+    disney = {
+        { name = "Mickey Mouse", sku = 1000001 },
+        { name = "Minnie Mouse", sku = 1000002 },
+        { name = "Donald Duck", sku = 1000003 },
+        { name = "Olaf", sku = 1000004 },
+        { name = "Mulan", sku = 1000005 },
+        { name = "Sam Flynn", sku = 1000006 },
+        { name = "Quorra", sku = 1000007 },
+        { name = "Joy", sku = 1000008 },
+        { name = "Sadness", sku = 1000009 },
+        { name = "Anger", sku = 1000010 },
+        { name = "Disgust", sku = 1000011 },
+        { name = "Fear", sku = 1000012 },
+        { name = "Spot", sku = 1000013 },
+        { name = "Judy Hopps", sku = 1000014 },
+        { name = "Nick Wilde", sku = 1000015 },
+        { name = "Baloo", sku = 1000016 },
+        { name = "Mad Hatter", sku = 1000017 },
+        { name = "Alice", sku = 1000018 },
+        { name = "Time", sku = 1000019 },
+        { name = "Jack Skellington", sku = 1000020 },
+        { name = "Rapunzel", sku = 1000021 },
+        { name = "Wreck-It Ralph", sku = 1000022 },
+        { name = "Vanellope", sku = 1000023 },
+        { name = "Elsa", sku = 1000024 },
+        { name = "Anna", sku = 1000025 },
+        { name = "Hiro Hamada", sku = 1000026 },
+        { name = "Baymax", sku = 1000027 },
+        { name = "Aladdin", sku = 1000028 },
+        { name = "Jasmine", sku = 1000029 },
+        { name = "Tinker Bell", sku = 1000030 },
+        { name = "Merida", sku = 1000031 },
+        { name = "Maleficent", sku = 1000032 },
+        { name = "Stitch", sku = 1000033 },
+    }
+}
+
+function Game.ListCharacters(franchise)
+    if franchise then
+        return Game.CHARACTER_ROSTER[string.lower(franchise)] or {}
+    end
+    local all = {}
+    for _, list in pairs(Game.CHARACTER_ROSTER) do
+        for _, c in ipairs(list) do
+            all[#all + 1] = c
+        end
+    end
+    return all
+end
+

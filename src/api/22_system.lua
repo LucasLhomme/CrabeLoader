@@ -25,8 +25,9 @@ end
 -- HUD and display
 -- ---------------------------------------------------------------------------
 
--- customizebase.lua:79 and :127 bracket a screen with true/false, so this is a
--- suppression flag rather than a toggle: pass false to bring the HUD back.
+-- challengeadvertisement.lua:79 and :127 bracket a screen with true then
+-- false, so this is a suppression flag rather than a toggle: pass false to
+-- bring the HUD back. Argument order is bool first, player second.
 function Game.SuppressHud(suppressed, playerId)
     if type(suppressed) ~= "boolean" then
         error("Game.SuppressHud: expected a boolean", 2)
