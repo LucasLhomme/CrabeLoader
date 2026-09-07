@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include "loader/input_hook.hpp"
+#include "loader/luacall.hpp"
 #include "logger/logger.hpp"
 
 InputHook& InputHook::get()
@@ -79,4 +80,25 @@ std::string InputHook::report() const
         out += std::format("slot{}=polled:{} connected:{}", slot, polled, connected);
     }
     return out;
+}
+
+// Crabe._keyDown(virtualKey) -> 1 while the key is held, 0 otherwise.
+//
+// GetAsyncKeyState reports the physical state regardless of which window has
+// focus, which is what a tick-driven mod needs: the overlay may own the
+// keyboard while the mod still has to steer.
+int __cdecl InputNatives::keyDown(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    if (!lua.hasReturnSupport()) return 0;
+
+    auto key = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+    if (key <= 0 || key > 254) {
+        lua.pushNumber(L, 0.0);
+        return 1;
+    }
+
+    const bool held = (GetAsyncKeyState(key) & 0x8000) != 0;
+    lua.pushNumber(L, held ? 1.0 : 0.0);
+    return 1;
 }
