@@ -109,8 +109,7 @@ void Overlay::renderModMenu(bool* open)
         Menu::get().requestBack();
 
     const float footerHeight = ImGui::GetStyle().ItemSpacing.y * 2.0f
-                             + ImGui::GetFrameHeightWithSpacing()
-                             + ImGui::GetTextLineHeightWithSpacing() * 3.0f;
+                             + ImGui::GetTextLineHeightWithSpacing() * 2.5f;
     ImGui::BeginChild("MenuScroll", ImVec2(0.0f, -footerHeight), false);
 
     for (int i = 0; i < count; ++i) {
