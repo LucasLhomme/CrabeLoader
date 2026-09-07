@@ -35,6 +35,7 @@ local function currentFrame()
     return Menu.stack[#Menu.stack]
 end
 
+-- Adds a top-level entry.
 -- Clears all menu entries and resets navigation stack.
 function Menu.clear()
     Menu.root.items = {}

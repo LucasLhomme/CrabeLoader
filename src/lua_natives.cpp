@@ -19,6 +19,7 @@
 #include "loader/luacall.hpp"
 #include "loader/memory.hpp"
 #include "loader/message_hook.hpp"
+#include "loader/multiplayer/application/multiplayer_natives.hpp"
 #include "loader/render_hook.hpp"
 #include "logger/logger.hpp"
 
@@ -191,6 +192,7 @@ bool LuaRuntime::registerNatives(void* L)
     allOk = SpeedHackNatives::registerAll(L) && allOk;
     allOk = CheatNatives::registerAll(L) && allOk;
     allOk = FreecamNatives::registerAll(L) && allOk;
+    allOk = Multiplayer::Natives::registerAll(L) && allOk;
     for (const auto& entry : kNatives) {
         if (LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
 
