@@ -307,6 +307,19 @@ double LuaCall::argToNumber(void* L, int idx, double fallback) const
     return _tonumber(L, idx);
 }
 
+// Plain Lua truthiness: everything except false and nil is true.
+//
+// Deliberately not second-guessing a numeric 0 into false. Lua says 0 is true,
+// the wrappers in src/api reject anything that is not a boolean, and a native
+// that disagrees with its own language is a worse trap than the one this
+// replaces.
+bool LuaCall::argToBoolean(void* L, int idx, bool fallback) const
+{
+    if (!L || !_toboolean) return fallback;
+
+    return _toboolean(L, idx) != 0;
+}
+
 void LuaCall::pushString(void* L, const std::string& value) const
 {
     if (_pushlstring) _pushlstring(L, value.c_str(), value.size());

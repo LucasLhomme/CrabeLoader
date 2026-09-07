@@ -93,6 +93,13 @@ class LuaCall {
         // lua_tonumber can't distinguish a real 0 from a failure.
         double argToNumber(void* L, int idx, double fallback = 0.0) const;
 
+        // Reads argument `idx` as a truth value.
+        //
+        // This exists because argToNumber cannot do it: lua_tonumber returns 0
+        // for a boolean, so reading a Lua `true` as a number yields false. Any
+        // native taking an on/off flag must use this, or it is permanently off.
+        bool argToBoolean(void* L, int idx, bool fallback = false) const;
+
         // Pushes a return value; the caller must then return the pushed
         // count. Check hasReturnSupport() first or the count goes wrong.
         void pushString(void* L, const std::string& value) const;

@@ -72,30 +72,83 @@ void Overlay::renderModMenu(bool* open)
     ImGui::TextUnformatted(view.title.c_str());
     ImGui::Separator();
 
-    const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing() * 2.0f;
+    const int count = static_cast<int>(view.items.size());
+
+    // A different view is a different list, so start at the top rather than
+    // leaving the selection on a row index that now means something else.
+    if (view.title != _menuTitle) {
+        _menuTitle = view.title;
+        _menuCursor = 0;
+        _menuScrollTo = true;
+    }
+    if (_menuCursor >= count) _menuCursor = count - 1;
+    if (_menuCursor < 0) _menuCursor = 0;
+
+    // Arrows and Enter are the reliable way in: the game re-centres the mouse
+    // every frame, so the pointer cannot be trusted to sit on a row.
+    auto moveCursor = [&](int delta) {
+        _menuCursor = (_menuCursor + delta % count + count) % count;
+        _menuScrollTo = true;
+    };
+
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)) moveCursor(1);
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true)) moveCursor(-1);
+    if (ImGui::IsKeyPressed(ImGuiKey_PageDown, true)) moveCursor(5);
+    if (ImGui::IsKeyPressed(ImGuiKey_PageUp, true)) moveCursor(-5);
+    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) { _menuCursor = 0; _menuScrollTo = true; }
+    if (ImGui::IsKeyPressed(ImGuiKey_End, false)) { _menuCursor = count - 1; _menuScrollTo = true; }
+
+    // Lua indexes from 1 throughout.
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
+        Menu::get().requestActivate(_menuCursor + 1);
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+        Menu::get().requestBack();
+
+    const float footerHeight = ImGui::GetStyle().ItemSpacing.y * 2.0f
+                             + ImGui::GetFrameHeightWithSpacing()
+                             + ImGui::GetTextLineHeightWithSpacing() * 3.0f;
     ImGui::BeginChild("MenuScroll", ImVec2(0.0f, -footerHeight), false);
 
-    for (size_t i = 0; i < view.items.size(); ++i) {
-        // Lua indexes from 1.
-        ImGui::PushID(static_cast<int>(i));
-        if (ImGui::Selectable(view.items[i].c_str()))
-            Menu::get().requestActivate(static_cast<int>(i) + 1);
+    for (int i = 0; i < count; ++i) {
+        ImGui::PushID(i);
+
+        const bool selected = (i == _menuCursor);
+        if (ImGui::Selectable(view.items[i].c_str(), selected)) {
+            // Clicking still works, and moves the keyboard cursor with it so
+            // the two never disagree about what is selected.
+            _menuCursor = i;
+            Menu::get().requestActivate(i + 1);
+        }
+        if (selected && _menuScrollTo)
+            ImGui::SetScrollHereY(0.5f);
+
         ImGui::PopID();
     }
+    _menuScrollTo = false;
 
     ImGui::EndChild();
     ImGui::Separator();
+
+    // The status line carries the error text when a handler raises, so it gets
+    // its own wrapped block. Putting it after the buttons on one line pushed
+    // anything long straight off the right edge of the window.
+    if (!view.status.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(view.status.c_str());
+        ImGui::PopTextWrapPos();
+    } else {
+        ImGui::TextDisabled("Arrows move  -  Enter selects  -  Backspace goes back");
+    }
 
     if (ImGui::Button("Back"))
         Menu::get().requestBack();
     ImGui::SameLine();
     if (ImGui::Button("Refresh"))
         Menu::get().requestRefresh();
-
-    if (!view.status.empty()) {
-        ImGui::SameLine();
-        ImGui::TextUnformatted(view.status.c_str());
-    }
 
     ImGui::End();
 }

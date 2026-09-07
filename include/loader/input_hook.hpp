@@ -44,4 +44,14 @@ class InputHook {
         std::atomic<uint32_t> _connected[kMaxSlots] = {};
 };
 
+// Lua C function for reading live key state. It lives here rather than in
+// lua_natives.cpp only because that file is at the line cap.
+//
+// This reads the keyboard directly instead of going through the game's input
+// path. A mod that has to steer something every frame -- a free camera -- needs
+// key state at tick time, and the engine never hands that to Lua.
+namespace InputNatives {
+    int __cdecl keyDown(void* L);
+}
+
 #endif /* !INPUT_HOOK_HPP_ */
