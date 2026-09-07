@@ -29,12 +29,18 @@ set(CRABELOADER_CORE_SOURCES
     src/memory.cpp
     src/codecave.cpp
     src/cheats.cpp
+    src/cheat_natives.cpp
+    src/entity_registry.cpp
+    src/debug_watch.cpp
+    src/speedhack.cpp
+    src/debug_watch_natives.cpp
     src/overlay.cpp
     src/menu.cpp
     src/render_hook.cpp
     src/input_hook.cpp
     src/message_hook.cpp
     src/avatar_relay_hook.cpp
+    src/freecam.cpp
     src/gateway.cpp
     src/logger.cpp
 )

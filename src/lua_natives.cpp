@@ -12,6 +12,9 @@
 
 #include "loader/avatar_relay_hook.hpp"
 #include "loader/cheats.hpp"
+#include "loader/debug_watch.hpp"
+#include "loader/freecam.hpp"
+#include "loader/speedhack.hpp"
 #include "loader/input_hook.hpp"
 #include "loader/loader.hpp"
 #include "loader/lua_runtime.hpp"
@@ -449,23 +452,26 @@ bool LuaRuntime::registerNatives(void* L)
         { "_writeBytes",          &nativeWriteBytes },
         { "_findPointers",        &nativeFindPointers },
         { "_inputReport",         &nativeInputReport },
+        { "_keyDown",             &InputNatives::keyDown },
         { "_messageWatch",        &nativeMessageWatch },
         { "_messageReport",       &nativeMessageReport },
         { "_messageClear",        &nativeMessageClear },
         { "_armAvatarRelay",      &nativeArmAvatarRelay },
         { "_disarmAvatarRelay",   &nativeDisarmAvatarRelay },
         { "_avatarRelayStatus",   &nativeAvatarRelayStatus },
-        { "_setGodMode",          &CheatNatives::setGodMode },
-        { "_getGodMode",          &CheatNatives::getGodMode },
-        { "_setSpeedMultiplier",  &CheatNatives::setSpeedMultiplier },
-        { "_getSpeedMultiplier",  &CheatNatives::getSpeedMultiplier },
-        { "_playerObject",        &CheatNatives::playerObject },
-        { "_playerFloat",         &CheatNatives::playerFloat },
+        { "_freecamToggle",       &FreecamNatives::toggle },
+        { "_freecamSetEnabled",   &FreecamNatives::setEnabled },
+        { "_freecamIsEnabled",    &FreecamNatives::isEnabled },
+        { "_freecamSetSpeed",     &FreecamNatives::setSpeed },
+        { "_freecamGetSpeed",     &FreecamNatives::getSpeed },
+        { "_freecamUpdate",       &FreecamNatives::update },
         { "_registerLoadOverride", &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",   &nativeClearLoadOverrides },
     };
 
-    bool allOk = true;
+    bool allOk = DebugWatchNatives::registerAll(L);
+    allOk = SpeedHackNatives::registerAll(L) && allOk;
+    allOk = CheatNatives::registerAll(L) && allOk;
     for (const auto& entry : kNatives) {
         if (LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
 
