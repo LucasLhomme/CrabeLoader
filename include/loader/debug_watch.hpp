@@ -7,8 +7,10 @@
 #ifndef DEBUG_WATCH_HPP_
 #define DEBUG_WATCH_HPP_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 
 // Cheat Engine's "find out what writes to this address", in process.
@@ -43,19 +45,19 @@ namespace DebugWatch {
     bool armed();
     uintptr_t watching();
 
-    // Threads created after arm() carry no debug registers. Called from the
-    // tick so a worker spawned mid-level does not go unwatched.
+    // Threads created after arm() carry no debug registers.
     void refreshThreads();
 
     // One row per distinct instruction, most frequent first. `instruction` is
     // the address the trap reported: a data breakpoint fires *after* the store
     // completes, so the store itself is the instruction ending there.
     struct Hit {
-        uintptr_t instruction;
-        uint32_t count;
-        uint32_t registers[8];  // eax ecx edx ebx esp ebp esi edi at trap time
+        uintptr_t instruction{0};
+        uint32_t count{0};
+        std::array<uint32_t, 8> registers{}; // eax ecx edx ebx esp ebp esi edi at trap time
     };
 
+    size_t hits(std::span<Hit> out);
     size_t hits(Hit* out, size_t max);
     size_t hitCount();
     void reset();

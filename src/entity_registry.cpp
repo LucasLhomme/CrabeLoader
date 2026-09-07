@@ -6,58 +6,75 @@
 
 #include "loader/entity_registry.hpp"
 
+#include <array>
+#include <atomic>
 #include <cstring>
+#include <immintrin.h>
 
 namespace {
 
-    // Health component layout, identical at both cave sites: a float health at
-    // offset 8, a float maximum health right behind it.
     constexpr uintptr_t kHealthOffset = 0x08;
     constexpr uintptr_t kMaxHealthOffset = 0x0C;
-
-    // A component not seen for this many passes is treated as gone. Without
-    // it a level reload would leave the previous avatar holding an unbeatable
-    // count, and the clamp would guard a pointer the engine had freed.
     constexpr uint32_t kStaleAfter = 900;
 
     struct Slot {
-        uintptr_t component;
-        float maxHealth;
-        float health;
-        uint32_t seen;
-        uint32_t damaged;
-        float lastDelta;
-        uint32_t lastPass;
+        uintptr_t component{0};
+        float maxHealth{0.0f};
+        float health{0.0f};
+        uint32_t seen{0};
+        uint32_t damaged{0};
+        float lastDelta{0.0f};
+        uint32_t lastPass{0};
+
+        void reset(uintptr_t newComp = 0) noexcept {
+            component = newComp;
+            maxHealth = 0.0f;
+            health = 0.0f;
+            seen = 0;
+            damaged = 0;
+            lastDelta = 0.0f;
+            lastPass = 0;
+        }
     };
 
-    Slot g_slots[EntityRegistry::kMaxEntries];
+    struct SpinLock {
+        std::atomic_flag flag = ATOMIC_FLAG_INIT;
+
+        void lock() noexcept {
+            while (flag.test_and_set(std::memory_order_acquire)) {
+                _mm_pause();
+            }
+        }
+
+        void unlock() noexcept {
+            flag.clear(std::memory_order_release);
+        }
+    };
+
+    SpinLock g_lock;
+    std::array<Slot, EntityRegistry::kMaxEntries> g_slots{};
     size_t g_used = 0;
     uint32_t g_pass = 0;
 
-    uintptr_t g_target = 0;
+    alignas(4) uintptr_t g_target = 0;
     uintptr_t g_manual = 0;
 
     uintptr_t g_lastDamaged = 0;
     float g_lastDelta = 0.0f;
 
-    // The engine hands us pointers it has already tested, so a full page query
-    // would only cost time. Reject the shapes that cannot be a live object.
-    bool plausible(uintptr_t component)
+    bool plausible(uintptr_t component) noexcept
     {
         return component >= 0x10000 && (component & 3) == 0;
     }
 
-    float readFloat(uintptr_t at)
+    float readFloat(uintptr_t at) noexcept
     {
         float value = 0.0f;
         std::memcpy(&value, reinterpret_cast<const void*>(at), sizeof(float));
         return value;
     }
 
-    // Finds the slot for `component`, adding one if there is room. When the
-    // table is full the stalest slot is recycled, which is what keeps a level
-    // change from permanently filling it with corpses.
-    Slot* existing(uintptr_t component)
+    Slot* existing(uintptr_t component) noexcept
     {
         for (size_t i = 0; i < g_used; ++i) {
             if (g_slots[i].component == component) return &g_slots[i];
@@ -65,14 +82,13 @@ namespace {
         return nullptr;
     }
 
-    Slot* slotFor(uintptr_t component)
+    Slot* slotFor(uintptr_t component) noexcept
     {
         if (Slot* found = existing(component)) return found;
 
         if (g_used < EntityRegistry::kMaxEntries) {
             Slot* fresh = &g_slots[g_used++];
-            std::memset(fresh, 0, sizeof(*fresh));
-            fresh->component = component;
+            fresh->reset(component);
             return fresh;
         }
 
@@ -80,15 +96,11 @@ namespace {
         for (size_t i = 1; i < g_used; ++i) {
             if (g_slots[i].lastPass < oldest->lastPass) oldest = &g_slots[i];
         }
-        std::memset(oldest, 0, sizeof(*oldest));
-        oldest->component = component;
+        oldest->reset(component);
         return oldest;
     }
 
-    // Most-seen wins, but only among components still being drawn. The avatar
-    // meter is on screen every frame; an enemy meter is not, so the player
-    // pulls ahead and stays ahead.
-    void refreshTarget()
+    void refreshTarget() noexcept
     {
         if (g_manual) {
             g_target = g_manual;
@@ -106,12 +118,11 @@ namespace {
 
 } // namespace
 
-// Called from the capture cave with the health component the HUD is about to
-// draw a bar for. Counts the sighting and re-decides who the player is.
 extern "C" void __cdecl CrabeRecordSeen(uintptr_t component)
 {
     if (!plausible(component)) return;
 
+    g_lock.lock();
     ++g_pass;
 
     Slot* slot = slotFor(component);
@@ -121,20 +132,20 @@ extern "C" void __cdecl CrabeRecordSeen(uintptr_t component)
     ++slot->seen;
 
     refreshTarget();
+    g_lock.unlock();
 }
 
-// Called from the damage cave before the clamp, with the delta the engine is
-// about to apply. Negative means a hit landed.
 extern "C" void __cdecl CrabeRecordDamage(uintptr_t component, float delta)
 {
     if (!plausible(component)) return;
 
-    // Only a loss earns a slot. Spawning and healing push non-negative deltas
-    // through here for every entity in the level, which filled the table with
-    // rows nobody could act on and buried the one that mattered.
+    g_lock.lock();
     Slot* slot = existing(component);
     if (!slot) {
-        if (delta >= 0.0f) return;
+        if (delta >= 0.0f) {
+            g_lock.unlock();
+            return;
+        }
         slot = slotFor(component);
     }
 
@@ -148,69 +159,74 @@ extern "C" void __cdecl CrabeRecordDamage(uintptr_t component, float delta)
         g_lastDamaged = component;
         g_lastDelta = delta;
     }
+    g_lock.unlock();
 }
 
-uintptr_t* EntityRegistry::targetSlot()
+uintptr_t* EntityRegistry::targetSlot() noexcept
 {
     return &g_target;
 }
 
-uintptr_t EntityRegistry::target()
+uintptr_t EntityRegistry::target() noexcept
 {
     return g_target;
 }
 
-void EntityRegistry::selectManual(uintptr_t component)
+void EntityRegistry::selectManual(uintptr_t component) noexcept
 {
+    g_lock.lock();
     g_manual = component;
     refreshTarget();
+    g_lock.unlock();
 }
 
-uintptr_t EntityRegistry::manualSelection()
+uintptr_t EntityRegistry::manualSelection() noexcept
 {
     return g_manual;
 }
 
-size_t EntityRegistry::count()
+size_t EntityRegistry::count() noexcept
 {
     return g_used;
 }
 
-uintptr_t EntityRegistry::lastDamagedComponent()
+uintptr_t EntityRegistry::lastDamagedComponent() noexcept
 {
     return g_lastDamaged;
 }
 
-float EntityRegistry::lastDamagedDelta()
+float EntityRegistry::lastDamagedDelta() noexcept
 {
     return g_lastDelta;
 }
 
-void EntityRegistry::clear()
+void EntityRegistry::clear() noexcept
 {
+    g_lock.lock();
     g_used = 0;
     g_pass = 0;
     g_lastDamaged = 0;
     g_lastDelta = 0.0f;
     refreshTarget();
+    g_lock.unlock();
 }
 
-// Ordered most-seen first so the menu lists the likely player at the top. The
-// cave may update a slot mid-copy; a row can be one frame stale, which costs
-// nothing because every field here is only ever displayed.
-size_t EntityRegistry::snapshot(Entry* out, size_t max)
+size_t EntityRegistry::snapshot(std::span<Entry> out) noexcept
 {
-    if (!out || max == 0) return 0;
+    if (out.empty()) return 0;
 
+    g_lock.lock();
     size_t written = 0;
-    bool taken[kMaxEntries] = {};
+    std::array<bool, kMaxEntries> taken{};
 
-    while (written < max && written < g_used) {
+    while (written < out.size() && written < g_used) {
         size_t bestIndex = kMaxEntries;
 
         for (size_t i = 0; i < g_used; ++i) {
             if (taken[i]) continue;
-            if (bestIndex == kMaxEntries || g_slots[i].seen > g_slots[bestIndex].seen) bestIndex = i;
+            if (bestIndex == kMaxEntries || g_slots[i].seen > g_slots[bestIndex].seen) {
+                bestIndex = i;
+            }
         }
         if (bestIndex == kMaxEntries) break;
 
@@ -224,5 +240,21 @@ size_t EntityRegistry::snapshot(Entry* out, size_t max)
         out[written].lastDelta = slot.lastDelta;
         ++written;
     }
+    g_lock.unlock();
     return written;
 }
+
+size_t EntityRegistry::snapshot(Entry* out, size_t max) noexcept
+{
+    if (!out || max == 0) return 0;
+    return snapshot(std::span<Entry>(out, max));
+}
+
+std::vector<EntityRegistry::Entry> EntityRegistry::snapshot()
+{
+    std::vector<Entry> result(count());
+    size_t written = snapshot(std::span<Entry>(result));
+    result.resize(written);
+    return result;
+}
+
