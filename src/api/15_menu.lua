@@ -35,18 +35,32 @@ local function currentFrame()
     return Menu.stack[#Menu.stack]
 end
 
--- Adds a top-level entry.
+-- Clears all menu entries and resets navigation stack.
+function Menu.clear()
+    Menu.root.items = {}
+    Menu.stack = { { menu = Menu.root, index = 1 } }
+    Menu.status = ""
+end
+
+-- Adds a top-level entry. If an entry with this label already exists, updates it.
 function Menu.register(entry)
     if type(entry) ~= "table" or type(entry.label) ~= "string" then
         error("Crabe.Menu.register: expected a table with a label (string)", 2)
     end
     local items = Menu.root.items
+    for i, existing in ipairs(items) do
+        if existing.label == entry.label then
+            items[i] = entry
+            return entry
+        end
+    end
     items[#items + 1] = entry
     return entry
 end
 
 -- Adds an entry under a named submenu, creating that submenu on first use.
 -- Lets several mods share one category without knowing about each other.
+-- Idempotent: replaces any existing entry with the same label.
 function Menu.registerInCategory(categoryLabel, entry)
     if type(categoryLabel) ~= "string" or categoryLabel == "" then
         error("Crabe.Menu.registerInCategory: category must be a non-empty string", 2)
@@ -71,6 +85,12 @@ function Menu.registerInCategory(categoryLabel, entry)
     end
 
     local items = category.submenu.items
+    for i, existing in ipairs(items) do
+        if existing.label == entry.label then
+            items[i] = entry
+            return entry
+        end
+    end
     items[#items + 1] = entry
     return entry
 end
