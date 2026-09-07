@@ -1,88 +1,88 @@
-# Architecture Multijoueur & Audit du Serveur Communautaire
+# Multiplayer Architecture & Community Server Audit
 
-Ce document présente l'audit complet du serveur communautaire situé dans `tools/disney-infinity-community-server`, suivi de l'étude de faisabilité et de la feuille de route technique pour restaurer proprement le multijoueur de **Disney Infinity 3.0 Gold Edition** via **CrabeLoader**.
-
----
-
-## 1. Contexte & Problématique
-
-Lors de la fermeture des services en ligne de Disney en 2016-2017, Disney a publié les versions **Gold Edition** sur Steam. Pour cette sortie :
-- Les serveurs officiels ont été coupés.
-- Les menus multijoueur ont été masqués et verrouillés dans l'interface du jeu.
-- Le moteur réseau sous-jacent d'Avalanche Software est resté compilé dans l'exécutable `DisneyInfinity3.exe`.
-
-Le dossier `tools/disney-infinity-community-server` contient une tentative communautaire (dépôt `starbrightlab`) visant à recréer ce backend.
+This document presents the complete audit of the community server located in `tools/disney-infinity-community-server`, followed by a feasibility study and technical roadmap for cleanly restoring **Disney Infinity 3.0 Gold Edition** multiplayer via **CrabeLoader**.
 
 ---
 
-## 2. Audit & Review de `disney-infinity-community-server`
+## 1. Background & Problem Statement
+
+When Disney shut down its online services in 2016–2017, Disney released the **Gold Edition** versions on Steam. For that release:
+- Official servers were cut.
+- Multiplayer menus were hidden and locked in the game's UI.
+- The underlying Avalanche Software network engine remained compiled into the `DisneyInfinity3.exe` executable.
+
+The `tools/disney-infinity-community-server` folder contains a community attempt (the `starbrightlab` repository) to recreate this backend.
+
+---
+
+## 2. Audit & Review of `disney-infinity-community-server`
 
 ### 2.1. Architecture & Stack
-* **Technologies :** Node.js 18+, Express, Socket.IO, PostgreSQL / Supabase, Winston, Helmet, Multer.
-* **Double interface :**
-  1. Une API Web moderne (`/api/v1/*`) destinée à une application ou un site web.
-  2. Une couche d'émulation des endpoints historiques du jeu :
-     - `routes/config.js` : Annuaire de découverte `/coregames/config/v1/infinity3/:platform/`.
-     - `routes/infinity-api.js` & `routes/disney-ugc.js` : UGC et profils.
-     - `routes/did-compat.js` : Authentification Disney ID (`/coregames/did/v3/*`).
-     - `routes/sessions-compat.js` : Gestion des sessions de jeu (`/coregames/sessions/v1/*`).
+* **Technologies:** Node.js 18+, Express, Socket.IO, PostgreSQL / Supabase, Winston, Helmet, Multer.
+* **Dual interface:**
+  1. A modern web API (`/api/v1/*`) intended for an application or website.
+  2. An emulation layer for the game's legacy endpoints:
+     - `routes/config.js`: Discovery directory `/coregames/config/v1/infinity3/:platform/`.
+     - `routes/infinity-api.js` & `routes/disney-ugc.js`: UGC and profiles.
+     - `routes/did-compat.js`: Disney ID authentication (`/coregames/did/v3/*`).
+     - `routes/sessions-compat.js`: Game session management (`/coregames/sessions/v1/*`).
 
 ---
 
-### 2.2. Ce qui est valide et fonctionnel
-- **Découverte de configuration (Config Discovery) :**
-  L'implémentation dans `routes/config.js` est exacte. Au lancement, le client de jeu interroge impérativement `/coregames/config/v1/infinity3/steam/` (ou `/pc/`, `/wiiu/`) pour connaître les URLs de tous les sous-services (`url_inf_ugc`, `url_cg_matchmaking`, `domain_cg_natneg`, etc.). Sans réponse JSON valide à cet appel, le jeu se verrouille en mode hors-ligne.
-- **Gestion des Toyboxes (UGC) :**
-  La gestion des fichiers binaires de Toybox (upload multipart, métadonnées, screenshots) reflète correctement le format attendu par le jeu.
-- **Sécurité applicative de base :**
-  Rate-limiting par IP/catégorie, hachage bcrypt des mots de passe, en-têtes de sécurité via Helmet.
+### 2.2. What is valid and functional
+- **Config Discovery:**
+  The implementation in `routes/config.js` is accurate. At startup, the game client unconditionally queries `/coregames/config/v1/infinity3/steam/` (or `/pc/`, `/wiiu/`) to learn the URLs of all sub-services (`url_inf_ugc`, `url_cg_matchmaking`, `domain_cg_natneg`, etc.). Without a valid JSON response to this call, the game locks into offline mode.
+- **Toybox Management (UGC):**
+  The handling of Toybox binary files (multipart upload, metadata, screenshots) correctly reflects the format expected by the game.
+- **Basic application security:**
+  Per-IP/category rate-limiting, bcrypt password hashing, security headers via Helmet.
 
 ---
 
-### 2.3. Défauts majeurs et Bugs critiques
+### 2.3. Major flaws and critical bugs
 
-| Problème | Fichiers concernés | Impact |
+| Issue | Affected files | Impact |
 | :--- | :--- | :--- |
-| **Crash Runtime DB (`pool.query`)** | `controllers/profile.js`, `controllers/achievements.js`, `controllers/sync.js`, `controllers/analytics.js`, `services/achievementService.js` | Lors de la migration vers le client Supabase, l'export `pool` a été supprimé de `config/database.js`. L'appel `pool.query()` lève immédiatement une exception `TypeError: Cannot read properties of undefined (reading 'query')`. |
-| **Données fantômes (Stubs SQL)** | `config/database.js`, `socket.js`, `controllers/friends.js` | La fonction de compatibilité `query()` renvoie `{ rows: [], rowCount: 0 }` pour toute requête SQL autre que `SELECT NOW()`. Les insertions d'amis (`INSERT INTO friends`) ou mises à jour de requêtes ne sont jamais exécutées. Les données sont perdues silencieusement. |
-| **Incompatibilité Moteur (WebRTC / Socket.IO)** | `controllers/networking.js`, `socket.js` | Le serveur implémente des échanges de candidats ICE WebRTC et des événements Socket.IO. **Disney Infinity 3.0 n'utilise ni WebRTC ni Socket.IO**. Le jeu C++ communique via des sockets UDP natives (NAT negotiation Avalanche/GameSpy) et HTTP brut. |
-| **Configuration client fictive** | `client-integration/Infinity3Config.xml` | Ce fichier XML n'a jamais été lu par le jeu. Le moteur compile ses URLs de base en dur dans le binaire ; il n'existe aucun mécanisme natif de chargement de config XML externe pour le réseau. |
+| **Runtime DB Crash (`pool.query`)** | `controllers/profile.js`, `controllers/achievements.js`, `controllers/sync.js`, `controllers/analytics.js`, `services/achievementService.js` | During migration to the Supabase client, the `pool` export was removed from `config/database.js`. Calling `pool.query()` immediately throws `TypeError: Cannot read properties of undefined (reading 'query')`. |
+| **Ghost data (SQL stubs)** | `config/database.js`, `socket.js`, `controllers/friends.js` | The compatibility `query()` function returns `{ rows: [], rowCount: 0 }` for any SQL query other than `SELECT NOW()`. Friend insertions (`INSERT INTO friends`) or request updates are never executed. Data is silently lost. |
+| **Engine incompatibility (WebRTC / Socket.IO)** | `controllers/networking.js`, `socket.js` | The server implements WebRTC ICE candidate exchanges and Socket.IO events. **Disney Infinity 3.0 uses neither WebRTC nor Socket.IO**. The C++ game communicates via native UDP sockets (Avalanche/GameSpy NAT negotiation) and raw HTTP. |
+| **Fictitious client configuration** | `client-integration/Infinity3Config.xml` | This XML file has never been read by the game. The engine hard-codes its base URLs in the binary; there is no native mechanism for loading external XML network config. |
 
-**Bilan du serveur :**
-En l'état, le serveur ne permet pas de jouer en multijoueur. Il peut servir de base pour héberger des Toyboxes (UGC), mais son architecture temps-réel (Socket.IO / WebRTC) et ses bugs de base de données bloquent toute session de jeu réelle.
-
----
-
-## 3. Analyse du Moteur Réseau dans le Binaire PC
-
-Le binaire `DisneyInfinity3.exe` (Win32) contient toujours la totalité des fonctions natives de jeu en réseau d'Avalanche Software :
-
-### 3.1. Fonctions d'état et d'autorisation
-* `IsMultiplayerAllowed` : Retourne un booléen indiquant si le mode multijoueur est autorisé (désactivé par défaut dans la Gold Edition).
-* `IsOnline`, `IsOnlineContentAllowed` : Vérification du statut de connexion réseau.
-* `IsSignedIntoDisneyID`, `IsSignedIntoPlatform` : Vérification de l'authentification.
-* `UI_IsSteamGame`, `UI_IsTOGOOfflineGame` : Drapeaux de configuration de la build.
-
-### 3.2. Fonctions de session et de réplication
-* `Network_StartGettingList`, `Network_SetJoinSession`, `Network_SetSessionName`, `Network_RemoveFromGettingList` : Gestion des sessions réseau de bas niveau.
-* `UI_LockGame`, `UI_UnlockGame`, `UI_GameIsLocked` : Verrouillage/déverrouillage de la session hôte (cf. `src/api/22_system.lua`).
-* `UI_KickPlayer`, `Players_NumPlayers`, `Players_MaxPlayers` : Gestion des pairs connectés dans l'instance.
+**Server verdict:**
+As-is, the server does not allow multiplayer gameplay. It can serve as a base for hosting Toyboxes (UGC), but its real-time architecture (Socket.IO / WebRTC) and database bugs block any real game session.
 
 ---
 
-## 4. Faisabilité d'un Mod Multijoueur via CrabeLoader
+## 3. Analysis of the Network Engine in the PC Binary
 
-### 4.1. Pourquoi CrabeLoader est la solution idéale
-Les approches communautaires traditionnelles obligent les joueurs à :
-1. Modifier leur fichier système `C:\Windows\System32\drivers\etc\hosts`.
-2. Installer des certificats SSL tiers sur leur OS pour intercepter les flux HTTPS.
-3. Patché manuellement les octets du binaire `DisneyInfinity3.exe` (ce qui casse les signatures et complique les mises à jour).
+The `DisneyInfinity3.exe` binary (Win32) still contains the full set of Avalanche Software native network game functions:
 
-**CrabeLoader résout ces trois problèmes** car il s'exécute directement dans l'espace mémoire du jeu via le proxy `bink2w32.dll` avec [MinHook](file:///home/crabe/Dev/Perso/CrabeLoader/src/minhook).
+### 3.1. Status and authorization functions
+* `IsMultiplayerAllowed`: Returns a boolean indicating whether multiplayer mode is allowed (disabled by default in the Gold Edition).
+* `IsOnline`, `IsOnlineContentAllowed`: Network connection status check.
+* `IsSignedIntoDisneyID`, `IsSignedIntoPlatform`: Authentication verification.
+* `UI_IsSteamGame`, `UI_IsTOGOOfflineGame`: Build configuration flags.
+
+### 3.2. Session and replication functions
+* `Network_StartGettingList`, `Network_SetJoinSession`, `Network_SetSessionName`, `Network_RemoveFromGettingList`: Low-level network session management.
+* `UI_LockGame`, `UI_UnlockGame`, `UI_GameIsLocked`: Host session locking/unlocking (see `src/api/22_system.lua`).
+* `UI_KickPlayer`, `Players_NumPlayers`, `Players_MaxPlayers`: Management of connected peers in the instance.
 
 ---
 
-### 4.2. Feuille de route technique pour CrabeLoader
+## 4. Feasibility of a Multiplayer Mod via CrabeLoader
+
+### 4.1. Why CrabeLoader is the ideal solution
+Traditional community approaches require players to:
+1. Modify their system `C:\Windows\System32\drivers\etc\hosts` file.
+2. Install third-party SSL certificates on their OS to intercept HTTPS traffic.
+3. Manually patch bytes in the `DisneyInfinity3.exe` binary (which breaks signatures and complicates updates).
+
+**CrabeLoader solves all three problems** because it runs directly inside the game's memory space via the `bink2w32.dll` proxy with [MinHook](file:///home/crabe/Dev/Perso/CrabeLoader/src/minhook).
+
+---
+
+### 4.2. Technical roadmap for CrabeLoader
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -90,49 +90,48 @@ Les approches communautaires traditionnelles obligent les joueurs à :
 │                                                             │
 │  ┌───────────────────────┐       ┌───────────────────────┐  │
 │  │   Lua Hooks / API     │       │   C++ Native Hooks    │  │
-│  │  - Déverrouillage UI  │       │  - Hook Winsock/HTTP  │  │
-│  │  - Menu Multijoueur   │       │  - Bypass Auth/Flags  │  │
+│  │  - UI Unlock          │       │  - Winsock/HTTP Hook  │  │
+│  │  - Multiplayer Menu   │       │  - Auth/Flags Bypass  │  │
 │  └───────────┬───────────┘       └───────────┬───────────┘  │
 └──────────────┼───────────────────────────────┼──────────────┘
                │                               │
                ▼                               ▼
-       Moteur Disney Infinity 3.0    Redirection Réseau
-       - Logique de réplication     - Option A: Serveur local
-       - Physique & Objets Toybox    - Option B: Steamworks P2P
+       Disney Infinity 3.0 Engine    Network Redirection
+       - Replication logic           - Option A: Local server
+       - Physics & Toybox objects    - Option B: Steamworks P2P
 ```
 
-#### Étape 1 : Reroutage Réseau en Mémoire (C++)
-Au lieu de modifier le fichier `hosts` de Windows :
-- Ajouter dans CrabeLoader un hook sur les fonctions réseau Win32 (`connect`, `getaddrinfo`, ou l'API HTTP du jeu).
-- Quand le jeu initie une connexion vers `disney.go.com` ou `api.disney.com`, CrabeLoader redirige automatiquement le socket vers l'adresse locale (`127.0.0.1:3000`) ou le serveur communautaire dédié.
+#### Step 1: In-Memory Network Rerouting (C++)
+Instead of modifying Windows' `hosts` file:
+- Add a hook in CrabeLoader on Win32 network functions (`connect`, `getaddrinfo`, or the game's HTTP API).
+- When the game initiates a connection to `disney.go.com` or `api.disney.com`, CrabeLoader automatically redirects the socket to the local address (`127.0.0.1:3000`) or to a dedicated community server.
 
-#### Étape 2 : Déverrouillage des Drapeaux & UI (Lua + Mémoire)
-- Hooker les natives de vérification :
-  - Forcer `IsMultiplayerAllowed()` à retourner `true`.
-  - Forcer `IsOnline()` et `IsSignedIntoDisneyID()` à retourner `true`.
-- Réactiver les entrées de menus masquées dans l'interface (via `src/api/15_menu.lua` et les scripts de menus originaux).
+#### Step 2: Flag & UI Unlock (Lua + Memory)
+- Hook the verification natives:
+  - Force `IsMultiplayerAllowed()` to return `true`.
+  - Force `IsOnline()` and `IsSignedIntoDisneyID()` to return `true`.
+- Re-enable hidden menu entries in the UI (via `src/api/15_menu.lua` and the original menu scripts).
 
-#### Étape 3 : Matchmaking & Transport (Deux options)
+#### Step 3: Matchmaking & Transport (Two options)
 
-##### Option A : Via Serveur Dédié Corrigé (Legacy Avalanche)
-- Corriger `tools/disney-infinity-community-server` pour réparer la base de données et l'émulation sessions/matchmaking.
-- Mettre en place un serveur de négociation NAT UDP compatible avec le champ `domain_cg_natneg` renvoyé par la configuration.
-- Les clients s'échangent leurs adresses IP/ports et le moteur Avalanche établit sa connexion P2P native.
+##### Option A: Via Fixed Dedicated Server (Legacy Avalanche)
+- Fix `tools/disney-infinity-community-server` to repair the database and session/matchmaking emulation.
+- Set up a UDP NAT negotiation server compatible with the `domain_cg_natneg` field returned by the config.
+- Clients exchange their IP/port addresses and the Avalanche engine establishes its native P2P connection.
 
-##### Option B (Recommandée) : Intégration Directe Steamworks P2P
-- Disney Infinity 3.0 Gold intègre déjà `steam_api.dll`.
-- En interceptant les appels de session (`Network_SetJoinSession`, etc.) pour les brancher sur les APIs de lobby Steam (`SteamMatchmaking()->CreateLobby`, `JoinLobby`, invitations d'amis Steam) :
-  - **Aucun serveur externe n'est nécessaire** pour le multijoueur direct entre amis.
-  - La traversée NAT est gérée directement par les relais Steam (Steam Datagram Relay).
+##### Option B (Recommended): Direct Steamworks P2P Integration
+- Disney Infinity 3.0 Gold already bundles `steam_api.dll`.
+- By intercepting session calls (`Network_SetJoinSession`, etc.) and bridging them to Steam lobby APIs (`SteamMatchmaking()->CreateLobby`, `JoinLobby`, Steam friend invitations):
+  - **No external server is needed** for direct multiplayer between friends.
+  - NAT traversal is handled directly by Steam relays (Steam Datagram Relay).
 
 ---
 
-## 5. Synthèse & Prochaines Actions
+## 5. Summary & Next Steps
 
-1. **Ne pas utiliser `disney-infinity-community-server` pour le temps réel en l'état :**
-   Le serveur nécessite une refonte de sa couche SQL et de son modèle réseau (suppression de Socket.IO/WebRTC au profit de sockets adaptés au jeu).
-2. **Implémenter les bases dans CrabeLoader :**
-   - Créer un module C++ de hook pour dévier les URLs du jeu en mémoire.
-   - Forcer le retour des natives d'authentification et de permission multijoueur.
-   - Tracer avec Wireshark et les logs du loader les paquets émis lorsque le jeu tente de créer ou rejoindre une session.
-
+1. **Do not use `disney-infinity-community-server` for real-time as-is:**
+   The server requires a full overhaul of its SQL layer and network model (removing Socket.IO/WebRTC in favour of sockets adapted to the game).
+2. **Implement the foundations in CrabeLoader:**
+   - Create a C++ hook module to redirect game URLs in memory.
+   - Force the return values of authentication and multiplayer permission natives.
+   - Use Wireshark and loader logs to trace packets emitted when the game tries to create or join a session.
