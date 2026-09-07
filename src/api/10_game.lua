@@ -132,10 +132,19 @@ end
 
 -- Every inventory item with the game's own metadata, as { name, details }
 -- rows -- what a spawn catalog is generated from.
-function Game.ListInventory(playerId, category)
+-- toyHandle is a live handle to an Inventory Toy placed in the world, as
+-- logiccategories.lua:312 shows. It is NOT a category index: passing 0 makes
+-- the native dereference a null handle and takes the game down. There is no
+-- known way to obtain such a handle from Lua, so this stays unreachable from
+-- the menu until one is found -- use Game.ListInventoryByCategory instead.
+function Game.ListInventory(playerId, toyHandle)
     playerId = playerId or Players_GetHostPlayerID()
 
-    local raw = UI_ListInventoryToys(playerId, category or 0)
+    if type(toyHandle) ~= "number" or toyHandle == 0 then
+        error("Game.ListInventory: a live toyHandle is required; passing 0 crashes the game", 2)
+    end
+
+    local raw = UI_ListInventoryToys(playerId, toyHandle)
     if type(raw) ~= "string" then
         error("Game.ListInventory: expected a string, got " .. type(raw), 2)
     end
@@ -152,24 +161,46 @@ function Game.ListInventory(playerId, category)
     return rows
 end
 
--- Unlocks a catalog entry (menus/Toy Box) rather than spawning it. itemId is
--- a numeric catalog id, unconfirmed -- see docs/nativedb.md.
-function Game.UnlockItem(itemId, playerId)
-    playerId = playerId or Players_GetHostPlayerID()
-    local ok, err = pcall(Catalog_UnlockCatalogItem, playerId, itemId)
-    if not ok then
-        error("Game.UnlockItem: " .. tostring(err), 2)
+-- Unlocks a catalog entry rather than spawning it. The arguments used to be
+-- passed the other way round, which silently unlocked nothing: catalog.lua:649
+-- calls Catalog_UnlockCatalogItem(recipeCardName, playerNum), name first.
+function Game.UnlockItem(recipeCardName, playerId)
+    if type(recipeCardName) ~= "string" or recipeCardName == "" then
+        error("Game.UnlockItem: recipeCardName must be a non-empty string", 2)
     end
+    Catalog_UnlockCatalogItem(recipeCardName, playerId or Players_GetHostPlayerID())
+    return recipeCardName
 end
 
--- Confirmed in-game that this takes 2 arguments, not 1 ("bad argument #2 ...
--- number expected, got no value"). What the second number selects (category?
--- page?) is unknown -- 0 is an untested guess.
-function Game.ListInventoryToys(playerId, category)
+-- The second argument was long guessed to be a category and defaulted to 0.
+-- It is a toyHandle (logiccategories.lua:312), and 0 crashes the game outright.
+-- Kept for callers that hold a real handle; see Game.ListInventoryByCategory
+-- for the safe way to enumerate the inventory.
+function Game.ListInventoryToys(playerId, toyHandle)
     playerId = playerId or Players_GetHostPlayerID()
-    local ok, result = pcall(UI_ListInventoryToys, playerId, category or 0)
-    if not ok then error("Game.ListInventoryToys: " .. tostring(result), 2) end
-    return result
+
+    if type(toyHandle) ~= "number" or toyHandle == 0 then
+        error("Game.ListInventoryToys: a live toyHandle is required; passing 0 crashes the game", 2)
+    end
+    return UI_ListInventoryToys(playerId, toyHandle)
+end
+
+-- The safe enumeration. UI_GetList takes a category *name* and answers with a
+-- comma-joined string, as catalog.lua:130 does for the placement ribbon.
+function Game.ListInventoryByCategory(categoryName)
+    if type(categoryName) ~= "string" or categoryName == "" then
+        error("Game.ListInventoryByCategory: categoryName must be a non-empty string", 2)
+    end
+    if type(UI_GetList) ~= "function" then
+        error("Game.ListInventoryByCategory: UI_GetList is not available in this Lua state", 2)
+    end
+
+    local raw = UI_GetList("Inventory", categoryName)
+    local names = {}
+    if type(raw) == "string" then
+        for name in string.gmatch(raw, "[^,]+") do names[#names + 1] = name end
+    end
+    return names
 end
 
 -- These two return the raw pcall pair rather than raising: a caller wants to
