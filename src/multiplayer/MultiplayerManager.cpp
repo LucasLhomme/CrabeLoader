@@ -9,6 +9,7 @@
 #include <chrono>
 #include "loader/multiplayer/infrastructure/MemoryPatcher.hpp"
 #include "loader/multiplayer/infrastructure/WinHttpRedirector.hpp"
+#include "loader/multiplayer/infrastructure/UpnpNatService.hpp"
 #include "logger/logger.hpp"
 
 namespace Multiplayer::Application {
@@ -20,7 +21,8 @@ namespace Multiplayer::Application {
 
     MultiplayerManager::MultiplayerManager()
         : _patcher(std::make_unique<Infrastructure::MemoryPatcher>()),
-          _redirector(std::make_unique<Infrastructure::WinHttpRedirector>())
+          _redirector(std::make_unique<Infrastructure::WinHttpRedirector>()),
+          _natService(std::make_unique<Crabe::Multiplayer::UpnpNatService>())
     {
     }
 
@@ -47,6 +49,13 @@ namespace Multiplayer::Application {
         _workerStop = false;
         _workerThread = std::thread(&MultiplayerManager::patchWorkerThread, this);
 
+        // 3. Request automatic UPnP port forwarding for Quazal Net-Z P2P (3074 UDP) in background
+        if (_natService) {
+            std::thread([this]() {
+                (void)_natService->forwardPort(3074, "UDP", "Disney Infinity 3.0 P2P");
+            }).detach();
+        }
+
         _initialized = true;
         Logger::getInstance().info("MultiplayerManager: initialized successfully.");
         return true;
@@ -60,6 +69,10 @@ namespace Multiplayer::Application {
         _workerStop = true;
         if (_workerThread.joinable()) {
             _workerThread.join();
+        }
+
+        if (_natService) {
+            (void)_natService->releasePort(3074, "UDP");
         }
 
         if (_patcher) {
@@ -114,6 +127,27 @@ namespace Multiplayer::Application {
 
     unsigned MultiplayerManager::getPatchedCount() const noexcept {
         return _patcher ? _patcher->getPatchedCount() : 0;
+    }
+
+    Crabe::Multiplayer::NatStatus MultiplayerManager::getNatStatus() const noexcept {
+        if (_natService) {
+            return _natService->getStatus();
+        }
+        return {};
+    }
+
+    bool MultiplayerManager::triggerPortForward(uint16_t port, std::string_view protocol) {
+        if (_natService) {
+            auto res = _natService->forwardPort(port, protocol);
+            return res.has_value() && res->portForwarded;
+        }
+        return false;
+    }
+
+    void MultiplayerManager::releasePortForward(uint16_t port, std::string_view protocol) {
+        if (_natService) {
+            (void)_natService->releasePort(port, protocol);
+        }
     }
 
 } // namespace Multiplayer::Application

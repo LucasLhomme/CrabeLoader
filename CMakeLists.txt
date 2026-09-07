@@ -48,6 +48,7 @@ set(CRABELOADER_CORE_SOURCES
     src/logger.cpp
     src/multiplayer/MemoryPatcher.cpp
     src/multiplayer/WinHttpRedirector.cpp
+    src/multiplayer/UpnpNatService.cpp
     src/multiplayer/MultiplayerManager.cpp
     src/multiplayer/multiplayer_natives.cpp
 )
@@ -117,5 +118,9 @@ if(CRABELOADER_BUILD_IMGUI)
             user32
             gdi32
             winhttp
+            ole32
+            oleaut32
+            ws2_32
+            iphlpapi
     )
 endif()

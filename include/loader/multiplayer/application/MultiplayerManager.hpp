@@ -15,6 +15,7 @@
 
 #include "loader/multiplayer/domain/IEnginePatcher.hpp"
 #include "loader/multiplayer/domain/INetworkRedirector.hpp"
+#include "loader/multiplayer/domain/INatService.hpp"
 
 namespace Multiplayer::Application {
 
@@ -33,6 +34,10 @@ namespace Multiplayer::Application {
         [[nodiscard]] bool isRedirectorActive() const noexcept;
         [[nodiscard]] unsigned getPatchedCount() const noexcept;
 
+        [[nodiscard]] Crabe::Multiplayer::NatStatus getNatStatus() const noexcept;
+        bool triggerPortForward(uint16_t port = 3074, std::string_view protocol = "UDP");
+        void releasePortForward(uint16_t port = 3074, std::string_view protocol = "UDP");
+
     private:
         MultiplayerManager();
         ~MultiplayerManager();
@@ -46,6 +51,7 @@ namespace Multiplayer::Application {
 
         std::unique_ptr<Domain::IEnginePatcher> _patcher;
         std::unique_ptr<Domain::INetworkRedirector> _redirector;
+        std::unique_ptr<Crabe::Multiplayer::INatService> _natService;
 
         std::atomic<bool> _initialized{ false };
         std::atomic<bool> _workerStop{ false };

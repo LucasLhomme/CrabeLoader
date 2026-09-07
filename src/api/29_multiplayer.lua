@@ -239,3 +239,40 @@ function Crabe.Multiplayer.kickPlayer(playerNum)
     return false
 end
 
+function Crabe.Multiplayer.getNatInfo()
+    local rawFn = Crabe._mpGetNatInfo
+    if type(rawFn) ~= "function" then
+        return {
+            upnpAvailable = false,
+            portForwarded = false,
+            externalIp = "",
+            externalPort = 3074,
+            localIp = "127.0.0.1",
+            internalPort = 3074,
+            statusMessage = "UPnP native binding unavailable"
+        }
+    end
+
+    local upnpAvail, portFwd, extIp, extPort, locIp, intPort, statusMsg = rawFn()
+    return {
+        upnpAvailable = (upnpAvail == 1),
+        portForwarded = (portFwd == 1),
+        externalIp = tostring(extIp or ""),
+        externalPort = tonumber(extPort) or 3074,
+        localIp = tostring(locIp or "127.0.0.1"),
+        internalPort = tonumber(intPort) or 3074,
+        statusMessage = tostring(statusMsg or "")
+    }
+end
+
+function Crabe.Multiplayer.triggerPortForward(port, proto)
+    port = tonumber(port) or 3074
+    proto = tostring(proto or "UDP")
+    local rawFn = Crabe._mpTriggerPortForward
+    if type(rawFn) == "function" then
+        return rawFn(port, proto) == 1
+    end
+    return false
+end
+
+
