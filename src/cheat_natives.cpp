@@ -8,10 +8,8 @@
 
 #include <cstdint>
 
-#include "loader/codecave.hpp"
 #include "loader/entity_registry.hpp"
 #include "loader/luacall.hpp"
-#include "loader/memory.hpp"
 #include "logger/logger.hpp"
 
 
@@ -287,24 +285,6 @@ int __cdecl CheatNatives::unlockEditor(void* L)
 
     lua.pushNumber(L, 1.0);
     return 1;
-}
-
-bool Cheats::unlockEditorEverywhere()
-{
-    constexpr const char* pattern = "0F B6 42 20 85 C0 74";
-    uintptr_t site = Memory::patternScan(pattern);
-    if (!site) {
-        Logger::getInstance().warning("Cheats: editor unlock pattern not found.");
-        return false;
-    }
-    uintptr_t jumpSite = site + 6;
-    constexpr uint8_t nops[2] = { 0x90, 0x90 };
-    if (!CodeCave::patchBytes(jumpSite, nops, sizeof(nops))) {
-        Logger::getInstance().error("Cheats: failed to patch editor gate at 0x{:X}.", jumpSite);
-        return false;
-    }
-    Logger::getInstance().info("Cheats: Editor & Free Camera unlocked everywhere (patched 0x{:X}).", jumpSite);
-    return true;
 }
 
 bool CheatNatives::registerAll(void* L)

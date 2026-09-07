@@ -30,6 +30,8 @@ set(CRABELOADER_CORE_SOURCES
     src/codecave.cpp
     src/cheats.cpp
     src/cheat_natives.cpp
+    src/player_movement.cpp
+    src/engine_patches.cpp
     src/entity_registry.cpp
     src/debug_watch.cpp
     src/speedhack.cpp

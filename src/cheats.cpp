@@ -14,8 +14,9 @@
 #include <windows.h>
 
 #include "loader/codecave.hpp"
+#include "loader/player_movement.hpp"
+#include "loader/engine_patches.hpp"
 #include "loader/entity_registry.hpp"
-#include "loader/luacall.hpp"
 #include "loader/memory.hpp"
 #include "logger/logger.hpp"
 
@@ -36,59 +37,15 @@ namespace {
     // readable at [ebp+8]. Unique in .text.
     const char* kClampPattern = "F3 0F 10 4E 0C 0F 2F C1 57";
 
-    // The four analog-stick-to-velocity stores, movss [eax+0x298], xmm0 (Y)
-    // and movss [eax+0x29C], xmm0 (X), 8 bytes each. The "start moving" pair
-    // begins with the store; in the "already moving" pair the store sits 6
-    // bytes in, after a movss xmm0, [esp+0x08].
-    struct SpeedSite {
-        const char* pattern;
-        size_t storeOffset;
-        const char* name;
-    };
-
-    constexpr SpeedSite kSpeedSites[] = {
-        { "F3 0F 11 80 98 02 00 00 8B 4E 0C", 0, "velocity Y (start)" },
-        { "F3 0F 11 80 9C 02 00 00 8B 4E 0C", 0, "velocity X (start)" },
-        { "F3 0F 10 44 24 08 F3 0F 11 80 98 02 00 00 C2 0C 00", 6, "velocity Y (moving)" },
-        { "F3 0F 10 44 24 08 F3 0F 11 80 9C 02 00 00 C2 0C 00", 6, "velocity X (moving)" },
-    };
-
-    constexpr size_t kSpeedSiteCount = sizeof(kSpeedSites) / sizeof(kSpeedSites[0]);
-    constexpr size_t kSpeedStoreLength = 8;
     constexpr size_t kDamageStoreLength = 5;
-
-    // A wild multiplier launches the avatar out of the level geometry and the
-    // stream never recovers, so refuse anything past a usable range.
-    constexpr float kMinMultiplier = 0.1f;
-    constexpr float kMaxMultiplier = 50.0f;
 
     // Read by the caves, written from here, so both must be plain addresses
     // the assembled instructions can reach.
     volatile LONG g_enabled = 0;
-    float g_multiplier = 1.0f;
 
     // Incremented by the clamp cave itself, once per cancelled hit. This is
     // the only direct evidence that the cheat did something.
     uint32_t g_blocked = 0;
-
-    // One per velocity site, incremented by that site's own cave.
-    uint32_t g_speedHits[4] = {};
-
-    // The player's movement structure, stored by the velocity caves. Position
-    // is somewhere inside it; finding it is what the snapshot below is for.
-    uintptr_t g_moveObject = 0;
-
-    // A window of the structure, captured on demand so it can be compared
-    // against itself after the player has moved. Three adjacent floats that
-    // all change together are the position.
-    // Position candidate, from the walk test: 0x28 and 0x30 both moved while
-    // 0x2C stayed put, which is X and Z changing with the height between them.
-    constexpr uintptr_t kPositionOffset = 0x28;
-
-    constexpr uintptr_t kProbeSpan = 0x400;
-    constexpr size_t kProbeCount = kProbeSpan / sizeof(float);
-    float g_probe[kProbeCount] = {};
-    bool g_probeTaken = false;
 
     // The caves reach the recorders through these, rather than through a
     // relative call: an indirect call needs no fixing up once the cave has
@@ -98,10 +55,8 @@ namespace {
 
     CodeCave g_captureCave;
     CodeCave g_clampCave;
-    CodeCave g_speedCaves[kSpeedSiteCount];
 
     bool g_godReady = false;
-    bool g_speedReady = false;
     std::mutex g_installMutex;
 
     // Preamble shared by both recorder shims: save the flags, the general
@@ -223,36 +178,6 @@ namespace {
         return body;
     }
 
-    // Speed cave: count the pass, then scale the value before its store.
-    //
-    // The counter is per site and not optional. These four AOBs were inherited
-    // from a project that never validated them -- its own source says so -- so
-    // "the multiplier does nothing" has two very different causes: the site is
-    // never executed, or it is executed and is not the movement path. Only a
-    // per-site count separates them.
-    std::vector<uint8_t> buildSpeedBody(size_t site)
-    {
-        constexpr size_t kHitsAt = 2;
-        constexpr size_t kObjectAt = 7;
-        constexpr size_t kMultiplierAt = 15;
-
-        // The middle instruction is the valuable one. eax here is the player's
-        // movement structure, and nothing else in the loader has ever held a
-        // pointer to it -- which is exactly why teleport and noclip have been
-        // out of reach. It writes a global and touches neither flags nor any
-        // register, so it cannot disturb the store that follows.
-        std::vector<uint8_t> body = {
-            0xFF, 0x05, 0x00, 0x00, 0x00, 0x00,             // inc dword ptr [g_speedHits[site]]
-            0xA3, 0x00, 0x00, 0x00, 0x00,                   // mov [g_moveObject], eax
-            0xF3, 0x0F, 0x59, 0x05, 0x00, 0x00, 0x00, 0x00, // mulss xmm0, [g_multiplier]
-        };
-
-        CodeCave::putU32(body, kHitsAt, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_speedHits[site])));
-        CodeCave::putU32(body, kObjectAt, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_moveObject)));
-        CodeCave::putU32(body, kMultiplierAt, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_multiplier)));
-        return body;
-    }
-
 } // namespace
 
 bool Cheats::installGodMode()
@@ -338,159 +263,61 @@ bool Cheats::writePlayerFloat(uintptr_t offset, float value)
 
 bool Cheats::installSpeed()
 {
-    std::lock_guard<std::mutex> lock(g_installMutex);
-    if (g_speedReady) return true;
-
-    uintptr_t sites[kSpeedSiteCount] = {};
-    for (size_t i = 0; i < kSpeedSiteCount; ++i) {
-        uintptr_t base = Memory::patternScan(kSpeedSites[i].pattern);
-        sites[i] = base ? base + kSpeedSites[i].storeOffset : 0;
-
-        if (!base) {
-            Logger::getInstance().error("Cheats: speed AOB not found for {}.", kSpeedSites[i].name);
-            return false;
-        }
-    }
-
-    // Partial installation would scale one axis and not the other, which is
-    // worse than no cheat at all, so roll back if any site refuses.
-    for (size_t i = 0; i < kSpeedSiteCount; ++i) {
-        if (g_speedCaves[i].installLogged(sites[i], buildSpeedBody(i), kSpeedStoreLength,
-                                          "Cheats", kSpeedSites[i].name)) {
-            continue;
-        }
-        for (size_t j = 0; j < i; ++j) g_speedCaves[j].remove();
-        return false;
-    }
-
-    g_speedReady = true;
-    Logger::getInstance().info("Cheats: speed caves installed ({} sites).", kSpeedSiteCount);
-    return true;
+    return PlayerMovement::installSpeed();
 }
 
 bool Cheats::setSpeedMultiplier(float multiplier)
 {
-    if (multiplier < kMinMultiplier) multiplier = kMinMultiplier;
-    if (multiplier > kMaxMultiplier) multiplier = kMaxMultiplier;
-
-    // Nothing to patch while the multiplier is 1.0: leave the game's code
-    // alone until the player actually asks for a change.
-    if (multiplier == 1.0f && !g_speedReady) {
-        g_multiplier = 1.0f;
-        return true;
-    }
-    if (!installSpeed()) return false;
-
-    g_multiplier = multiplier;
-    return true;
+    return PlayerMovement::setSpeedMultiplier(multiplier);
 }
 
 float Cheats::speedMultiplier()
 {
-    return g_multiplier;
+    return PlayerMovement::speedMultiplier();
 }
 
-// The multiply is left as a no-op: what this is really after is the store
-// beside it that records the structure pointer.
 bool Cheats::trackPosition()
 {
-    if (g_speedReady) return true;
-    if (!installSpeed()) return false;
-
-    g_multiplier = 1.0f;
-    return true;
+    return PlayerMovement::trackPosition();
 }
 
 uintptr_t Cheats::moveObject()
 {
-    return g_moveObject;
+    return PlayerMovement::moveObject();
 }
 
-// The three floats at 0x28, 0x2C and 0x30, which a walk on flat ground marked
-// out as the position: the outer two moved together and the middle one, the
-// height, did not. Reading them back is how that gets confirmed or dropped.
 bool Cheats::position(float& x, float& y, float& z)
 {
-    if (!g_moveObject) return false;
-    if (!Memory::isReadable(g_moveObject + kPositionOffset, 3 * sizeof(float))) return false;
-
-    const auto* at = reinterpret_cast<const float*>(g_moveObject + kPositionOffset);
-    x = at[0]; y = at[1]; z = at[2];
-    return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
+    return PlayerMovement::position(x, y, z);
 }
 
-// Records the first 0x400 bytes of the movement structure as floats.
 bool Cheats::snapshotMove()
 {
-    if (!g_moveObject) return false;
-    if (!Memory::isReadable(g_moveObject, kProbeSpan)) return false;
-
-    std::memcpy(g_probe, reinterpret_cast<const void*>(g_moveObject), kProbeSpan);
-    g_probeTaken = true;
-    return true;
+    return PlayerMovement::snapshotMove();
 }
 
-// Offsets whose float moved since the snapshot, biggest change first. Values
-// that barely move are noise -- timers, blend weights -- so a floor keeps the
-// report to things that actually track the player.
 std::string Cheats::diffMove(float minimumChange)
 {
-    if (!g_probeTaken) return "no snapshot taken yet";
-    if (!g_moveObject || !Memory::isReadable(g_moveObject, kProbeSpan)) return "movement object is gone";
-
-    float current[kProbeCount] = {};
-    std::memcpy(current, reinterpret_cast<const void*>(g_moveObject), kProbeSpan);
-
-    std::string out;
-    size_t reported = 0;
-
-    for (size_t i = 0; i < kProbeCount && reported < 20; ++i) {
-        // NaN compares false against everything, so an unfiltered comparison
-        // lets every uninitialised slot through and buries the real hits. The
-        // structure has a run of them from 0x168 onward.
-        if (!std::isfinite(current[i]) || !std::isfinite(g_probe[i])) continue;
-
-        float delta = current[i] - g_probe[i];
-        if (delta < 0.0f) delta = -delta;
-        if (delta < minimumChange) continue;
-
-        // The value matters as much as the delta: a coordinate reads as tens
-        // or hundreds, a normalised direction never leaves -1..1.
-        char row[80] = {};
-        _snprintf_s(row, _TRUNCATE, "%s0x%X:%+.1f(now %.1f)", reported ? " " : "",
-                    static_cast<unsigned>(i * sizeof(float)),
-                    current[i] - g_probe[i], current[i]);
-        out += row;
-        ++reported;
-    }
-    return reported ? out : "nothing moved by more than the floor";
+    return PlayerMovement::diffMove(minimumChange);
 }
 
-// "12/0/340/0" -- one count per velocity site, in the order they are listed.
 std::string Cheats::speedHitReport()
 {
-    std::string out;
-    for (size_t i = 0; i < kSpeedSiteCount; ++i) {
-        if (i) out += "/";
-        out += std::to_string(g_speedHits[i]);
-    }
-    return out;
+    return PlayerMovement::speedHitReport();
 }
 
 bool Cheats::setPosition(float x, float y, float z)
 {
-    if (!g_moveObject) return false;
-    if (!Memory::isReadable(g_moveObject + kPositionOffset, 3 * sizeof(float))) return false;
-
-    auto* at = reinterpret_cast<float*>(g_moveObject + kPositionOffset);
-    at[0] = x; at[1] = y; at[2] = z;
-    return true;
+    return PlayerMovement::setPosition(x, y, z);
 }
 
 bool Cheats::teleportDelta(float dx, float dy, float dz)
 {
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-    if (!position(x, y, z)) return false;
-    return setPosition(x + dx, y + dy, z + dz);
+    return PlayerMovement::teleportDelta(dx, dy, dz);
+}
+
+bool Cheats::unlockEditorEverywhere()
+{
+    return EnginePatches::unlockEditorEverywhere();
 }
 
