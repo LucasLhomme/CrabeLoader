@@ -8,9 +8,9 @@
 #include "loader/cheats.hpp"
 #include "loader/speedhack.hpp"
 #include "loader/codecave.hpp"
-#include "loader/luacall.hpp"
 #include "loader/memory.hpp"
 #include "logger/logger.hpp"
+#include <imgui.h>
 
 #include <algorithm>
 #include <memory>
@@ -177,6 +177,16 @@ void Freecam::setRotation(float pitch, float yaw, float roll) noexcept
     _yaw = yaw;
 
     _roll = roll;
+}
+
+void Freecam::setPosition(float x, float y, float z) noexcept
+{
+    _x = x;
+    _y = y;
+    _z = z;
+    g_freecamX = x;
+    g_freecamY = y;
+    g_freecamZ = z;
 }
 
 void Freecam::setEnabled(bool enabled)
@@ -347,143 +357,14 @@ void Freecam::update(float dt)
 {
     if (!_enabled) return;
 
+    if (ImGui::GetCurrentContext()) {
+        const ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
+            _mouseInitialized = false; // Reset mouse so we don't jump when re-entering
+            return;
+        }
+    }
+
     handleMouseInput();
     handleKeyboardInput(dt);
-}
-
-// ---------------------------------------------------------------------------
-// Lua Native Bindings
-// ---------------------------------------------------------------------------
-
-int __cdecl FreecamNatives::toggle(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    Freecam::get().toggle();
-    lua.pushNumber(L, Freecam::get().isEnabled() ? 1.0 : 0.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::setEnabled(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const bool enabled = lua.argToBoolean(L, 1, false) || (lua.argToNumber(L, 1, 0.0) != 0.0);
-    Freecam::get().setEnabled(enabled);
-    lua.pushNumber(L, Freecam::get().isEnabled() ? 1.0 : 0.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::isEnabled(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    lua.pushNumber(L, Freecam::get().isEnabled() ? 1.0 : 0.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::setSpeed(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const auto spd = static_cast<float>(lua.argToNumber(L, 1, 25.0));
-    Freecam::get().setSpeed(spd);
-    lua.pushNumber(L, Freecam::get().getSpeed());
-    return 1;
-}
-
-int __cdecl FreecamNatives::getSpeed(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    lua.pushNumber(L, Freecam::get().getSpeed());
-    return 1;
-}
-
-int __cdecl FreecamNatives::setSensitivity(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const auto sens = static_cast<float>(lua.argToNumber(L, 1, 0.003));
-    Freecam::get().setSensitivity(sens);
-    lua.pushNumber(L, Freecam::get().getSensitivity());
-    return 1;
-}
-
-int __cdecl FreecamNatives::getSensitivity(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    lua.pushNumber(L, Freecam::get().getSensitivity());
-    return 1;
-}
-
-int __cdecl FreecamNatives::update(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const auto dt = static_cast<float>(lua.argToNumber(L, 1, 0.033));
-    Freecam::get().update(dt);
-    lua.pushNumber(L, 1.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::getPosition(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-    Freecam::get().getPosition(x, y, z);
-    lua.pushNumber(L, x);
-    lua.pushNumber(L, y);
-    lua.pushNumber(L, z);
-    return 3;
-}
-
-int __cdecl FreecamNatives::setPosition(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const auto x = static_cast<float>(lua.argToNumber(L, 1, 0.0));
-    const auto y = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    const auto z = static_cast<float>(lua.argToNumber(L, 3, 0.0));
-    Freecam::get().setPosition(x, y, z);
-    lua.pushNumber(L, 1.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::getRotation(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
-    Freecam::get().getRotation(pitch, yaw, roll);
-    lua.pushNumber(L, pitch);
-    lua.pushNumber(L, yaw);
-    lua.pushNumber(L, roll);
-    return 3;
-}
-
-int __cdecl FreecamNatives::setRotation(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const auto pitch = static_cast<float>(lua.argToNumber(L, 1, 0.0));
-    const auto yaw = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    const auto roll = static_cast<float>(lua.argToNumber(L, 3, 0.0));
-    Freecam::get().setRotation(pitch, yaw, roll);
-    lua.pushNumber(L, 1.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::teleportPlayer(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const bool ok = Freecam::get().teleportPlayerToCamera();
-    lua.pushNumber(L, ok ? 1.0 : 0.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::setWorldFrozen(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const bool frozen = lua.argToBoolean(L, 1, false) || (lua.argToNumber(L, 1, 0.0) != 0.0);
-    Freecam::get().setWorldFrozen(frozen);
-    lua.pushNumber(L, Freecam::get().isWorldFrozen() ? 1.0 : 0.0);
-    return 1;
-}
-
-int __cdecl FreecamNatives::isWorldFrozen(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    lua.pushNumber(L, Freecam::get().isWorldFrozen() ? 1.0 : 0.0);
-    return 1;
 }
