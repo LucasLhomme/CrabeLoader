@@ -324,3 +324,41 @@ end
 function Cheats.position()
     return required("_position")()
 end
+
+function Cheats.setPosition(x, y, z)
+    if type(Crabe._setPosition) == "function" then
+        return Crabe._setPosition(tonumber(x) or 0, tonumber(y) or 0, tonumber(z) or 0)
+    end
+    return false
+end
+
+function Cheats.teleportDelta(dx, dy, dz)
+    if type(Crabe._teleportDelta) == "function" then
+        return Crabe._teleportDelta(tonumber(dx) or 0, tonumber(dy) or 0, tonumber(dz) or 0)
+    end
+    return false
+end
+
+function Cheats.teleportUp(dy)
+    return Cheats.teleportDelta(0, tonumber(dy) or 10.0, 0)
+end
+
+function Cheats.teleportForward(dist)
+    dist = tonumber(dist) or 15.0
+    if type(Crabe._freecamGetRotation) == "function" then
+        local p, yaw, r = Crabe._freecamGetRotation()
+        if yaw then
+            local dx = math.sin(yaw) * dist
+            local dz = math.cos(yaw) * dist
+            return Cheats.teleportDelta(dx, 0, dz)
+        end
+    end
+    return Cheats.teleportDelta(0, 0, dist)
+end
+
+function Cheats.unlockEditor()
+    if type(Crabe._unlockEditor) == "function" then
+        return Crabe._unlockEditor()
+    end
+    return false
+end
