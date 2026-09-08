@@ -3,7 +3,10 @@
 --- Place this file in your workspace or mod directory for full IntelliSense autocompletion.
 
 ---@class Crabe
----@field public version string The version of CrabeLoader.
+---@field public version string The semver version of CrabeLoader (e.g. "0.2.0").
+---@field public versionMajor number The major version integer.
+---@field public versionMinor number The minor version integer.
+---@field public versionPatch number The patch version integer.
 Crabe = {}
 
 --- Logs a message to the CrabeLoader console overlay.

@@ -1,0 +1,95 @@
+name: Release - Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release CrabeLoader
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Resolve Version
+        id: resolve_ver
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            RAW_TAG="${GITHUB_REF_NAME}"
+            VER="${RAW_TAG#v}"
+          else
+            VER=$(cat VERSION | tr -d '[:space:]')
+            RAW_TAG="v${VER}"
+          fi
+          echo "VERSION=${VER}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${RAW_TAG}" >> $GITHUB_OUTPUT
+          echo "Building CrabeLoader version: ${VER} (Tag: ${RAW_TAG})"
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -DCRABELOADER_AS_SHARED=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build CrabeLoader (Release)
+        run: |
+          cmake --build build --config Release
+
+      - name: Package Release
+        shell: bash
+        run: |
+          mkdir -p package/mods
+          
+          # Find and copy the proxy DLL
+          if [ -f build/Release/bink2w32.dll ]; then
+            cp build/Release/bink2w32.dll package/
+          elif [ -f build/bink2w32.dll ]; then
+            cp build/bink2w32.dll package/
+          else
+            echo "Error: bink2w32.dll not found in build output."
+            exit 1
+          fi
+
+          # Copy mod template and EmmyLua documentation
+          cp -r mods/_template package/mods/
+          mkdir -p package/docs
+          cp docs/crabe_api.def.lua package/docs/
+
+          # Quickstart README for players and modders
+          cat << 'ENDREADME' > package/README.txt
+          CrabeLoader for Disney Infinity 3.0 (Gold Edition)
+          ==================================================
+
+          Installation:
+          1. Place bink2w32.dll into your Disney Infinity 3.0 directory (next to DisneyInfinity3.exe).
+          2. Ensure the original game DLL is renamed to bink2w32_orig.dll in the same directory.
+          3. Place your mods into the 'mods/' subfolder.
+          4. In-game: Press F5 or Insert to access the CrabeLoader overlay and mod menu.
+
+          Mod Development:
+          - Mod template is provided under 'mods/_template/' with mod.json.
+          - Full VS Code autocompletion definitions are in 'docs/crabe_api.def.lua'.
+          ENDREADME
+
+          # Compress package into zip
+          ZIP_NAME="CrabeLoader-${{ steps.resolve_ver.outputs.TAG_NAME }}.zip"
+          cd package && 7z a "../${ZIP_NAME}" * && cd ..
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_ver.outputs.TAG_NAME }}
+          name: CrabeLoader ${{ steps.resolve_ver.outputs.TAG_NAME }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            CrabeLoader-${{ steps.resolve_ver.outputs.TAG_NAME }}.zip

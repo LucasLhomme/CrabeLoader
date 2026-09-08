@@ -4,13 +4,15 @@
 ** overlay
 */
 
+#include <format>
 #include <string>
 #include <windows.h>
 
-#include "overlay/overlay.hpp"
+#include "presentation/overlay.hpp"
 #include "application/loader.hpp"
 #include "presentation/menu.hpp"
 #include "shared/logger.hpp"
+#include "shared/version.hpp"
 
 Overlay::Overlay()
 {
@@ -189,11 +191,14 @@ void Overlay::renderOverlay()
 {
     Overlay::defaultSettings();
 
-    ImGui::Begin("CrabeLoader Overlay");
+    std::string title = std::format("CrabeLoader v{} Overlay", Crabe::Version::String);
+    ImGui::Begin(title.c_str());
 
     if (ImGui::BeginTabBar("MainTabBar")) {
         if (ImGui::BeginTabItem("Main")) {
-            ImGui::Text("Hello from CrabeLoader!");
+            ImGui::Text("CrabeLoader v%s (Built: %s)", Crabe::Version::String.data(), Crabe::Version::BuildDate.data());
+            ImGui::Separator();
+            ImGui::Text("Press F5 to toggle the In-Game Mod Menu.");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Console")) {

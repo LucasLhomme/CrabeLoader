@@ -2,7 +2,10 @@
 -- Loaded first: the other modules report their errors through Crabe.write.
 
 Crabe = Crabe or {}
-Crabe.version = "0.1.0"
+Crabe.version = Crabe.version or "0.2.0"
+Crabe.versionMajor = Crabe.versionMajor or 0
+Crabe.versionMinor = Crabe.versionMinor or 2
+Crabe.versionPatch = Crabe.versionPatch or 0
 
 Crabe._lines = {}
 Crabe._maxLines = 200
@@ -77,9 +80,9 @@ function Crabe.splitList(csv)
     local out = {}
     if type(csv) ~= "string" then return out end
 
-    for field in string.gmatch(csv, "([^,]+)") do
-        field = string.gsub(field, "^%s*(.-)%s*$", "%1")
-        if field ~= "" then out[#out + 1] = field end
+    for item in string.gmatch(csv, "([^,]+)") do
+        local trimmed = string.gsub(item, "^%s*(.-)%s*$", "%1")
+        if trimmed ~= "" then out[#out + 1] = trimmed end
     end
     return out
 end
