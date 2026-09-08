@@ -236,9 +236,13 @@ void RenderHook::releaseRenderTarget()
 
 void RenderHook::createRenderTarget(IDXGISwapChain* swapChain)
 {
+    if (!_device || !swapChain) return;
+
     ID3D11Texture2D* backBuffer = nullptr;
     if (SUCCEEDED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBuffer)))) {
-        _device->CreateRenderTargetView(backBuffer, nullptr, &_renderTargetView);
+        if (_device) {
+            _device->CreateRenderTargetView(backBuffer, nullptr, &_renderTargetView);
+        }
         backBuffer->Release();
     }
 }
@@ -278,33 +282,39 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
 
-    if (self._backendInitialized && self._renderTargetView) {
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-
-        if (self._menuOpen)
-            self._overlay.renderOverlay();
-
-        if (self._modMenuOpen) {
-            bool stayOpen = true;
-            self._overlay.renderModMenu(&stayOpen);
-
-            // The window's own close button has to agree with the F5 toggle.
-            if (!stayOpen)
-                self.toggleModMenu();
+    if (self._backendInitialized && self._device && self._context) {
+        if (!self._renderTargetView) {
+            self.createRenderTarget(swapChain);
         }
 
-        ImGui::Render();
-        self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        if (self._renderTargetView) {
+            ImGui_ImplDX11_NewFrame();
+            ImGui_ImplWin32_NewFrame();
+            ImGui::NewFrame();
+
+            if (self._menuOpen)
+                self._overlay.renderOverlay();
+
+            if (self._modMenuOpen) {
+                bool stayOpen = true;
+                self._overlay.renderModMenu(&stayOpen);
+
+                // The window's own close button has to agree with the F5 toggle.
+                if (!stayOpen)
+                    self.toggleModMenu();
+            }
+
+            ImGui::Render();
+            self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        }
     }
 
     return self.originalPresent()(swapChain, syncInterval, flags);
 }
 
 // All views onto the back buffer (our RTV) must be released before the real
-// ResizeBuffers runs, or it fails; the next Present recreates it.
+// ResizeBuffers runs, or it fails; recreate immediately after successful resize.
 HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
                                             UINT width, UINT height, DXGI_FORMAT newFormat,
                                             UINT swapChainFlags)
@@ -313,7 +323,11 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
 
     self.releaseRenderTarget();
 
-    return self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);
+    HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);
+    if (SUCCEEDED(hr) && self._backendInitialized && self._device) {
+        self.createRenderTarget(swapChain);
+    }
+    return hr;
 }
 
 LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -322,11 +336,29 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 
+    if (msg == WM_ACTIVATE) {
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            ClipCursor(nullptr);
+        } else {
+            self.updateCursorVisibility();
+        }
+    } else if (msg == WM_KILLFOCUS) {
+        ClipCursor(nullptr);
+    } else if (msg == WM_SETFOCUS) {
+        self.updateCursorVisibility();
+    }
+
     // Both windows have to swallow input, not just the debug overlay. While
     // the game keeps receiving mouse messages it also keeps re-centring the
     // cursor every frame, which pins ImGui's pointer to the middle of the
     // screen and makes clicks land nowhere near what was under the cursor.
     if (self._menuOpen || self._modMenuOpen) {
+        // Never swallow Alt+Tab, Alt+F4, space or menu keys so Windows can switch tasks smoothly
+        if (msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
+            if (wParam == VK_TAB || wParam == VK_F4 || wParam == VK_SPACE || wParam == VK_MENU)
+                return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);
+        }
+
         ImGuiIO& io = ImGui::GetIO();
         bool isMouseMsg = (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST);
         bool isKeyboardMsg = (msg == WM_KEYDOWN || msg == WM_KEYUP ||
