@@ -16,6 +16,8 @@ namespace Multiplayer::Natives {
     int __cdecl applyPatches(void* L);
     int __cdecl getNatInfo(void* L);
     int __cdecl triggerPortForward(void* L);
+    int __cdecl setDirectConnect(void* L);
+    int __cdecl buildLocation(void* L);
 
 } // namespace Multiplayer::Natives
 

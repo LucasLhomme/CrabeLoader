@@ -38,6 +38,14 @@ namespace Multiplayer::Application {
         bool triggerPortForward(uint16_t port = 3074, std::string_view protocol = "UDP");
         void releasePortForward(uint16_t port = 3074, std::string_view protocol = "UDP");
 
+        void setDirectConnectTarget(std::string_view friendName, std::string_view ip, uint16_t port, std::string_view hostDid = "");
+        [[nodiscard]] std::string formatLocationString(
+            std::string_view pubIp, uint16_t pubPort,
+            std::string_view privIp = "", uint16_t privPort = 0,
+            std::string_view hostDid = "", std::string_view gameName = "IN2PC") const;
+        [[nodiscard]] static std::string ipv4ToHex(std::string_view ip);
+        [[nodiscard]] static std::string portToHex(uint16_t port);
+
     private:
         MultiplayerManager();
         ~MultiplayerManager();

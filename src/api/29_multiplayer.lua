@@ -275,4 +275,50 @@ function Crabe.Multiplayer.triggerPortForward(port, proto)
     return false
 end
 
+function Crabe.Multiplayer.setDirectConnect(friendName, ip, port, hostDid)
+    friendName = tostring(friendName or "DirectPeer")
+    ip = tostring(ip or "127.0.0.1")
+    port = tonumber(port) or 3074
+    hostDid = tostring(hostDid or "{00000000-0000-0000-0000-000000000000}")
+    local rawFn = Crabe._mpSetDirectConnect
+    if type(rawFn) == "function" then
+        return rawFn(friendName, ip, port, hostDid) == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.buildLocationString(opts)
+    opts = opts or {}
+    local pubIp = tostring(opts.publicIp or opts.ip or "127.0.0.1")
+    local pubPort = tonumber(opts.publicPort or opts.port or 3074)
+    local privIp = tostring(opts.privateIp or pubIp)
+    local privPort = tonumber(opts.privatePort or pubPort)
+    local hostDid = tostring(opts.hostDid or "{00000000-0000-0000-0000-000000000000}")
+    local gameName = tostring(opts.gameName or "IN2PC")
+
+    local rawFn = Crabe._mpBuildLocation
+    if type(rawFn) == "function" then
+        local loc = rawFn(pubIp, pubPort, privIp, privPort, hostDid, gameName)
+        if loc and loc ~= "" then
+            return loc
+        end
+    end
+
+    -- Pure Lua fallback for testing or standalone execution
+    local function ipToHex(ip)
+        local o1, o2, o3, o4 = ip:match("(%d+)%.(%d+)%.(%d+)%.(%d+)")
+        if not o1 then return "100007F" end
+        local val = (tonumber(o1) + tonumber(o2)*256 + tonumber(o3)*65536 + tonumber(o4)*16777216)
+        return string.format("%X", val)
+    end
+    local function portToHex(p)
+        return string.format("%X", p)
+    end
+
+    return string.format('{"Pu":{"IP":"%s","P":"%s"},"Pr":{"IP":"%s","P":"%s"},"Host":{"DID":"%s"},"J":1,"L":0,"GameName":"%s"}',
+        ipToHex(pubIp), portToHex(pubPort),
+        ipToHex(privIp), portToHex(privPort),
+        hostDid, gameName)
+end
+
 

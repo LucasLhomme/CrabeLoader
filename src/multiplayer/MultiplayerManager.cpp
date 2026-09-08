@@ -7,6 +7,7 @@
 #include "loader/multiplayer/application/MultiplayerManager.hpp"
 
 #include <chrono>
+#include <ws2tcpip.h>
 #include "loader/multiplayer/infrastructure/MemoryPatcher.hpp"
 #include "loader/multiplayer/infrastructure/WinHttpRedirector.hpp"
 #include "loader/multiplayer/infrastructure/UpnpNatService.hpp"
@@ -148,6 +149,58 @@ namespace Multiplayer::Application {
         if (_natService) {
             (void)_natService->releasePort(port, protocol);
         }
+    }
+
+    std::string MultiplayerManager::ipv4ToHex(std::string_view ip) {
+        std::string ipStr(ip);
+        in_addr addr{};
+        if (inet_pton(AF_INET, ipStr.c_str(), &addr) == 1) {
+            auto bytes = reinterpret_cast<const uint8_t*>(&addr.s_addr);
+            uint32_t val = static_cast<uint32_t>(bytes[0]) |
+                           (static_cast<uint32_t>(bytes[1]) << 8) |
+                           (static_cast<uint32_t>(bytes[2]) << 16) |
+                           (static_cast<uint32_t>(bytes[3]) << 24);
+            char buf[16]{};
+            snprintf(buf, sizeof(buf), "%X", val);
+            return buf;
+        }
+        return "100007F";
+    }
+
+    std::string MultiplayerManager::portToHex(uint16_t port) {
+        char buf[16]{};
+        snprintf(buf, sizeof(buf), "%X", port);
+        return buf;
+    }
+
+    std::string MultiplayerManager::formatLocationString(
+        std::string_view pubIp, uint16_t pubPort,
+        std::string_view privIp, uint16_t privPort,
+        std::string_view hostDid, std::string_view gameName) const
+    {
+        std::string hexPubIp = ipv4ToHex(pubIp);
+        std::string hexPubPort = portToHex(pubPort);
+        std::string hexPrivIp = ipv4ToHex(privIp.empty() ? pubIp : privIp);
+        std::string hexPrivPort = portToHex(privPort == 0 ? pubPort : privPort);
+        std::string did(hostDid.empty() ? "{00000000-0000-0000-0000-000000000000}" : hostDid);
+        std::string gName(gameName.empty() ? "IN2PC" : gameName);
+
+        char buf[512]{};
+        snprintf(buf, sizeof(buf),
+            "{\"Pu\":{\"IP\":\"%s\",\"P\":\"%s\"},\"Pr\":{\"IP\":\"%s\",\"P\":\"%s\"},\"Host\":{\"DID\":\"%s\"},\"J\":1,\"L\":0,\"GameName\":\"%s\"}",
+            hexPubIp.c_str(), hexPubPort.c_str(),
+            hexPrivIp.c_str(), hexPrivPort.c_str(),
+            did.c_str(), gName.c_str());
+        return buf;
+    }
+
+    void MultiplayerManager::setDirectConnectTarget(std::string_view friendName, std::string_view ip, uint16_t port, std::string_view hostDid) {
+        std::string location = formatLocationString(ip, port, ip, port, hostDid, "IN2PC");
+        auto* redirector = dynamic_cast<Infrastructure::WinHttpRedirector*>(_redirector.get());
+        if (redirector) {
+            redirector->setDirectConnectPayload(friendName, location);
+        }
+        Logger::getInstance().info("MultiplayerManager: primed Direct Connect target '{}' at {}:{}", friendName, ip, port);
     }
 
 } // namespace Multiplayer::Application

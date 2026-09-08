@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -16,6 +17,7 @@
 #include <winhttp.h>
 
 #include "loader/hook.hpp"
+#include "loader/multiplayer/domain/IFallbackResponseProvider.hpp"
 #include "loader/multiplayer/domain/INetworkRedirector.hpp"
 
 namespace Multiplayer::Infrastructure {
@@ -38,6 +40,9 @@ namespace Multiplayer::Infrastructure {
         [[nodiscard]] uint16_t getTargetPort() const noexcept override;
 
         [[nodiscard]] bool isInstalled() const noexcept override;
+
+        void setDirectConnectPayload(std::string_view friendName, std::string_view locationString);
+        void clearDirectConnectPayload();
 
         // Static trampoline accessors for MinHook detours
         static HINTERNET WINAPI HookedWinHttpConnect(
@@ -64,17 +69,47 @@ namespace Multiplayer::Infrastructure {
             DWORD dwTotalLength,
             DWORD_PTR dwContext);
 
+        static BOOL WINAPI HookedWinHttpReceiveResponse(
+            HINTERNET hRequest,
+            LPVOID lpReserved);
+
+        static BOOL WINAPI HookedWinHttpQueryDataAvailable(
+            HINTERNET hRequest,
+            LPDWORD lpdwNumberOfBytesAvailable);
+
+        static BOOL WINAPI HookedWinHttpReadData(
+            HINTERNET hRequest,
+            LPVOID lpBuffer,
+            DWORD dwNumberOfBytesToRead,
+            LPDWORD lpdwNumberOfBytesRead);
+
+        static BOOL WINAPI HookedWinHttpCloseHandle(
+            HINTERNET hInternet);
+
     private:
+        struct RequestContext {
+            bool bypassRead{ false };
+            std::string responseBody;
+            size_t responseOffset{ 0 };
+        };
+
         static bool shouldRedirectHost(LPCWSTR serverName);
+        static bool installDetours(HMODULE hWinHttp);
 
         static inline std::mutex s_mutex;
         static inline std::wstring s_targetHost{ L"127.0.0.1" };
         static inline uint16_t s_targetPort{ 3000 };
         static inline std::atomic<bool> s_installed{ false };
 
+        static inline std::unique_ptr<Domain::IFallbackResponseProvider> s_fallbackProvider;
+
         static inline Hook s_connectHook;
         static inline Hook s_openRequestHook;
         static inline Hook s_sendRequestHook;
+        static inline Hook s_receiveResponseHook;
+        static inline Hook s_queryDataHook;
+        static inline Hook s_readDataHook;
+        static inline Hook s_closeHandleHook;
     };
 
 } // namespace Multiplayer::Infrastructure
