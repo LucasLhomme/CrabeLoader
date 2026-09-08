@@ -12,7 +12,7 @@
 #include <d3d11.h>
 #include <windows.h>
 
-#include "overlay/overlay.hpp"
+#include "presentation/overlay.hpp"
 #include "infrastructure/hook.hpp"
 
 // Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's D3D11
@@ -46,6 +46,8 @@ class RenderHook {
         // Thread-safe; only records the request. hkPresent applies it next
         // frame, since window calls must happen on the thread that owns it.
         void requestWindowMode(WindowMode mode);
+
+        HWND getHwnd() const noexcept { return _hwnd; }
 
     protected:
     private:
