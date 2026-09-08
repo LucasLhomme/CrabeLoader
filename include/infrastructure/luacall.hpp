@@ -75,6 +75,7 @@ class LuaCall {
         // Compiles and runs `code`, writing its first return value or the
         // error message into `out`. False if lua_tolstring never resolved.
         bool runSnippet(void* L, const std::string& code, std::string& out) const;
+        bool runSnippet(void* L, const std::string& code) const;
         bool callTick(void* L, double dt) const;
 
         typedef int(__cdecl* t_lua_cfunction)(void* L);

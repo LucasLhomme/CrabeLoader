@@ -90,3 +90,24 @@ function Crabe.splitList(csv)
     end
     return out
 end
+
+-- Disk module loader for require(): enables loading submodules from disk (mods/, mods/disneyinfinitymp/, etc.)
+if package and type(package.loaders) == "table" and not Crabe._diskLoaderInstalled then
+    Crabe._diskLoaderInstalled = true
+    table.insert(package.loaders, 2, function(modname)
+        local subpath = string.gsub(modname, "%.", "/")
+        local candidates = {
+            "mods/disneyinfinitymp/" .. subpath .. ".lua",
+            "mods/" .. subpath .. ".lua",
+            "mods/" .. subpath .. "/init.lua",
+            subpath .. ".lua"
+        }
+        for _, path in ipairs(candidates) do
+            local chunk = loadfile(path)
+            if chunk then
+                return chunk
+            end
+        end
+        return "\n\t[CrabeLoader] no file on disk matching '" .. modname .. "'"
+    end)
+end

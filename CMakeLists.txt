@@ -77,6 +77,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/multiplayer/WinHttpRedirector.cpp
     src/infrastructure/multiplayer/FallbackResponseProvider.cpp
     src/infrastructure/multiplayer/UpnpNatService.cpp
+    src/infrastructure/multiplayer/SteamworksService.cpp
 
     # Shared Layer
     src/shared/logger.cpp

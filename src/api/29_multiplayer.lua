@@ -165,6 +165,17 @@ end
 
 Crabe.Multiplayer = Crabe.Multiplayer or {}
 
+function Crabe.Multiplayer.checkServerReachability(host, port, timeoutMs)
+    local rawFn = Crabe._mpCheckServerReachability
+    if type(rawFn) == "function" then
+        local ok, res = pcall(rawFn, tostring(host or "127.0.0.1"), tonumber(port) or 3000, tonumber(timeoutMs) or 250)
+        if ok and res then
+            return res == 1
+        end
+    end
+    return false
+end
+
 function Crabe.Multiplayer.getStatus()
     local rawFn = Crabe._mpGetStatus
     if type(rawFn) ~= "function" then
@@ -173,17 +184,23 @@ function Crabe.Multiplayer.getStatus()
             patchedCount = 0,
             redirectorActive = false,
             host = "127.0.0.1",
-            port = 3000
+            port = 3000,
+            isServerOnline = false
         }
     end
 
     local patchesActive, patchedCount, redirectorActive, host, port = rawFn()
+    local sHost = tostring(host or "127.0.0.1")
+    local sPort = tonumber(port) or 3000
+    local isOnline = Crabe.Multiplayer.checkServerReachability(sHost, sPort, 200)
+
     return {
         patchesActive = (patchesActive == 1),
         patchedCount = tonumber(patchedCount) or 0,
         redirectorActive = (redirectorActive == 1),
-        host = tostring(host or "127.0.0.1"),
-        port = tonumber(port) or 3000
+        host = sHost,
+        port = sPort,
+        isServerOnline = isOnline
     }
 end
 
@@ -319,6 +336,111 @@ function Crabe.Multiplayer.buildLocationString(opts)
         ipToHex(pubIp), portToHex(pubPort),
         ipToHex(privIp), portToHex(privPort),
         hostDid, gameName)
+end
+
+-- ---------------------------------------------------------------------------
+-- 3. Steamworks P2P & Lobby Integration (Crabe.Multiplayer.Steam)
+-- ---------------------------------------------------------------------------
+
+Crabe.Multiplayer.Steam = Crabe.Multiplayer.Steam or {}
+
+function Crabe.Multiplayer.Steam.isAvailable()
+    local rawFn = Crabe._steamIsAvailable
+    if type(rawFn) == "function" then
+        return rawFn() == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.Steam.getPersonaName()
+    local rawFn = Crabe._steamGetPersonaName
+    if type(rawFn) == "function" then
+        return tostring(rawFn() or "Player")
+    end
+    return "Player"
+end
+
+function Crabe.Multiplayer.Steam.getLocalSteamId()
+    local rawFn = Crabe._steamGetLocalId
+    if type(rawFn) == "function" then
+        return tostring(rawFn() or "0")
+    end
+    return "0"
+end
+
+function Crabe.Multiplayer.Steam.createLobby(friendsOnly, maxMembers)
+    local rawFn = Crabe._steamCreateLobby
+    friendsOnly = (friendsOnly ~= false)
+    maxMembers = tonumber(maxMembers) or 4
+    if type(rawFn) == "function" then
+        local ok = rawFn(friendsOnly and 1 or 0, maxMembers) == 1
+        if ok then
+            -- Configure DirectConnect payload automatically with our host info
+            local nat = Crabe.Multiplayer.getNatInfo()
+            local ip = (nat.externalIp ~= "") and nat.externalIp or nat.localIp
+            local loc = Crabe.Multiplayer.buildLocationString({
+                publicIp = ip,
+                publicPort = nat.externalPort or 3074,
+                privateIp = nat.localIp or "127.0.0.1",
+                privatePort = nat.internalPort or 3074,
+                hostDid = "{00000000-0000-0000-0000-000000000001}",
+                gameName = "IN2PC"
+            })
+            Crabe.Multiplayer.setDirectConnect(Crabe.Multiplayer.Steam.getPersonaName(), ip, nat.externalPort or 3074)
+        end
+        return ok
+    end
+    return false
+end
+
+function Crabe.Multiplayer.Steam.leaveLobby()
+    local rawFn = Crabe._steamLeaveLobby
+    if type(rawFn) == "function" then
+        rawFn()
+    end
+end
+
+function Crabe.Multiplayer.Steam.openInviteOverlay()
+    local rawFn = Crabe._steamOpenInviteOverlay
+    if type(rawFn) == "function" then
+        return rawFn() == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.Steam.getLobbyStatus()
+    local rawFn = Crabe._steamGetLobbyStatus
+    if type(rawFn) ~= "function" then
+        return {
+            inLobby = false,
+            isHost = false,
+            lobbyId = "0",
+            hostId = "0",
+            memberCount = 0,
+            memberLimit = 4
+        }
+    end
+
+    local inLobby, isHost, lobbyId, hostId, count, limit = rawFn()
+    return {
+        inLobby = (inLobby == 1),
+        isHost = (isHost == 1),
+        lobbyId = tostring(lobbyId or "0"),
+        hostId = tostring(hostId or "0"),
+        memberCount = tonumber(count) or 0,
+        memberLimit = tonumber(limit) or 4
+    }
+end
+
+function Crabe.Multiplayer.Steam.getFriendCount()
+    local rawFn = Crabe._steamGetFriendCount or Crabe._steamGetFriends
+    if type(rawFn) == "function" then
+        local ok, res = pcall(rawFn)
+        if ok and res then
+            return tonumber(res) or 0
+        end
+    end
+    return 0
 end
 
 

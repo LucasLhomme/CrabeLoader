@@ -14,13 +14,13 @@ Game = Game or {}
 -- Most list natives answer with one comma-joined string plus a count. Splitting
 -- here keeps every caller from re-implementing it, and drops the empty trailing
 -- field a trailing comma would otherwise produce.
-local function Crabe.splitList(csv)
+function Crabe.splitList(csv)
     local out = {}
     if type(csv) ~= "string" then return out end
 
     for field in string.gmatch(csv, "([^,]+)") do
-        field = string.gsub(field, "^%s*(.-)%s*$", "%1")
-        if field ~= "" then out[#out + 1] = field end
+        local trimmed = string.gsub(field, "^%s*(.-)%s*$", "%1")
+        if trimmed ~= "" then out[#out + 1] = trimmed end
     end
     return out
 end

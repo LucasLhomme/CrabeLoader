@@ -365,6 +365,12 @@ bool LuaCall::runSnippet(void* L, const std::string& code, std::string& out) con
     return false;
 }
 
+bool LuaCall::runSnippet(void* L, const std::string& code) const
+{
+    std::string ignored;
+    return runSnippet(L, code, ignored);
+}
+
 LuaCall::ChunkResult LuaCall::runChunk(void* L, int nresults,
                                        const std::function<int()>& load) const
 {
