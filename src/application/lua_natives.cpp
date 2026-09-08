@@ -170,6 +170,11 @@ namespace {
 // internal detail in Crabe.
 bool LuaRuntime::registerNatives(void* L)
 {
+    struct Entry {
+        const char* name;
+        LuaCall::t_lua_cfunction fn;
+    };
+
     struct Entry { const char* name; LuaCall::t_lua_cfunction fn; };
     static constexpr Entry kNatives[] = {
         { "_setWindowModeNative", &nativeSetWindowMode },
@@ -187,6 +192,11 @@ bool LuaRuntime::registerNatives(void* L)
         { "_clearLoadOverrides",   &nativeClearLoadOverrides },
     };
 
+    bool allOk = DebugWatchNatives::registerAll(L);
+    allOk = SpeedHackNatives::registerAll(L) && allOk;
+    allOk = CheatNatives::registerAll(L) && allOk;
+    allOk = FreecamNatives::registerAll(L) && allOk;
+    allOk = Multiplayer::Natives::registerAll(L) && allOk;
     LuaCall::get().runSnippet(L, std::format(
         "Crabe = Crabe or {}; Crabe.version = '{}'; Crabe.versionMajor = {}; "
         "Crabe.versionMinor = {}; Crabe.versionPatch = {};",
@@ -196,7 +206,13 @@ bool LuaRuntime::registerNatives(void* L)
               CheatNatives::registerAll(L) && FreecamNatives::registerAll(L) &&
               Multiplayer::Natives::registerAll(L);
     for (const auto& entry : kNatives) {
+        if (LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
+
+        Logger::getInstance().error("LuaRuntime: failed to register Crabe.{}.", entry.name);
+        allOk = false;
         ok = LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn) && ok;
     }
+
+    return allOk;
     return ok;
 }

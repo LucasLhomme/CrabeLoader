@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
+project(CrabeLoader VERSION 0.2.0 LANGUAGES C CXX)
 # Read VERSION file as the single source of truth
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" CRABELOADER_VERSION_RAW)
 string(STRIP "${CRABELOADER_VERSION_RAW}" CRABELOADER_VERSION)
