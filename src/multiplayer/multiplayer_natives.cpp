@@ -110,6 +110,49 @@ namespace Multiplayer::Natives {
         return 0;
     }
 
+    int __cdecl setDirectConnect(void* L) {
+        LuaCall& lua = LuaCall::get();
+        const char* friendName = lua.argToString(L, 1);
+        const char* ip = lua.argToString(L, 2);
+        double port = lua.argToNumber(L, 3, 3074.0);
+        const char* hostDid = lua.argToString(L, 4);
+
+        if (!friendName || !ip) {
+            return 0;
+        }
+
+        auto& mp = Application::MultiplayerManager::getInstance();
+        mp.setDirectConnectTarget(friendName, ip, static_cast<uint16_t>(port), hostDid ? hostDid : "");
+
+        if (lua.hasReturnSupport()) {
+            lua.pushNumber(L, 1.0);
+            return 1;
+        }
+        return 0;
+    }
+
+    int __cdecl buildLocation(void* L) {
+        LuaCall& lua = LuaCall::get();
+        if (!lua.hasReturnSupport()) {
+            return 0;
+        }
+        const char* pubIp = lua.argToString(L, 1);
+        double pubPort = lua.argToNumber(L, 2, 3074.0);
+        const char* privIp = lua.argToString(L, 3);
+        double privPort = lua.argToNumber(L, 4, pubPort);
+        const char* hostDid = lua.argToString(L, 5);
+        const char* gameName = lua.argToString(L, 6);
+
+        auto& mp = Application::MultiplayerManager::getInstance();
+        std::string loc = mp.formatLocationString(
+            pubIp ? pubIp : "127.0.0.1", static_cast<uint16_t>(pubPort),
+            privIp ? privIp : "", static_cast<uint16_t>(privPort),
+            hostDid ? hostDid : "", gameName ? gameName : "IN2PC");
+
+        lua.pushString(L, loc.c_str());
+        return 1;
+    }
+
     bool registerAll(void* L) {
         LuaCall& lua = LuaCall::get();
         bool ok = true;
@@ -119,6 +162,8 @@ namespace Multiplayer::Natives {
         ok = lua.registerNativeFunction(L, "Crabe", "_mpApplyPatches", &applyPatches) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_mpGetNatInfo", &getNatInfo) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_mpTriggerPortForward", &triggerPortForward) && ok;
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpSetDirectConnect", &setDirectConnect) && ok;
+        ok = lua.registerNativeFunction(L, "Crabe", "_mpBuildLocation", &buildLocation) && ok;
 
         if (ok) {
             Logger::getInstance().info("MultiplayerNatives: successfully bound Crabe._mp* natives.");

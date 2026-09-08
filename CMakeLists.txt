@@ -48,6 +48,7 @@ set(CRABELOADER_CORE_SOURCES
     src/logger.cpp
     src/multiplayer/MemoryPatcher.cpp
     src/multiplayer/WinHttpRedirector.cpp
+    src/multiplayer/FallbackResponseProvider.cpp
     src/multiplayer/UpnpNatService.cpp
     src/multiplayer/MultiplayerManager.cpp
     src/multiplayer/multiplayer_natives.cpp
