@@ -9,6 +9,7 @@
 #include <thread>
 #include <string>
 #include "shared/logger.hpp"
+#include "shared/version.hpp"
 #include "application/loader.hpp"
 
 namespace {
@@ -36,7 +37,8 @@ void initLogger(HMODULE hModule) {
     Logger& logger = Logger::getInstance();
     logger.setLogFile(moduleLogPath(hModule));
     logger.setLogLevel(LogLevel::DEBUG);
-    logger.info("Logger initialized.");
+    logger.info("CrabeLoader v{} initialized (built {} {}).",
+                Crabe::Version::String, Crabe::Version::BuildDate, Crabe::Version::BuildTime);
 }
 
 void initMain() {

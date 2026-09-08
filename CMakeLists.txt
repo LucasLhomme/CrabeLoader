@@ -1,6 +1,21 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(CrabeLoader VERSION 0.1.0 LANGUAGES C CXX)
+# Read VERSION file as the single source of truth
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" CRABELOADER_VERSION_RAW)
+string(STRIP "${CRABELOADER_VERSION_RAW}" CRABELOADER_VERSION)
+
+project(CrabeLoader VERSION ${CRABELOADER_VERSION} LANGUAGES C CXX)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/shared/version.hpp.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/shared/version.hpp"
+    @ONLY
+)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/version.rc.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/version.rc"
+    @ONLY
+)
 
 option(CRABELOADER_AS_SHARED "Build CrabeLoader as a shared library (DLL)." OFF)
 option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
@@ -19,6 +34,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 set(CRABELOADER_CORE_SOURCES
     src/main.cpp
+    src/version.rc
 
     # Presentation Layer
     src/presentation/overlay.cpp
@@ -39,6 +55,7 @@ set(CRABELOADER_CORE_SOURCES
     src/application/multiplayer/multiplayer_natives.cpp
 
     # Domain Layer
+    src/domain/ModManifest.cpp
     src/domain/cheats.cpp
     src/domain/freecam.cpp
     src/domain/speedhack.cpp
@@ -62,6 +79,7 @@ set(CRABELOADER_CORE_SOURCES
 
     # Shared Layer
     src/shared/logger.cpp
+    src/shared/version.cpp
 )
 
 set(CRABELOADER_MINHOOK_SOURCES

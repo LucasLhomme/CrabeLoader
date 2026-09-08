@@ -27,7 +27,9 @@
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/MultiplayerManager.hpp"
 #include "presentation/render_hook.hpp"
+#include "domain/ModManifest.hpp"
 #include "shared/logger.hpp"
+#include "shared/version.hpp"
 
 namespace {
 
@@ -56,6 +58,18 @@ namespace {
         if (len <= 0)
             return std::format("VK 0x{:X}", virtualKey);
         return std::string(buffer, len);
+    }
+
+    std::filesystem::path resolveEntryScript(const std::filesystem::path& modPath,
+                                             const Crabe::Domain::ModManifest& manifest,
+                                             const std::string& modName)
+    {
+        if (manifest.isValid() && !manifest.getEntry().empty())
+            return modPath / manifest.getEntry();
+        auto mainScript = modPath / "main.lua";
+        if (std::filesystem::exists(mainScript))
+            return mainScript;
+        return modPath / (modName + ".lua");
     }
 
 } // namespace
@@ -105,24 +119,22 @@ void Loader::loadModDirectory(const std::filesystem::path& modPath)
         return;
 
     Logger& logger = Logger::getInstance();
-    std::string normPath = modPath.generic_string();
-    std::string setupPkgPath = std::format(
-        "package.path = '{0}/?.lua;{0}/modules/?.lua;' .. package.path",
-        normPath);
-    LuaCall::get().runSnippet(_luaState, setupPkgPath);
-
-    std::filesystem::path entryScript = modPath / "main.lua";
-    if (!std::filesystem::exists(entryScript)) {
-        entryScript = modPath / (modName + ".lua");
+    Crabe::Domain::ModManifest manifest(modPath / "mod.json");
+    if (manifest.isValid() && !manifest.isCompatible()) {
+        logger.warning("Loader: mod '{}' requires CrabeLoader v{}, current is v{}.",
+                       modName, manifest.getMinLoaderVersion(), Crabe::Version::String);
+        return;
     }
 
+    LuaCall::get().runSnippet(_luaState, std::format(
+        "package.path = '{0}/?.lua;{0}/modules/?.lua;' .. package.path",
+        modPath.generic_string()));
+
+    auto entryScript = resolveEntryScript(modPath, manifest, modName);
     if (std::filesystem::exists(entryScript)) {
-        if (LuaCall::get().runFile(_luaState, entryScript.string().c_str()))
-            logger.info("Loader: mod directory '{}' loaded (entry: {}).",
-                        modName, entryScript.filename().string());
-        else
-            logger.warning("Loader: mod directory '{}' failed at entry '{}'.",
-                           modName, entryScript.filename().string());
+        bool ok = LuaCall::get().runFile(_luaState, entryScript.string().c_str());
+        logger.info("Loader: mod directory '{}' {} (entry: {}).",
+                    modName, ok ? "loaded" : "failed", entryScript.filename().string());
         return;
     }
 
