@@ -98,6 +98,41 @@ bool Loader::isGameState(void* L) const
     return L && _initializedStates.count(L) != 0;
 }
 
+void Loader::loadModDirectory(const std::filesystem::path& modPath)
+{
+    std::string modName = modPath.filename().string();
+    if (modName.empty() || modName[0] == '.' || modName[0] == '_')
+        return;
+
+    Logger& logger = Logger::getInstance();
+    std::string normPath = modPath.generic_string();
+    std::string setupPkgPath = std::format(
+        "package.path = '{0}/?.lua;{0}/modules/?.lua;' .. package.path",
+        normPath);
+    LuaCall::get().runSnippet(_luaState, setupPkgPath);
+
+    std::filesystem::path entryScript = modPath / "main.lua";
+    if (!std::filesystem::exists(entryScript)) {
+        entryScript = modPath / (modName + ".lua");
+    }
+
+    if (std::filesystem::exists(entryScript)) {
+        if (LuaCall::get().runFile(_luaState, entryScript.string().c_str()))
+            logger.info("Loader: mod directory '{}' loaded (entry: {}).",
+                        modName, entryScript.filename().string());
+        else
+            logger.warning("Loader: mod directory '{}' failed at entry '{}'.",
+                           modName, entryScript.filename().string());
+        return;
+    }
+
+    for (const auto& file : std::filesystem::directory_iterator(modPath)) {
+        if (file.is_regular_file() && file.path().extension() == ".lua")
+            LuaCall::get().runFile(_luaState, file.path().string().c_str());
+    }
+    logger.info("Loader: mod directory '{}' loaded.", modName);
+}
+
 void Loader::onLoadmods()
 {
     Logger& logger = Logger::getInstance();
@@ -116,17 +151,19 @@ void Loader::onLoadmods()
     }
 
     for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
-        if (!entry.is_regular_file() || entry.path().extension() != ".lua")
-            continue;
-
-        std::string filename = entry.path().filename().string();
-        logger.info("Loader: Found mod: {}", filename);
-
-        if (LuaCall::get().runFile(_luaState, entry.path().string().c_str()))
-            logger.debug("Loader: mod '{}' executed.", filename);
-        else
-            logger.warning("Loader: mod '{}' failed to execute.", filename);
+        if (entry.is_directory()) {
+            loadModDirectory(entry.path());
+        } else if (entry.is_regular_file() && entry.path().extension() == ".lua") {
+            std::string filename = entry.path().filename().string();
+            if (LuaCall::get().runFile(_luaState, entry.path().string().c_str()))
+                logger.info("Loader: standalone mod '{}' executed.", filename);
+            else
+                logger.warning("Loader: standalone mod '{}' failed to execute.", filename);
+        }
     }
+
+    LuaCall::get().runSnippet(_luaState,
+        "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('init') end");
 }
 
 void Loader::registerKeybind(int virtualKey, std::function<void()> onPress)

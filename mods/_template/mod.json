@@ -1,0 +1,8 @@
+{
+  "name": "MyCustomMod",
+  "version": "1.0.0",
+  "author": "ModderName",
+  "description": "A template mod for Disney Infinity 3.0 via CrabeLoader",
+  "entry": "main.lua"
+}
+

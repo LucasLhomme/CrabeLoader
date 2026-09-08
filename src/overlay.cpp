@@ -213,6 +213,8 @@ void Overlay::initialize()
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = nullptr; // Do not litter game root with imgui.ini
+    io.LogFilename = nullptr; // Do not litter game root with imgui_log.txt
 
     ImGui::StyleColorsDark();
 }

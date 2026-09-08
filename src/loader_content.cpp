@@ -145,98 +145,124 @@ void Loader::armPatchIfNameMatched(const char* name)
     }
 }
 
-void Loader::loadOverridesFromDisk()
-{
-    std::filesystem::path folder = std::filesystem::current_path() / "skilltrees";
-    Logger& logger = Logger::getInstance();
+    void loadOverridesFromDirectory(Loader& loader, const std::filesystem::path& folder, const std::string& labelPrefix)
+    {
+        Logger& logger = Logger::getInstance();
+        size_t loadedOverrides = 0;
+        size_t loadedPatches = 0;
 
-    if (!std::filesystem::exists(folder)) {
-        std::filesystem::create_directory(folder);
-        return;
-    }
+        for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+            if (!entry.is_regular_file())
+                continue;
 
-    size_t loadedOverrides = 0;
-    size_t loadedPatches = 0;
-    for (const auto& entry : std::filesystem::directory_iterator(folder)) {
-        if (!entry.is_regular_file())
-            continue;
+            bool isOverride = entry.path().extension() == ".lua";
+            bool isPatch = entry.path().extension() == ".patch";
+            if (!isOverride && !isPatch)
+                continue;
 
-        bool isOverride = entry.path().extension() == ".lua";
-        bool isPatch = entry.path().extension() == ".patch";
-        if (!isOverride && !isPatch)
-            continue;
+            std::string content;
+            if (!readTextFile(entry.path(), labelPrefix.c_str(), content))
+                continue;
 
-        std::string content;
-        if (!readTextFile(entry.path(), "skilltrees", content))
-            continue;
+            std::string matchHint = entry.path().stem().string();
+            std::string label = labelPrefix + "/" + matchHint;
+            if (isOverride) {
+                loader.registerLoadOverride(matchHint, std::move(content), label);
+                ++loadedOverrides;
+            } else {
+                loader.registerChunkPatch(matchHint, std::move(content), label);
+                ++loadedPatches;
+            }
+        }
 
-        std::string matchHint = entry.path().stem().string();
-        if (isOverride) {
-            registerLoadOverride(matchHint, std::move(content), "skilltrees/" + matchHint);
-            ++loadedOverrides;
-        } else {
-            registerChunkPatch(matchHint, std::move(content), "skilltrees/" + matchHint);
-            ++loadedPatches;
+        if (loadedOverrides > 0 || loadedPatches > 0) {
+            logger.info("Loader: {} override(s) and {} patch(es) registered from {}.",
+                        loadedOverrides, loadedPatches, labelPrefix);
         }
     }
 
-    if (loadedOverrides > 0 || loadedPatches > 0) {
-        logger.info("Loader: {} load override(s) and {} patch(es) registered from skilltrees/.",
-                    loadedOverrides, loadedPatches);
+    void loadCharactersFromDirectory(const std::filesystem::path& folder,
+                                     const std::string& labelPrefix,
+                                     std::vector<Gateway::Entry>& exposed,
+                                     std::string& combined)
+    {
+        for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".lua")
+                continue;
+
+            std::string content;
+            if (!readTextFile(entry.path(), labelPrefix.c_str(), content))
+                continue;
+
+            for (auto& exposedEntry : Gateway::parseExposedCharacters(content))
+                exposed.push_back(std::move(exposedEntry));
+
+            combined += "do\n" + content + "\nend\n";
+        }
+    }
+
+void Loader::loadOverridesFromDisk()
+{
+    std::filesystem::path rootFolder = std::filesystem::current_path() / "skilltrees";
+    if (std::filesystem::exists(rootFolder)) {
+        loadOverridesFromDirectory(*this, rootFolder, "skilltrees");
+    }
+
+    std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
+    if (!std::filesystem::exists(modsFolder))
+        return;
+
+    for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
+        if (!entry.is_directory())
+            continue;
+        std::string modName = entry.path().filename().string();
+        if (modName.empty() || modName[0] == '.' || modName[0] == '_')
+            continue;
+
+        for (const char* sub : { "skilltrees", "Skillstree", "skilltree" }) {
+            auto subPath = entry.path() / sub;
+            if (std::filesystem::exists(subPath)) {
+                loadOverridesFromDirectory(*this, subPath, modName + "/" + sub);
+                break;
+            }
+        }
     }
 }
 
 void Loader::loadCharactersFromDisk()
 {
     constexpr const char* kTargetName = "Presentation/VirtualReaderPC_Data.lua";
-
-    std::filesystem::path folder = std::filesystem::current_path() / "characters";
     Logger& logger = Logger::getInstance();
-
-    if (!std::filesystem::exists(folder)) {
-        std::filesystem::create_directory(folder);
-        return;
-    }
-
-    std::string combined;
     std::vector<Gateway::Entry> exposed;
-    size_t loadedFiles = 0;
-    for (const auto& entry : std::filesystem::directory_iterator(folder)) {
-        if (!entry.is_regular_file() || entry.path().extension() != ".lua")
-            continue;
+    std::string combined;
 
-        std::string content;
-        if (!readTextFile(entry.path(), "characters", content))
-            continue;
-
-        for (auto& exposedEntry : Gateway::parseExposedCharacters(content))
-            exposed.push_back(std::move(exposedEntry));
-
-        combined += "do\n" + content + "\nend\n";
-        ++loadedFiles;
+    std::filesystem::path rootFolder = std::filesystem::current_path() / "characters";
+    if (std::filesystem::exists(rootFolder)) {
+        loadCharactersFromDirectory(rootFolder, "characters", exposed, combined);
     }
 
-    if (loadedFiles > 0) {
-        // The sku table goes first: exposeCharacter reads it to fill in an
-        // omitted sku_id, and it must agree with the registry slots built
-        // below -- which it does by construction, both coming from `exposed`.
-        registerNamedPatch(kTargetName, Gateway::buildSkuTableLua(exposed) + combined,
-                           "characters/");
-        logger.info("Loader: {} character definition(s) registered from characters/.", loadedFiles);
-    }
+    std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
+    if (std::filesystem::exists(modsFolder)) {
+        for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
+            if (!entry.is_directory())
+                continue;
+            std::string modName = entry.path().filename().string();
+            if (modName.empty() || modName[0] == '.' || modName[0] == '_')
+                continue;
 
-    // Every exposeCharacter row needs a slot in the figure registry, or the game
-    // refuses to play it ("Figurine Disney Infinity manquante"). Build those
-    // slots here and hand them to the patch mechanism keyed on the gateway
-    // chunk's own container key, so the registry is only ever changed in memory
-    // -- the player's gateway*.lua files are left untouched.
-    if (!exposed.empty()) {
-        registerChunkPatch(Gateway::containerKey(), Gateway::buildInjectionLua(exposed),
-                           "figure registry");
-        for (const auto& entry : exposed) {
-            logger.info("Loader: figure registry slot for '{}' -> sku {}.",
-                        entry.name,
-                        entry.sku.empty() ? Gateway::allocateSku(entry.name) : entry.sku);
+            for (const char* sub : { "characters", "Character", "character" }) {
+                auto subPath = entry.path() / sub;
+                if (std::filesystem::exists(subPath)) {
+                    loadCharactersFromDirectory(subPath, modName + "/" + sub, exposed, combined);
+                    break;
+                }
+            }
         }
+    }
+
+    if (!exposed.empty()) {
+        registerNamedPatch(kTargetName, Gateway::buildSkuTableLua(exposed) + combined, "characters/");
+        registerChunkPatch(Gateway::containerKey(), Gateway::buildInjectionLua(exposed), "figure registry");
+        logger.info("Loader: {} total character definition(s) registered.", exposed.size());
     }
 }

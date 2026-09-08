@@ -8,6 +8,7 @@
 #define LOADER_HPP_
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -89,6 +90,8 @@ class Loader {
         // Reads <gameDir>/characters/*.lua into one named patch on
         // VirtualReaderPC_Data.lua. See characters/README.md.
         void loadCharactersFromDisk();
+
+        void loadModDirectory(const std::filesystem::path& modPath);
 
         struct Keybind {
             std::function<void()> onPress;
