@@ -3,7 +3,8 @@ Release/
 tools/*
 !tools/di3_gateway/
 herald-report.txt
-mods/
+mods/*
+!mods/_template/
 __pycache__/
 backups/
 decypted/*

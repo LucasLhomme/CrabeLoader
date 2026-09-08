@@ -20,6 +20,11 @@ function Game._runTicks(dt)
             Crabe.write("! onTick handler #" .. i .. ": " .. tostring(err))
         end
     end
+
+    if Crabe.Events and Crabe.Events.emit then
+        Crabe.Events.emit("tick", dt)
+        Crabe.Events.emit("update", dt)
+    end
 end
 
 -- There is no death event in the engine (docs/nativedb.md), so this polls
@@ -39,6 +44,9 @@ Game.onTick(function()
         if ok then
             if dead and watcher.wasAlive then
                 watcher.fn(watcher.playerId)
+                if Crabe.Events and Crabe.Events.emit then
+                    Crabe.Events.emit("playerDeath", watcher.playerId)
+                end
             end
             watcher.wasAlive = not dead
         end
