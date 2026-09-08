@@ -8,8 +8,8 @@
 #include <windows.h>
 #include <thread>
 #include <string>
-#include "logger/logger.hpp"
-#include "loader/loader.hpp"
+#include "shared/logger.hpp"
+#include "application/loader.hpp"
 
 namespace {
     std::string moduleLogPath(HMODULE hModule) {
