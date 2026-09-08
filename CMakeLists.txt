@@ -19,39 +19,49 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 set(CRABELOADER_CORE_SOURCES
     src/main.cpp
-    src/Loader.cpp
-    src/loader_content.cpp
-    src/lua_symbols.cpp
-    src/hook.cpp
-    src/luacall.cpp
-    src/lua_runtime.cpp
-    src/lua_natives.cpp
-    src/memory.cpp
-    src/codecave.cpp
-    src/cheats.cpp
-    src/cheat_natives.cpp
-    src/player_movement.cpp
-    src/engine_patches.cpp
-    src/entity_registry.cpp
-    src/debug_watch.cpp
-    src/speedhack.cpp
-    src/debug_watch_natives.cpp
-    src/overlay.cpp
-    src/menu.cpp
-    src/render_hook.cpp
-    src/input_hook.cpp
-    src/message_hook.cpp
-    src/avatar_relay_hook.cpp
-    src/freecam.cpp
-    src/freecam_natives.cpp
-    src/gateway.cpp
-    src/logger.cpp
-    src/multiplayer/MemoryPatcher.cpp
-    src/multiplayer/WinHttpRedirector.cpp
-    src/multiplayer/FallbackResponseProvider.cpp
-    src/multiplayer/UpnpNatService.cpp
-    src/multiplayer/MultiplayerManager.cpp
-    src/multiplayer/multiplayer_natives.cpp
+
+    # Presentation Layer
+    src/presentation/overlay.cpp
+    src/presentation/menu.cpp
+    src/presentation/render_hook.cpp
+    src/presentation/input_hook.cpp
+
+    # Application Layer
+    src/application/Loader.cpp
+    src/application/loader_content.cpp
+    src/application/gateway.cpp
+    src/application/lua_runtime.cpp
+    src/application/lua_natives.cpp
+    src/application/cheat_natives.cpp
+    src/application/freecam_natives.cpp
+    src/application/debug_watch_natives.cpp
+    src/application/multiplayer/MultiplayerManager.cpp
+    src/application/multiplayer/multiplayer_natives.cpp
+
+    # Domain Layer
+    src/domain/cheats.cpp
+    src/domain/freecam.cpp
+    src/domain/speedhack.cpp
+    src/domain/player_movement.cpp
+    src/domain/debug_watch.cpp
+    src/domain/entity_registry.cpp
+
+    # Infrastructure Layer
+    src/infrastructure/memory.cpp
+    src/infrastructure/hook.cpp
+    src/infrastructure/codecave.cpp
+    src/infrastructure/message_hook.cpp
+    src/infrastructure/avatar_relay_hook.cpp
+    src/infrastructure/luacall.cpp
+    src/infrastructure/lua_symbols.cpp
+    src/infrastructure/engine_patches.cpp
+    src/infrastructure/multiplayer/MemoryPatcher.cpp
+    src/infrastructure/multiplayer/WinHttpRedirector.cpp
+    src/infrastructure/multiplayer/FallbackResponseProvider.cpp
+    src/infrastructure/multiplayer/UpnpNatService.cpp
+
+    # Shared Layer
+    src/shared/logger.cpp
 )
 
 set(CRABELOADER_MINHOOK_SOURCES
@@ -93,6 +103,11 @@ endif()
 target_include_directories(${PROJECT_NAME}
     PRIVATE
         include
+        include/presentation
+        include/application
+        include/domain
+        include/infrastructure
+        include/shared
         include/imgui
         include/minhook
 )
