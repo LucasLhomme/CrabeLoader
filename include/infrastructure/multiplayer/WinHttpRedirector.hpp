@@ -86,12 +86,13 @@ namespace Multiplayer::Infrastructure {
         static BOOL WINAPI HookedWinHttpCloseHandle(
             HINTERNET hInternet);
 
-    private:
         struct RequestContext {
             bool bypassRead{ false };
             std::string responseBody;
             size_t responseOffset{ 0 };
         };
+
+    private:
 
         static bool shouldRedirectHost(LPCWSTR serverName);
         static bool installDetours(HMODULE hWinHttp);

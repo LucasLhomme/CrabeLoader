@@ -31,15 +31,14 @@ namespace Multiplayer::Infrastructure {
         constexpr uint8_t kMovAl1[2] = { 0xB0, 0x01 };
         constexpr uint8_t kXorAlAl[2] = { 0x32, 0xC0 };
         constexpr uint8_t kMovAlBl[2] = { 0x8A, 0xC3 };
-        constexpr uint8_t kVerifySigStub[5] = { 0x33, 0xC0, 0xC2, 0x10, 0x00 }; // xor eax, eax; ret 0x10
-
-        // HostingSessionGate
-        constexpr const char* kHostingGatePattern = "39 56 0C 0F 84 EC 00 00 00";
-        constexpr uint8_t kHostingGatePatch[9] = { 0x89, 0x56, 0x0C, 0x90, 0xE9, 0xEC, 0x00, 0x00, 0x00 };
+        constexpr uint8_t kVerifySigStub[6] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }; // mov eax, 1; ret (safe 0-param bypass)
 
         // GetFriendsList error skip
         constexpr const char* kFriendsErrorPattern = "83 F8 1A 74 06";
         constexpr uint8_t kFriendsJeToJmp[2] = { 0xEB, 0x06 };
+
+        // SteamAPI_RestartAppIfNecessary bypass (allow running multiple instances without restarting)
+        constexpr uint8_t kSteamRestartAppNop[6] = { 0x31, 0xC0, 0x90, 0x90, 0x90, 0x90 }; // xor eax, eax; nop...
     } // namespace
 
     MemoryPatcher::MemoryPatcher() = default;
@@ -139,21 +138,7 @@ namespace Multiplayer::Infrastructure {
                 _records.push_back(std::move(rec));
             }
 
-            // 5. HostingSessionGate
-            {
-                uintptr_t site = Memory::patternScan(kHostingGatePattern);
-                if (site) {
-                    PatchRecord rec;
-                    rec.address = site;
-                    rec.patchedBytes.assign(kHostingGatePatch, kHostingGatePatch + sizeof(kHostingGatePatch));
-                    rec.name = "HostingSessionGate";
-                    _records.push_back(std::move(rec));
-                } else {
-                    Logger::getInstance().warning("MemoryPatcher: HostingSessionGate pattern not found (may scan on retry)");
-                }
-            }
-
-            // 6. GetFriendsList Session Error Bypass
+            // 5. GetFriendsList Session Error Bypass
             {
                 uintptr_t site = Memory::patternScan(kFriendsErrorPattern);
                 if (site) {
@@ -165,6 +150,16 @@ namespace Multiplayer::Infrastructure {
                 } else {
                     Logger::getInstance().warning("MemoryPatcher: GetFriendsList pattern not found (may scan on retry)");
                 }
+            }
+
+            // 6. SteamAPI_RestartAppIfNecessary Multi-Instance Bypass
+            {
+                constexpr uintptr_t kRestartAppCallRva = 0x00032C9E;
+                PatchRecord rec;
+                rec.address = base + kRestartAppCallRva;
+                rec.patchedBytes.assign(kSteamRestartAppNop, kSteamRestartAppNop + sizeof(kSteamRestartAppNop));
+                rec.name = "SteamAPI_RestartAppIfNecessary (Multi-Instance Bypass)";
+                _records.push_back(std::move(rec));
             }
         }
 

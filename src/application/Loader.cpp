@@ -408,6 +408,18 @@ void Loader::registerDefaultKeybinds()
 void Loader::handleKeybind()
 {
     std::lock_guard<std::mutex> lock(_keybindsMutex);
+
+    HWND gameHwnd = RenderHook::get().getHwnd();
+    if (gameHwnd) {
+        HWND foreground = GetForegroundWindow();
+        if (foreground != gameHwnd) {
+            for (auto& [virtualKey, bind] : _keybinds) {
+                bind.wasDown = false;
+            }
+            return;
+        }
+    }
+
     for (auto& [virtualKey, bind] : _keybinds) {
         bool isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
         if (isDown && !bind.wasDown) {

@@ -11,6 +11,7 @@
 #include "infrastructure/multiplayer/MemoryPatcher.hpp"
 #include "infrastructure/multiplayer/WinHttpRedirector.hpp"
 #include "infrastructure/multiplayer/UpnpNatService.hpp"
+#include "infrastructure/multiplayer/SteamworksService.hpp"
 #include "shared/logger.hpp"
 
 namespace Multiplayer::Application {
@@ -23,7 +24,8 @@ namespace Multiplayer::Application {
     MultiplayerManager::MultiplayerManager()
         : _patcher(std::make_unique<Infrastructure::MemoryPatcher>()),
           _redirector(std::make_unique<Infrastructure::WinHttpRedirector>()),
-          _natService(std::make_unique<Crabe::Multiplayer::UpnpNatService>())
+          _natService(std::make_unique<Crabe::Multiplayer::UpnpNatService>()),
+          _steamService(std::make_unique<Crabe::Multiplayer::SteamworksService>())
     {
     }
 
@@ -57,6 +59,12 @@ namespace Multiplayer::Application {
             }).detach();
         }
 
+        // 4. Initialize Steamworks Integration
+        if (_steamService) {
+            _steamService->initialize();
+            (void)_steamService->initialize();
+        }
+
         _initialized = true;
         Logger::getInstance().info("MultiplayerManager: initialized successfully.");
         return true;
@@ -70,6 +78,10 @@ namespace Multiplayer::Application {
         _workerStop = true;
         if (_workerThread.joinable()) {
             _workerThread.join();
+        }
+
+        if (_steamService) {
+            _steamService->shutdown();
         }
 
         if (_natService) {
@@ -116,6 +128,57 @@ namespace Multiplayer::Application {
 
     uint16_t MultiplayerManager::getTargetPort() const {
         return _redirector ? _redirector->getTargetPort() : 3000;
+    }
+
+    bool MultiplayerManager::isServerReachable(std::string_view host, uint16_t port, uint32_t timeoutMs) const {
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (sock == INVALID_SOCKET) {
+            return false;
+        }
+
+        u_long nonBlocking = 1;
+        ioctlsocket(sock, FIONBIO, &nonBlocking);
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        std::string hostStr(host);
+        if (inet_pton(AF_INET, hostStr.c_str(), &addr.sin_addr) != 1) {
+            addrinfo hints{}, *res = nullptr;
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_STREAM;
+            if (getaddrinfo(hostStr.c_str(), std::to_string(port).c_str(), &hints, &res) != 0 || !res) {
+                closesocket(sock);
+                return false;
+            }
+            addr = *reinterpret_cast<sockaddr_in*>(res->ai_addr);
+            freeaddrinfo(res);
+        }
+
+        connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+
+        fd_set writeFds, errFds;
+        FD_ZERO(&writeFds);
+        FD_ZERO(&errFds);
+        FD_SET(sock, &writeFds);
+        FD_SET(sock, &errFds);
+
+        timeval tv{};
+        tv.tv_sec = static_cast<long>(timeoutMs / 1000);
+        tv.tv_usec = static_cast<long>((timeoutMs % 1000) * 1000);
+
+        int sel = select(0, nullptr, &writeFds, &errFds, &tv);
+        bool reachable = false;
+        if (sel > 0 && FD_ISSET(sock, &writeFds) && !FD_ISSET(sock, &errFds)) {
+            int optVal = 0;
+            int optLen = sizeof(optVal);
+            if (getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&optVal), &optLen) == 0) {
+                reachable = (optVal == 0);
+            }
+        }
+
+        closesocket(sock);
+        return reachable;
     }
 
     bool MultiplayerManager::arePatchesActive() const noexcept {
@@ -201,6 +264,62 @@ namespace Multiplayer::Application {
             redirector->setDirectConnectPayload(friendName, location);
         }
         Logger::getInstance().info("MultiplayerManager: primed Direct Connect target '{}' at {}:{}", friendName, ip, port);
+    }
+
+    bool MultiplayerManager::isSteamAvailable() const noexcept {
+        return _steamService && _steamService->isAvailable();
+    }
+
+    std::string MultiplayerManager::getSteamPersonaName() const {
+        return _steamService ? _steamService->getPersonaName() : "Player";
+    }
+
+    uint64_t MultiplayerManager::getSteamId() const noexcept {
+        return _steamService ? _steamService->getLocalSteamId() : 0;
+    }
+
+    bool MultiplayerManager::createSteamLobby(bool friendsOnly, int maxMembers) {
+        if (_steamService) {
+            return _steamService->createLobby(friendsOnly, maxMembers);
+        }
+        return false;
+    }
+
+    void MultiplayerManager::leaveSteamLobby() {
+        if (_steamService) {
+            _steamService->leaveLobby();
+        }
+    }
+
+    bool MultiplayerManager::openSteamInviteOverlay() {
+        if (_steamService) {
+            return _steamService->openInviteOverlay();
+        }
+        return false;
+    }
+
+    Crabe::Multiplayer::SteamLobbyStatus MultiplayerManager::getSteamLobbyStatus() const noexcept {
+        if (_steamService) {
+            return _steamService->getLobbyStatus();
+        }
+        return {};
+    }
+
+    int MultiplayerManager::getSteamFriendCount() const noexcept {
+        return _steamService ? _steamService->getFriendCount() : 0;
+    }
+
+    std::vector<Crabe::Multiplayer::SteamFriendInfo> MultiplayerManager::getSteamFriends() const {
+        if (_steamService) {
+            return _steamService->getFriends();
+        }
+        return {};
+    }
+
+    void MultiplayerManager::updateSteamLobbyLocation(std::string_view locationData) {
+        if (_steamService) {
+            _steamService->setLobbyData("location", locationData);
+        }
     }
 
 } // namespace Multiplayer::Application
