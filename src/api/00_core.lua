@@ -2,6 +2,10 @@
 -- Loaded first: the other modules report their errors through Crabe.write.
 
 Crabe = Crabe or {}
+Crabe.version = "0.2.0"
+Crabe.versionMajor = 0
+Crabe.versionMinor = 2
+Crabe.versionPatch = 0
 Crabe.version = Crabe.version or "0.2.0"
 Crabe.versionMajor = Crabe.versionMajor or 0
 Crabe.versionMinor = Crabe.versionMinor or 2
