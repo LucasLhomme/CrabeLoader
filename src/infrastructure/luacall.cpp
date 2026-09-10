@@ -42,6 +42,9 @@ bool LuaCall::initialize(const LuaApiAddresses& addresses)
     _tonumber = reinterpret_cast<t_lua_tonumber>(addresses.tonumber);
     _toboolean = reinterpret_cast<t_lua_toboolean>(addresses.toboolean);
     _pushlstring = reinterpret_cast<t_lua_pushlstring>(addresses.pushlstring);
+    _pushboolean = reinterpret_cast<t_lua_pushboolean>(addresses.pushboolean);
+    _pushnil = reinterpret_cast<t_lua_pushnil>(addresses.pushnil);
+    _isnumber = reinterpret_cast<t_lua_isnumber>(addresses.isnumber);
     _pushcclosure = reinterpret_cast<t_lua_pushcclosure>(addresses.pushcclosure);
     _rawset = reinterpret_cast<t_lua_rawset>(addresses.rawset);
 
@@ -162,6 +165,32 @@ bool LuaCall::runFile(void* L, const char* path) const
     } else if (result.stage == ChunkResult::Stage::CallFailed) {
         Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}): {}",
                                     path, result.status, result.text);
+    }
+    return static_cast<bool>(result);
+}
+
+bool LuaCall::runBuffer(void* L, const char* buff, size_t size, const char* name) const
+{
+    t_luaL_loadbuffer loadbuffer = originalLoadbuffer();
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !loadbuffer || !pcall) {
+        Logger::getInstance().error("LuaCall: cannot run buffer '{}': Lua state or hooks unavailable.",
+                                    name ? name : "unnamed");
+        return false;
+    }
+
+    std::string chunkName = name ? (std::string("@") + name) : "@embedded";
+    ChunkResult result = runChunk(L, kLuaMultret, [&]() {
+        return loadbuffer(L, buff, size, chunkName.c_str());
+    });
+
+    if (result.stage == ChunkResult::Stage::LoadFailed) {
+        Logger::getInstance().error("LuaCall: luaL_loadbuffer('{}') failed (status {}): {}",
+                                    name ? name : "unnamed", result.status, result.text);
+    } else if (result.stage == ChunkResult::Stage::CallFailed) {
+        Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}): {}",
+                                    name ? name : "unnamed", result.status, result.text);
     }
     return static_cast<bool>(result);
 }
@@ -328,6 +357,30 @@ void LuaCall::pushString(void* L, const std::string& value) const
 void LuaCall::pushNumber(void* L, double value) const
 {
     if (_pushnumber) _pushnumber(L, value);
+}
+
+// Pushes a boolean value to the top of the Lua stack.
+void LuaCall::pushBoolean(void* L, bool value) const
+{
+    if (_pushboolean) _pushboolean(L, value ? 1 : 0);
+}
+
+// Pushes a nil value to the top of the Lua stack.
+void LuaCall::pushNil(void* L) const
+{
+    if (_pushnil) _pushnil(L);
+}
+
+/// Returns the number of elements on the Lua stack.
+int LuaCall::getTop(void* L) const
+{
+    return _gettop ? _gettop(L) : 0;
+}
+
+/// Checks whether the stack value at the given index is a number.
+bool LuaCall::isNumber(void* L, int idx) const
+{
+    return _isnumber ? (_isnumber(L, idx) != 0) : false;
 }
 
 bool LuaCall::hasReturnSupport() const
