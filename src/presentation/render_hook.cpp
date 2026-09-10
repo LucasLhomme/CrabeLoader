@@ -283,7 +283,6 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
 
-    if (self._backendInitialized) {
     if (self._backendInitialized && self._device && self._context) {
         if (!self._renderTargetView) {
             self.createRenderTarget(swapChain);
@@ -326,7 +325,6 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
     self.releaseRenderTarget();
 
     HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);
-    if (SUCCEEDED(hr)) {
     if (SUCCEEDED(hr) && self._backendInitialized && self._device) {
         self.createRenderTarget(swapChain);
     }

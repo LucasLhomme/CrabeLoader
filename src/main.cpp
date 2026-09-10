@@ -11,6 +11,7 @@
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 #include "application/loader.hpp"
+#include "application/multiplayer/MultiplayerManager.hpp"
 
 namespace {
     std::string moduleLogPath(HMODULE hModule) {
@@ -52,6 +53,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         initLogger(hModule);
         SetUnhandledExceptionFilter(crashFilter);
         Logger::getInstance().debug("CrabeLoader DLL loaded.");
+        Multiplayer::Application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
         std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
