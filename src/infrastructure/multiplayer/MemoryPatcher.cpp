@@ -39,6 +39,27 @@ namespace Multiplayer::Infrastructure {
 
         // SteamAPI_RestartAppIfNecessary bypass (allow running multiple instances without restarting)
         constexpr uint8_t kSteamRestartAppNop[6] = { 0x31, 0xC0, 0x90, 0x90, 0x90, 0x90 }; // xor eax, eax; nop...
+
+        // HostingSessionGate (Quazal OpenSession Instant Bypass)
+        // cmp [esi+0Ch], edx ; je +0xEC -> mov [esi+0Ch], edx ; nop ; jmp +0xEC
+        constexpr uintptr_t kHostingSessionGateRva = 0x0074E97A;
+        constexpr const char* kHostingSessionGatePattern = "39 56 0C 0F 84 EC 00 00 00";
+        constexpr uint8_t kHostingSessionGateOriginal[9] = { 0x39, 0x56, 0x0C, 0x0F, 0x84, 0xEC, 0x00, 0x00, 0x00 };
+        constexpr uint8_t kHostingSessionGatePatched[9]  = { 0x89, 0x56, 0x0C, 0x90, 0xE9, 0xEC, 0x00, 0x00, 0x00 };
+
+        // PlayerListAllNegotiated (GameSpy NATNEG Bypass)
+        // mov eax, [0x0225ADF8] ; test eax, eax ; jz +0x13 -> mov al, 1 ; ret ; 6x nop
+        constexpr uintptr_t kPlayerListAllNegotiatedRva = 0x00F29850;
+        constexpr const char* kPlayerListAllNegotiatedPattern = "A1 F8 AD 25 02 85 C0 74 13";
+        constexpr uint8_t kPlayerListAllNegotiatedOriginal[9] = { 0xA1, 0xF8, 0xAD, 0x25, 0x02, 0x85, 0xC0, 0x74, 0x13 };
+        constexpr uint8_t kPlayerListAllNegotiatedPatched[9]  = { 0xB0, 0x01, 0xC3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+
+        // OctaneApp Single-Instance Mutex Bypass (allow multi-instance local loopback on 1 PC)
+        // cmp eax, 0xB7 ; je +0x18 ; call edi ; cmp eax, 5 ; je +0x11 -> NOP out both je jumps
+        constexpr uintptr_t kOctaneAppMutexRva = 0x0003F0DE;
+        constexpr const char* kOctaneAppMutexPattern = "3D B7 00 00 00 74 18 FF D7 83 F8 05 74 11";
+        constexpr uint8_t kOctaneAppMutexOriginal[14] = { 0x3D, 0xB7, 0x00, 0x00, 0x00, 0x74, 0x18, 0xFF, 0xD7, 0x83, 0xF8, 0x05, 0x74, 0x11 };
+        constexpr uint8_t kOctaneAppMutexPatched[14]  = { 0x3D, 0xB7, 0x00, 0x00, 0x00, 0x90, 0x90, 0xFF, 0xD7, 0x83, 0xF8, 0x05, 0x90, 0x90 };
     } // namespace
 
     MemoryPatcher::MemoryPatcher() = default;
@@ -159,6 +180,72 @@ namespace Multiplayer::Infrastructure {
                 rec.address = base + kRestartAppCallRva;
                 rec.patchedBytes.assign(kSteamRestartAppNop, kSteamRestartAppNop + sizeof(kSteamRestartAppNop));
                 rec.name = "SteamAPI_RestartAppIfNecessary (Multi-Instance Bypass)";
+                _records.push_back(std::move(rec));
+            }
+
+            // 7. HostingSessionGate (Quazal OpenSession Instant Bypass)
+            {
+                uintptr_t target = base + kHostingSessionGateRva;
+                const bool atRva = Memory::isReadable(target, sizeof(kHostingSessionGateOriginal)) &&
+                    (std::memcmp(reinterpret_cast<const void*>(target), kHostingSessionGateOriginal, sizeof(kHostingSessionGateOriginal)) == 0 ||
+                     std::memcmp(reinterpret_cast<const void*>(target), kHostingSessionGatePatched, sizeof(kHostingSessionGatePatched)) == 0);
+
+                if (!atRva) {
+                    uintptr_t scanned = Memory::patternScan(kHostingSessionGatePattern);
+                    if (scanned) {
+                        target = scanned;
+                    }
+                }
+
+                PatchRecord rec;
+                rec.address = target;
+                rec.originalBytes.assign(kHostingSessionGateOriginal, kHostingSessionGateOriginal + sizeof(kHostingSessionGateOriginal));
+                rec.patchedBytes.assign(kHostingSessionGatePatched, kHostingSessionGatePatched + sizeof(kHostingSessionGatePatched));
+                rec.name = "HostingSessionGate (Quazal OpenSession Instant Bypass)";
+                _records.push_back(std::move(rec));
+            }
+
+            // 8. PlayerListAllNegotiated (GameSpy NATNEG Bypass)
+            {
+                uintptr_t target = base + kPlayerListAllNegotiatedRva;
+                const bool atRva = Memory::isReadable(target, sizeof(kPlayerListAllNegotiatedOriginal)) &&
+                    (std::memcmp(reinterpret_cast<const void*>(target), kPlayerListAllNegotiatedOriginal, sizeof(kPlayerListAllNegotiatedOriginal)) == 0 ||
+                     std::memcmp(reinterpret_cast<const void*>(target), kPlayerListAllNegotiatedPatched, sizeof(kPlayerListAllNegotiatedPatched)) == 0);
+
+                if (!atRva) {
+                    uintptr_t scanned = Memory::patternScan(kPlayerListAllNegotiatedPattern);
+                    if (scanned) {
+                        target = scanned;
+                    }
+                }
+
+                PatchRecord rec;
+                rec.address = target;
+                rec.originalBytes.assign(kPlayerListAllNegotiatedOriginal, kPlayerListAllNegotiatedOriginal + sizeof(kPlayerListAllNegotiatedOriginal));
+                rec.patchedBytes.assign(kPlayerListAllNegotiatedPatched, kPlayerListAllNegotiatedPatched + sizeof(kPlayerListAllNegotiatedPatched));
+                rec.name = "PlayerListAllNegotiated (GameSpy NATNEG Bypass)";
+                _records.push_back(std::move(rec));
+            }
+
+            // 9. OctaneApp (Multi-Instance Mutex Bypass)
+            {
+                uintptr_t target = base + kOctaneAppMutexRva;
+                const bool atRva = Memory::isReadable(target, sizeof(kOctaneAppMutexOriginal)) &&
+                    (std::memcmp(reinterpret_cast<const void*>(target), kOctaneAppMutexOriginal, sizeof(kOctaneAppMutexOriginal)) == 0 ||
+                     std::memcmp(reinterpret_cast<const void*>(target), kOctaneAppMutexPatched, sizeof(kOctaneAppMutexPatched)) == 0);
+
+                if (!atRva) {
+                    uintptr_t scanned = Memory::patternScan(kOctaneAppMutexPattern);
+                    if (scanned) {
+                        target = scanned;
+                    }
+                }
+
+                PatchRecord rec;
+                rec.address = target;
+                rec.originalBytes.assign(kOctaneAppMutexOriginal, kOctaneAppMutexOriginal + sizeof(kOctaneAppMutexOriginal));
+                rec.patchedBytes.assign(kOctaneAppMutexPatched, kOctaneAppMutexPatched + sizeof(kOctaneAppMutexPatched));
+                rec.name = "OctaneApp (Multi-Instance Mutex Bypass)";
                 _records.push_back(std::move(rec));
             }
         }

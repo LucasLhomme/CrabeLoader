@@ -58,6 +58,16 @@ namespace Crabe::Multiplayer {
         _status.protocol = std::string(protocol);
         _status.localIp = getLocalIpAddress();
 
+        struct ComApartmentGuard {
+            HRESULT hr;
+            ComApartmentGuard() : hr(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) {}
+            ~ComApartmentGuard() {
+                if (SUCCEEDED(hr)) {
+                    CoUninitialize();
+                }
+            }
+        } comGuard;
+
         IUPnPNATPtr nat = nullptr;
         HRESULT hr = CoCreateInstance(
             CLSID_UPnPNAT,
@@ -145,6 +155,16 @@ namespace Crabe::Multiplayer {
     {
         std::lock_guard<std::mutex> lock(_mutex);
         Logger& logger = Logger::getInstance();
+
+        struct ComApartmentGuard {
+            HRESULT hr;
+            ComApartmentGuard() : hr(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) {}
+            ~ComApartmentGuard() {
+                if (SUCCEEDED(hr)) {
+                    CoUninitialize();
+                }
+            }
+        } comGuard;
 
         IUPnPNATPtr nat = nullptr;
         HRESULT hr = CoCreateInstance(

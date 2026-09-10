@@ -49,6 +49,8 @@ namespace Multiplayer::Application {
         }
 
         // 2. Start background worker for memory patches (retrying until unpacked)
+        // 2. Immediately apply memory patches synchronously, then keep worker for retries if needed
+        applyMemoryPatchesNow();
         _workerStop = false;
         _workerThread = std::thread(&MultiplayerManager::patchWorkerThread, this);
 
@@ -98,6 +100,17 @@ namespace Multiplayer::Application {
 
         _initialized = false;
         Logger::getInstance().info("MultiplayerManager: uninitialized.");
+    }
+
+    void MultiplayerManager::applyMemoryPatchesNow() {
+        if (_patcher) {
+            auto res = _patcher->applyPatches();
+            if (res) {
+                Logger::getInstance().info("MultiplayerManager: synchronously applied memory patches.");
+            } else {
+                Logger::getInstance().warning("MultiplayerManager: early memory patch attempt: {}", res.error());
+            }
+        }
     }
 
     void MultiplayerManager::patchWorkerThread() {

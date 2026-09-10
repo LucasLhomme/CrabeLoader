@@ -26,6 +26,7 @@ namespace Multiplayer::Application {
 
         bool initialize();
         void uninitialize();
+        void applyMemoryPatchesNow();
 
         void setTargetServer(std::wstring_view host, uint16_t port);
         [[nodiscard]] std::wstring getTargetHost() const;
