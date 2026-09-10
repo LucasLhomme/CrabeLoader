@@ -65,6 +65,7 @@ class LuaCall {
         // the real lua_pcall, in the given state. This is how mod scripts get
         // executed outside of the game's own loading path.
         bool runFile(void* L, const char* path) const;
+        bool runBuffer(void* L, const char* buff, size_t size, const char* name = nullptr) const;
 
         bool runGlobalIfExists(void* L, const std::string& functionName) const;
 
@@ -105,6 +106,10 @@ class LuaCall {
         // count. Check hasReturnSupport() first or the count goes wrong.
         void pushString(void* L, const std::string& value) const;
         void pushNumber(void* L, double value) const;
+        void pushBoolean(void* L, bool value) const;
+        void pushNil(void* L) const;
+        int getTop(void* L) const;
+        bool isNumber(void* L, int idx) const;
         bool hasReturnSupport() const;
 
     protected:
@@ -125,6 +130,9 @@ class LuaCall {
         typedef double(__cdecl* t_lua_tonumber)(void* L, int idx);
         typedef int(__cdecl* t_lua_toboolean)(void* L, int idx);
         typedef void(__cdecl* t_lua_pushlstring)(void* L, const char* s, size_t len);
+        typedef void(__cdecl* t_lua_pushboolean)(void* L, int b);
+        typedef void(__cdecl* t_lua_pushnil)(void* L);
+        typedef int(__cdecl* t_lua_isnumber)(void* L, int idx);
         typedef void(__cdecl* t_lua_pushcclosure)(void* L, t_lua_cfunction fn, int n);
         typedef void(__cdecl* t_lua_rawset)(void* L, int idx);
 
@@ -169,6 +177,9 @@ class LuaCall {
         t_lua_tonumber _tonumber = nullptr;
         t_lua_toboolean _toboolean = nullptr;
         t_lua_pushlstring _pushlstring = nullptr;
+        t_lua_pushboolean _pushboolean = nullptr;
+        t_lua_pushnil _pushnil = nullptr;
+        t_lua_isnumber _isnumber = nullptr;
         t_lua_pushcclosure _pushcclosure = nullptr;
         t_lua_rawset _rawset = nullptr;
 
