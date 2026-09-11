@@ -69,6 +69,8 @@ public:
         log(LogLevel::ERR, fmt, std::forward<Args>(args)...);
     }
 
+    [[nodiscard]] std::string getCurrentTime() const;
+
 private:
     Logger();
     ~Logger();
@@ -79,7 +81,6 @@ private:
     void writeLog(LogLevel level, std::string_view message);
 
     std::string levelToString(LogLevel level) const;
-    std::string getCurrentTime() const;
     static constexpr size_t kMaxHistoryLines = 1000;
 
     std::ofstream m_fileStream;
