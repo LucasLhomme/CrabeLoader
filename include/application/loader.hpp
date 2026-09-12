@@ -27,6 +27,8 @@ class Loader {
         void onLuaState(void *L);
         void onLoadmods();
         void registerKeybind(int virtualKey, std::function<void()> onPress);
+        void onKeyEvent(int virtualKey, bool isDown);
+        [[nodiscard]] void* getLuaState() const noexcept { return _luaState; }
         void queueLuaCall(const std::string& luaFunctionName);
         void drainPendingKeybindCalls(void* L);
         void queueConsoleSnippet(const std::string& code);
@@ -80,8 +82,6 @@ class Loader {
         bool isInjected();
         void registerDefaultKeybinds();
         void registerLuaKeybind(int virtualKey, const std::string& luaFunctionName);
-        void handleKeybind();
-        void inputLoop();
 
         // Reads <gameDir>/skilltrees/*.{lua,patch} into overrides/patches,
         // before LuaCall installs the loadbuffer hook. See skilltrees/README.md.

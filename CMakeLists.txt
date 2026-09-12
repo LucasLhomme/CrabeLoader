@@ -42,6 +42,7 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/menu.cpp
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
+    src/presentation/imgui_bindings.cpp
 
     # Application Layer
     src/application/Loader.cpp
@@ -57,6 +58,7 @@ set(CRABELOADER_CORE_SOURCES
 
     # Domain Layer
     src/domain/ModManifest.cpp
+    src/domain/ModManager.cpp
     src/domain/cheats.cpp
     src/domain/freecam.cpp
     src/domain/speedhack.cpp
@@ -65,6 +67,7 @@ set(CRABELOADER_CORE_SOURCES
     src/domain/entity_registry.cpp
 
     # Infrastructure Layer
+    src/infrastructure/crash_handler.cpp
     src/infrastructure/memory.cpp
     src/infrastructure/hook.cpp
     src/infrastructure/codecave.cpp
@@ -139,8 +142,29 @@ target_compile_definitions(${PROJECT_NAME}
         _CRT_SECURE_NO_WARNINGS
 )
 
+# Embedded Lua API generation
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+file(GLOB CRABELOADER_API_LUA_FILES
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/api/*.lua"
+)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_api.py"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/include/application/embedded_api.hpp"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_api.py"
+    DEPENDS ${CRABELOADER_API_LUA_FILES} "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_api.py"
+    COMMENT "Embedding Lua API modules into embedded_api.hpp..."
+)
+add_custom_target(generate_embedded_api
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/application/embedded_api.hpp"
+)
+add_dependencies(${PROJECT_NAME} generate_embedded_api)
+
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4 /utf-8)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
 endif()

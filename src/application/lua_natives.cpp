@@ -5,7 +5,9 @@
 */
 
 #include <cstring>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <string>
 #include <windows.h>
 
@@ -16,6 +18,7 @@
 #include "domain/debug_watch.hpp"
 #include "domain/freecam.hpp"
 #include "domain/speedhack.hpp"
+#include "presentation/imgui_bindings.hpp"
 #include "presentation/input_hook.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
@@ -163,6 +166,86 @@ namespace {
         return 0;
     }
 
+    // Saves string content to <GameRoot>/storage/<relPath>.
+    int __cdecl nativeStorageSave(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        const char* relPath = lua.argToString(L, 1);
+        const char* content = lua.argToString(L, 2);
+        if (!relPath) {
+            lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        std::filesystem::path storageDir = std::filesystem::current_path() / "storage";
+        std::filesystem::path fullPath = storageDir / relPath;
+        std::error_code ec;
+        std::filesystem::create_directories(fullPath.parent_path(), ec);
+
+        std::ofstream stream(fullPath, std::ios::out | std::ios::trunc | std::ios::binary);
+        if (!stream.is_open()) {
+            lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        if (content) stream << content;
+        stream.close();
+        lua.pushBoolean(L, true);
+        return 1;
+    }
+
+    // Reads string content from <GameRoot>/storage/<relPath>.
+    int __cdecl nativeStorageLoad(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        const char* relPath = lua.argToString(L, 1);
+        if (!relPath) {
+            lua.pushNil(L);
+            return 1;
+        }
+
+        std::filesystem::path storageDir = std::filesystem::current_path() / "storage";
+        std::filesystem::path fullPath = storageDir / relPath;
+        if (!std::filesystem::exists(fullPath)) {
+            lua.pushNil(L);
+            return 1;
+        }
+
+        std::ifstream stream(fullPath, std::ios::in | std::ios::binary);
+        if (!stream.is_open()) {
+            lua.pushNil(L);
+            return 1;
+        }
+
+        std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        lua.pushString(L, content);
+        return 1;
+    }
+
+    // Appends a log entry to <GameRoot>/logs/mods/<modName>.log.
+    int __cdecl nativeFileLog(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        const char* modName = lua.argToString(L, 1);
+        const char* level = lua.argToString(L, 2);
+        const char* message = lua.argToString(L, 3);
+        if (!modName || !message) return 0;
+
+        std::filesystem::path logDir = std::filesystem::current_path() / "logs" / "mods";
+        std::error_code ec;
+        std::filesystem::create_directories(logDir, ec);
+
+        std::filesystem::path logFile = logDir / (std::string(modName) + ".log");
+        std::ofstream stream(logFile, std::ios::app);
+        if (stream.is_open()) {
+            stream << std::format("[{}] [{}] {}\n",
+                                  Logger::getInstance().getCurrentTime(),
+                                  level ? level : "INFO",
+                                  message);
+        }
+        return 0;
+    }
+
 } // namespace
 
 // All registered under underscore-prefixed names: these are the raw natives,
@@ -189,6 +272,9 @@ bool LuaRuntime::registerNatives(void* L)
         { "_avatarRelayStatus",   &nativeAvatarRelayStatus },
         { "_registerLoadOverride", &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",   &nativeClearLoadOverrides },
+        { "_storageSave",          &nativeStorageSave },
+        { "_storageLoad",          &nativeStorageLoad },
+        { "_fileLog",              &nativeFileLog },
     };
 
     bool allOk = DebugWatchNatives::registerAll(L);
@@ -196,6 +282,7 @@ bool LuaRuntime::registerNatives(void* L)
     allOk = CheatNatives::registerAll(L) && allOk;
     allOk = FreecamNatives::registerAll(L) && allOk;
     allOk = Multiplayer::Natives::registerAll(L) && allOk;
+    ImGuiBindings::registerBindings(L);
 
     LuaCall::get().runSnippet(L, std::format(
         "Crabe = Crabe or {{}}; Crabe.version = '{}'; Crabe.versionMajor = {}; "

@@ -7,6 +7,8 @@
 #include <dxgi.h>
 
 #include "presentation/render_hook.hpp"
+#include "application/loader.hpp"
+#include "domain/ModManager.hpp"
 #include "shared/logger.hpp"
 
 // imgui_impl_win32.h deliberately hides this declaration behind '#if 0' to
@@ -293,14 +295,17 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
 
+            void* L = Loader::get().getLuaState();
+            if (L && Loader::get().isGameState(L)) {
+                Crabe::Domain::ModManager::get().dispatchDraw(L);
+            }
+
             if (self._menuOpen)
                 self._overlay.renderOverlay();
 
             if (self._modMenuOpen) {
                 bool stayOpen = true;
                 self._overlay.renderModMenu(&stayOpen);
-
-                // The window's own close button has to agree with the F5 toggle.
                 if (!stayOpen)
                     self.toggleModMenu();
             }
@@ -314,8 +319,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     return self.originalPresent()(swapChain, syncInterval, flags);
 }
 
-// All views onto the back buffer (our RTV) must be released before the real
-// ResizeBuffers runs, or it fails; recreate immediately after successful resize.
+// Releases and recreates render target view during swapchain resizing.
 HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
                                             UINT width, UINT height, DXGI_FORMAT newFormat,
                                             UINT swapChainFlags)
@@ -331,11 +335,16 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
     return hr;
 }
 
+// Dispatches window input to ImGui and forwards key transitions to Loader.
 LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     RenderHook& self = RenderHook::get();
 
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
+
+    if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
+        Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+    }
 
     if (msg == WM_ACTIVATE) {
         if (LOWORD(wParam) == WA_INACTIVE) {
@@ -349,12 +358,7 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         self.updateCursorVisibility();
     }
 
-    // Both windows have to swallow input, not just the debug overlay. While
-    // the game keeps receiving mouse messages it also keeps re-centring the
-    // cursor every frame, which pins ImGui's pointer to the middle of the
-    // screen and makes clicks land nowhere near what was under the cursor.
     if (self._menuOpen || self._modMenuOpen) {
-        // Never swallow Alt+Tab, Alt+F4, space or menu keys so Windows can switch tasks smoothly
         if (msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
             if (wParam == VK_TAB || wParam == VK_F4 || wParam == VK_SPACE || wParam == VK_MENU)
                 return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);
