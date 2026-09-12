@@ -28,6 +28,7 @@
 #include "application/multiplayer/MultiplayerManager.hpp"
 #include "presentation/render_hook.hpp"
 #include "domain/ModManifest.hpp"
+#include "domain/ModManager.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 
@@ -155,27 +156,7 @@ void Loader::onLoadmods()
         return;
     }
 
-    logger.debug("Loader: Reading mods folder...");
-    if (!std::filesystem::exists(modsFolder)) {
-        logger.info("Loader: Mods folder does not exist, creating...");
-        std::filesystem::create_directory(modsFolder);
-        return;
-    }
-
-    for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
-        if (entry.is_directory()) {
-            loadModDirectory(entry.path());
-        } else if (entry.is_regular_file() && entry.path().extension() == ".lua") {
-            std::string filename = entry.path().filename().string();
-            if (LuaCall::get().runFile(_luaState, entry.path().string().c_str()))
-                logger.info("Loader: standalone mod '{}' executed.", filename);
-            else
-                logger.warning("Loader: standalone mod '{}' failed to execute.", filename);
-        }
-    }
-
-    LuaCall::get().runSnippet(_luaState,
-        "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('init') end");
+    Crabe::Domain::ModManager::get().discoverAndLoadMods(_luaState, modsFolder);
 }
 
 void Loader::registerKeybind(int virtualKey, std::function<void()> onPress)
@@ -272,15 +253,16 @@ void Loader::drainRemoteCommandFile(void* L)
     queueConsoleSnippet(content);
 }
 
+// Drives periodic game ticks, executes pending menus, and handles mod reload.
 void Loader::runTicks(void* L)
 {
     if (!_runtimeReady)
         return;
 
-    // The game exposes no global Update to wrap, so the per-frame callbacks are
-    // driven from here instead. The hooked pcall fires far more often than a
-    // frame, hence the interval.
-    constexpr auto kInterval = std::chrono::milliseconds(16); // ~60 Hz
+    if (Crabe::Domain::ModManager::get().isHotReloadRequested())
+        Crabe::Domain::ModManager::get().reloadAllMods(L);
+
+    constexpr auto kInterval = std::chrono::milliseconds(16);
 
     auto now = std::chrono::steady_clock::now();
     auto elapsed = now - _lastTick;
@@ -291,8 +273,6 @@ void Loader::runTicks(void* L)
     double dt = std::chrono::duration<double>(elapsed).count();
     LuaCall::get().callTick(L, dt);
 
-    // Whatever the player clicked in the overlay runs here, on the Lua thread.
-    // Returns immediately when nothing was queued.
     Menu::get().drain(L);
 }
 
@@ -387,14 +367,17 @@ void Loader::drainLuaOutput(void* L)
 void Loader::registerDefaultKeybinds()
 {
     static constexpr std::pair<int, const char*> kLuaKeybinds[] = {
-        // F5 is absent on purpose: it opens the mod menu, registered below.
-        { VK_F1, "OnKeyF1" }, { VK_F2, "OnKeyF2" }, { VK_F3, "OnKeyF3" }, { VK_F4, "OnKeyF4" },
+        { VK_F1, "OnKeyF1" }, { VK_F2, "OnKeyF2" }, { VK_F3, "OnKeyF3" },
         { VK_F6, "OnKeyF6" }, { VK_F7, "OnKeyF7" }, { VK_F8, "OnKeyF8" }, { VK_F9, "OnKeyF9" },
         { VK_F10, "OnKeyF10" }, { VK_F11, "OnKeyF11" }, { VK_F12, "OnKeyF12" },
     };
     for (const auto& [virtualKey, luaFunctionName] : kLuaKeybinds) {
         registerLuaKeybind(virtualKey, luaFunctionName);
     }
+
+    registerKeybind(VK_F4, []() {
+        Crabe::Domain::ModManager::get().requestHotReload();
+    });
 
     registerKeybind(VK_INSERT, []() {
         RenderHook::get().toggleMenu();
@@ -405,37 +388,25 @@ void Loader::registerDefaultKeybinds()
     });
 }
 
-void Loader::handleKeybind()
+// Updates keybind states and executes callbacks on key-down transitions.
+void Loader::onKeyEvent(int virtualKey, bool isDown)
 {
-    std::lock_guard<std::mutex> lock(_keybindsMutex);
-
-    HWND gameHwnd = RenderHook::get().getHwnd();
-    if (gameHwnd) {
-        HWND foreground = GetForegroundWindow();
-        if (foreground != gameHwnd) {
-            for (auto& [virtualKey, bind] : _keybinds) {
-                bind.wasDown = false;
-            }
+    std::function<void()> callback;
+    {
+        std::lock_guard<std::mutex> lock(_keybindsMutex);
+        auto it = _keybinds.find(virtualKey);
+        if (it == _keybinds.end())
             return;
-        }
+
+        if (isDown && !it->second.wasDown)
+            callback = it->second.onPress;
+        it->second.wasDown = isDown;
     }
 
-    for (auto& [virtualKey, bind] : _keybinds) {
-        bool isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
-        if (isDown && !bind.wasDown) {
-            Logger::getInstance().debug("Loader: keybind pressed: {} (virtual key 0x{:X}).",
-                                        virtualKeyName(virtualKey), virtualKey);
-            bind.onPress();
-        }
-        bind.wasDown = isDown;
-    }
-}
-
-void Loader::inputLoop()
-{
-    while (true) {
-        handleKeybind();
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    if (callback) {
+        Logger::getInstance().debug("Loader: keybind pressed: {} (virtual key 0x{:X}).",
+                                    virtualKeyName(virtualKey), virtualKey);
+        callback();
     }
 }
 
@@ -465,7 +436,6 @@ bool Loader::initialize()
     AvatarRelayHook::get().initialize();
     Multiplayer::Application::MultiplayerManager::getInstance().initialize();
 
-    std::thread(&Loader::inputLoop, this).detach();
     return true;
 }
 
