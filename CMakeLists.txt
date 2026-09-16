@@ -161,7 +161,6 @@ add_custom_target(generate_embedded_api
 add_dependencies(${PROJECT_NAME} generate_embedded_api)
 
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /utf-8)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
