@@ -21,6 +21,7 @@
 #include "infrastructure/memory.hpp"
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
+#include "application/embedded_api.hpp"
 
 namespace {
 
@@ -63,28 +64,63 @@ bool LuaRuntime::injectAll(void* L)
                     folder.string());
         return false;
     }
+    // 1. Developer override: If an 'api/' directory exists on disk and contains .lua files,
+    // load from disk so developers can test modifications without recompiling the DLL.
+    if (std::filesystem::exists(folder)) {
+        std::vector<std::filesystem::path> diskModules;
+        for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".lua")
+                diskModules.push_back(entry.path());
+        }
 
     std::vector<std::filesystem::path> modules;
     for (const auto& entry : std::filesystem::directory_iterator(folder)) {
         if (entry.is_regular_file() && entry.path().extension() == ".lua")
             modules.push_back(entry.path());
     }
+        if (!diskModules.empty()) {
+            std::sort(diskModules.begin(), diskModules.end());
+            logger.info("LuaRuntime: Dev override active -- loading {} module(s) from '{}'.",
+                        diskModules.size(), folder.string());
 
     std::sort(modules.begin(), modules.end());
+            bool allOk = true;
+            for (const auto& path : diskModules) {
+                if (LuaCall::get().runFile(L, path.string().c_str()))
+                    continue;
 
     if (modules.empty()) {
         logger.error("LuaRuntime: no .lua module in '{}'; the API is unavailable.", folder.string());
         return false;
+                logger.error("LuaRuntime: API module '{}' failed to load from disk.", path.filename().string());
+                allOk = false;
+            }
+
+            if (allOk)
+                logger.info("LuaRuntime: Disk API override loaded successfully.");
+            return allOk;
+        }
     }
+
+    // 2. Standard release: Load all embedded API modules directly from DLL memory.
+    logger.info("LuaRuntime: Loading embedded API ({} modules)...", Crabe::EmbeddedApi::kModuleCount);
 
     bool allOk = true;
     for (const auto& path : modules) {
         if (LuaCall::get().runFile(L, path.string().c_str())) continue;
+    for (const auto& mod : Crabe::EmbeddedApi::kModules) {
+        if (LuaCall::get().runBuffer(L, reinterpret_cast<const char*>(mod.data), mod.size, mod.name.data()))
+            continue;
 
         logger.error("LuaRuntime: API module '{}' failed to load.", path.filename().string());
+        logger.error("LuaRuntime: Embedded API module '{}' failed to load.", mod.name);
         allOk = false;
     }
 
     if (allOk) logger.info("LuaRuntime: API loaded ({} modules from {}/).", modules.size(), kApiFolderName);
+    if (allOk) {
+        logger.info("LuaRuntime: Embedded API loaded successfully ({} modules).",
+                    Crabe::EmbeddedApi::kModuleCount);
+    }
     return allOk;
 }

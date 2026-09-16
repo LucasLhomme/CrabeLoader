@@ -166,6 +166,32 @@ bool LuaCall::runFile(void* L, const char* path) const
     return static_cast<bool>(result);
 }
 
+bool LuaCall::runBuffer(void* L, const char* buff, size_t size, const char* name) const
+{
+    t_luaL_loadbuffer loadbuffer = originalLoadbuffer();
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !loadbuffer || !pcall) {
+        Logger::getInstance().error("LuaCall: cannot run buffer '{}': Lua state or hooks unavailable.",
+                                    name ? name : "unnamed");
+        return false;
+    }
+
+    std::string chunkName = name ? (std::string("@") + name) : "@embedded";
+    ChunkResult result = runChunk(L, kLuaMultret, [&]() {
+        return loadbuffer(L, buff, size, chunkName.c_str());
+    });
+
+    if (result.stage == ChunkResult::Stage::LoadFailed) {
+        Logger::getInstance().error("LuaCall: luaL_loadbuffer('{}') failed (status {}): {}",
+                                    name ? name : "unnamed", result.status, result.text);
+    } else if (result.stage == ChunkResult::Stage::CallFailed) {
+        Logger::getInstance().error("LuaCall: lua_pcall('{}') failed (status {}): {}",
+                                    name ? name : "unnamed", result.status, result.text);
+    }
+    return static_cast<bool>(result);
+}
+
 bool LuaCall::runGlobalIfExists(void* L, const std::string& functionName) const
 {
     t_luaL_loadbuffer loadbuffer = originalLoadbuffer();

@@ -65,6 +65,7 @@ class LuaCall {
         // the real lua_pcall, in the given state. This is how mod scripts get
         // executed outside of the game's own loading path.
         bool runFile(void* L, const char* path) const;
+        bool runBuffer(void* L, const char* buff, size_t size, const char* name = nullptr) const;
 
         bool runGlobalIfExists(void* L, const std::string& functionName) const;
 
