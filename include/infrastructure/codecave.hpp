@@ -32,14 +32,14 @@ class CodeCave {
         // Steals `stolenLength` bytes at `site` (>= 5, and a whole number of
         // instructions -- a partial one leaves garbage in the cave), allocates
         // body + stolen + jmp-back, and patches the site with a jmp to it,
-        // NOP-padded. `site` must be the exact start of an instruction.
-        bool install(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength);
+        // NOP-padded. If stolenLength == 0, length is computed dynamically via HDE32.
+        bool install(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength = 0);
 
         // install() with the outcome logged as "<owner>: <name> ...". A site
         // of 0 means "not found" and is skipped rather than patched: a wrong
         // address overwrites live code and crashes the host process.
-        bool installLogged(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength,
-                           const char* owner, const char* name);
+        bool installLogged(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength = 0,
+                           const char* owner = nullptr, const char* name = nullptr);
 
         // Restores the stolen bytes. The cave page itself is intentionally
         // leaked: another thread may be executing inside it right now, and

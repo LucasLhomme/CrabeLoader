@@ -28,8 +28,15 @@ local function saveMode(mode)
     file:close()
 end
 
+local installed = false
+
 -- Injects borderless window toggle into video settings menu list.
 local function installOption(cls)
+    if installed or not cls or not cls.BuildList then
+        return
+    end
+    installed = true
+
     local originalBuildList = cls.BuildList
 
     function cls:BuildList(...)
@@ -76,15 +83,10 @@ end
 
 if SettingsVideo then
     installOption(SettingsVideo)
-else
-    local rootMt = getmetatable(_G) or {}
-    rootMt.__newindex = function(t, k, v)
-        rawset(t, k, v)
-        if k ~= "SettingsVideo" then
-            return
+elseif Game and Game.onTick then
+    Game.onTick(function()
+        if not installed and SettingsVideo then
+            installOption(SettingsVideo)
         end
-        rootMt.__newindex = nil
-        watchForBuildList(v)
-    end
-    setmetatable(_G, rootMt)
+    end)
 end

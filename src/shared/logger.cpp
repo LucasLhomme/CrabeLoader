@@ -53,13 +53,7 @@ void Logger::writeLog(LogLevel level, std::string_view message) {
 
     if (m_fileStream.is_open()) {
         m_fileStream << formattedMessage;
-        // A flush is a write syscall, and DEBUG alone emits ~1500 lines per
-        // boot tracing loadbuffer chunks -- that traffic is what the stream's
-        // buffer is for. Everything above DEBUG is rare and is what a crash
-        // report is read for, so it still goes out immediately; the flush
-        // carries any buffered DEBUG lines with it.
-        if (level != LogLevel::DEBUG)
-            m_fileStream.flush();
+        m_fileStream.flush();
     }
 
     m_history.push_back(LogEntry{ level, std::move(formattedMessage) });

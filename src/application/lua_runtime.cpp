@@ -12,7 +12,6 @@
 #include <vector>
 #include <windows.h>
 
-#include "infrastructure/avatar_relay_hook.hpp"
 #include "presentation/input_hook.hpp"
 #include "application/loader.hpp"
 #include "infrastructure/message_hook.hpp"

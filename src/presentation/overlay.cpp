@@ -10,7 +10,6 @@
 
 #include "presentation/overlay.hpp"
 #include "application/loader.hpp"
-#include "presentation/menu.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 
@@ -45,113 +44,6 @@ bool Overlay::isLevelVisible(LogLevel level) const
         case LogLevel::ERR:     return _showError;
         default:                return true;
     }
-}
-
-// Draws the view the game thread last reported, and turns clicks into queued
-// requests. Nothing here touches Lua: the render thread must not.
-void Overlay::renderModMenu(bool* open)
-{
-    if (_focusNext) {
-        ImGui::SetNextWindowFocus();
-        _focusNext = false;
-    }
-
-    ImGui::SetNextWindowSize(ImVec2(360.0f, 420.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Crabe Menu", open)) {
-        ImGui::End();
-        return;
-    }
-
-    if (!_menuRequested) {
-        _menuRequested = true;
-        Menu::get().requestRefresh();
-    }
-
-    Menu::View view = Menu::get().view();
-
-    if (view.items.empty()) {
-        ImGui::TextDisabled("No mod has registered a menu entry.");
-        ImGui::TextDisabled("Mods declare them with Crabe.Menu.register{...}.");
-        ImGui::End();
-        return;
-    }
-
-    ImGui::TextUnformatted(view.title.c_str());
-    ImGui::Separator();
-
-    const int count = static_cast<int>(view.items.size());
-
-    // A different view is a different list, so start at the top rather than
-    // leaving the selection on a row index that now means something else.
-    if (view.title != _menuTitle) {
-        _menuTitle = view.title;
-        _menuCursor = 0;
-        _menuScrollTo = true;
-    }
-    if (_menuCursor >= count) _menuCursor = count - 1;
-    if (_menuCursor < 0) _menuCursor = 0;
-
-    // Arrows and Enter are the reliable way in: the game re-centres the mouse
-    // every frame, so the pointer cannot be trusted to sit on a row.
-    auto moveCursor = [&](int delta) {
-        _menuCursor = (_menuCursor + delta % count + count) % count;
-        _menuScrollTo = true;
-    };
-
-    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true) ||
-        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) moveCursor(1);
-    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true) ||
-        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true)) moveCursor(-1);
-    if (ImGui::IsKeyPressed(ImGuiKey_PageDown, true)) moveCursor(5);
-    if (ImGui::IsKeyPressed(ImGuiKey_PageUp, true)) moveCursor(-5);
-    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) { _menuCursor = 0; _menuScrollTo = true; }
-    if (ImGui::IsKeyPressed(ImGuiKey_End, false)) { _menuCursor = count - 1; _menuScrollTo = true; }
-
-    // Lua indexes from 1 throughout.
-    if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_RightArrow, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false))
-        Menu::get().requestActivate(_menuCursor + 1);
-
-    if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, false))
-        Menu::get().requestBack();
-
-    const float footerHeight = ImGui::GetStyle().ItemSpacing.y * 2.0f
-                             + ImGui::GetTextLineHeightWithSpacing() * 2.5f;
-    ImGui::BeginChild("MenuScroll", ImVec2(0.0f, -footerHeight), false);
-
-    for (int i = 0; i < count; ++i) {
-        ImGui::PushID(i);
-
-        const bool selected = (i == _menuCursor);
-        ImGui::Selectable(view.items[i].c_str(), selected);
-        if (selected && _menuScrollTo)
-            ImGui::SetScrollHereY(0.5f);
-
-        ImGui::PopID();
-    }
-    _menuScrollTo = false;
-
-    ImGui::EndChild();
-    ImGui::Separator();
-
-    // The status line carries the error text when a handler raises, so it gets
-    // its own wrapped block. Putting it after the buttons on one line pushed
-    // anything long straight off the right edge of the window.
-    if (!view.status.empty()) {
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted(view.status.c_str());
-        ImGui::PopTextWrapPos();
-    } else {
-        ImGui::TextDisabled("Arrows move  -  Enter selects  -  Backspace goes back");
-    }
-
-    ImGui::End();
 }
 
 void Overlay::drawConsoleTab()

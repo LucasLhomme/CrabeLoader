@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "application/loader.hpp"
-#include "application/gateway.hpp"
 #include "shared/logger.hpp"
 
 // Two ways to change a chunk the game is about to compile, both keyed on
@@ -181,26 +180,6 @@ void Loader::armPatchIfNameMatched(const char* name)
         }
     }
 
-    void loadCharactersFromDirectory(const std::filesystem::path& folder,
-                                     const std::string& labelPrefix,
-                                     std::vector<Gateway::Entry>& exposed,
-                                     std::string& combined)
-    {
-        for (const auto& entry : std::filesystem::directory_iterator(folder)) {
-            if (!entry.is_regular_file() || entry.path().extension() != ".lua")
-                continue;
-
-            std::string content;
-            if (!readTextFile(entry.path(), labelPrefix.c_str(), content))
-                continue;
-
-            for (auto& exposedEntry : Gateway::parseExposedCharacters(content))
-                exposed.push_back(std::move(exposedEntry));
-
-            combined += "do\n" + content + "\nend\n";
-        }
-    }
-
 void Loader::loadOverridesFromDisk()
 {
     std::filesystem::path rootFolder = std::filesystem::current_path() / "skilltrees";
@@ -226,43 +205,5 @@ void Loader::loadOverridesFromDisk()
                 break;
             }
         }
-    }
-}
-
-void Loader::loadCharactersFromDisk()
-{
-    constexpr const char* kTargetName = "Presentation/VirtualReaderPC_Data.lua";
-    Logger& logger = Logger::getInstance();
-    std::vector<Gateway::Entry> exposed;
-    std::string combined;
-
-    std::filesystem::path rootFolder = std::filesystem::current_path() / "characters";
-    if (std::filesystem::exists(rootFolder)) {
-        loadCharactersFromDirectory(rootFolder, "characters", exposed, combined);
-    }
-
-    std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
-    if (std::filesystem::exists(modsFolder)) {
-        for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
-            if (!entry.is_directory())
-                continue;
-            std::string modName = entry.path().filename().string();
-            if (modName.empty() || modName[0] == '.' || modName[0] == '_')
-                continue;
-
-            for (const char* sub : { "characters", "Character", "character" }) {
-                auto subPath = entry.path() / sub;
-                if (std::filesystem::exists(subPath)) {
-                    loadCharactersFromDirectory(subPath, modName + "/" + sub, exposed, combined);
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!exposed.empty()) {
-        registerNamedPatch(kTargetName, Gateway::buildSkuTableLua(exposed) + combined, "characters/");
-        registerChunkPatch(Gateway::containerKey(), Gateway::buildInjectionLua(exposed), "figure registry");
-        logger.info("Loader: {} total character definition(s) registered.", exposed.size());
     }
 }

@@ -5,6 +5,7 @@
 #include "presentation/render_hook.hpp"
 #include "application/loader.hpp"
 #include "domain/ModManager.hpp"
+#include "infrastructure/crash_handler.hpp"
 #include "shared/logger.hpp"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -191,23 +192,6 @@ void RenderHook::toggleMenu()
     _menuOpen = !_menuOpen;
     updateCursorVisibility();
     Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
-}
-
-// Toggles visibility of the mod menu and updates mouse cursor.
-void RenderHook::toggleModMenu()
-{
-    _modMenuOpen = !_modMenuOpen;
-    if (_modMenuOpen) {
-        _overlay.onModMenuOpened();
-    }
-    updateCursorVisibility();
-    Logger::getInstance().debug("RenderHook: mod menu {}.", _modMenuOpen ? "opened" : "closed");
-}
-
-// Returns whether the mod menu is currently visible.
-bool RenderHook::isModMenuOpen() const
-{
-    return _modMenuOpen;
 }
 
 // Returns whether the debug console overlay is currently visible.
@@ -402,13 +386,6 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             if (self._menuOpen)
                 self._overlay.renderOverlay();
 
-            if (self._modMenuOpen) {
-                bool stayOpen = true;
-                self._overlay.renderModMenu(&stayOpen);
-                if (!stayOpen)
-                    self.toggleModMenu();
-            }
-
             ImGui::Render();
             self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -506,27 +483,6 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
             if (wParam != VK_INSERT && wParam != VK_F5 && wParam != VK_F4) {
                 return 0;
-            }
-        }
-    }
-
-    // Case 2: F5 mod menu is open (purely keyboard/gamepad driven, no mouse)
-    if (self._modMenuOpen.load() && !self._menuOpen.load()) {
-        if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
-            switch (wParam) {
-                case VK_UP:
-                case VK_DOWN:
-                case VK_LEFT:
-                case VK_RIGHT:
-                case VK_RETURN:
-                case VK_BACK:
-                case VK_PRIOR:
-                case VK_NEXT:
-                case VK_HOME:
-                case VK_END:
-                    return 0; // Navigation consumed by mod menu
-                default:
-                    break;
             }
         }
     }

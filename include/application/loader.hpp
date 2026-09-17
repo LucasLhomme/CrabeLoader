@@ -28,7 +28,8 @@ class Loader {
         void onLoadmods();
         void registerKeybind(int virtualKey, std::function<void()> onPress);
         void onKeyEvent(int virtualKey, bool isDown);
-        [[nodiscard]] void* getLuaState() const noexcept { return _luaState; }
+        [[nodiscard]] void* getLuaState() const noexcept { return _runtimeReady.load() ? _luaState : nullptr; }
+        [[nodiscard]] bool isRuntimeReady() const noexcept { return _runtimeReady.load(); }
         void queueLuaCall(const std::string& luaFunctionName);
         void drainPendingKeybindCalls(void* L);
         void queueConsoleSnippet(const std::string& code);
@@ -86,10 +87,6 @@ class Loader {
         // Reads <gameDir>/skilltrees/*.{lua,patch} into overrides/patches,
         // before LuaCall installs the loadbuffer hook. See skilltrees/README.md.
         void loadOverridesFromDisk();
-
-        // Reads <gameDir>/characters/*.lua into one named patch on
-        // VirtualReaderPC_Data.lua. See characters/README.md.
-        void loadCharactersFromDisk();
 
         void loadModDirectory(const std::filesystem::path& modPath);
 
