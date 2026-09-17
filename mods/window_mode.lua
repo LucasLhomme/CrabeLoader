@@ -1,10 +1,10 @@
 local kConfigPath = "crabe_window_mode.cfg"
 
--- Loads saved window mode from configuration file or defaults to borderless.
+-- Loads saved window mode from configuration file if explicitly saved.
 local function loadSavedMode()
     local file = io.open(kConfigPath, "r")
     if not file then
-        return "borderless"
+        return nil
     end
 
     local content = file:read("*a")
@@ -12,8 +12,10 @@ local function loadSavedMode()
 
     if content and content:match("^%s*windowed%s*$") then
         return "windowed"
+    elseif content and content:match("^%s*borderless%s*$") then
+        return "borderless"
     end
-    return "borderless"
+    return nil
 end
 
 -- Persists user chosen window mode to configuration file.
@@ -68,7 +70,9 @@ local function watchForBuildList(cls)
 end
 
 local savedMode = loadSavedMode()
-Crabe.SetWindowMode(savedMode)
+if savedMode then
+    Crabe.SetWindowMode(savedMode)
+end
 
 if SettingsVideo then
     installOption(SettingsVideo)

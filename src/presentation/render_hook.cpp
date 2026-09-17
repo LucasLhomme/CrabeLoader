@@ -128,15 +128,22 @@ bool RenderHook::initialize()
     allInstalled &= _hookPresent.installLogged(presentAddr,
                             reinterpret_cast<void*>(&RenderHook::hkPresent),
                             "RenderHook", "IDXGISwapChain::Present");
-    allInstalled &= _hookSetFullscreenState.installLogged(setFullscreenStateAddr,
-                            reinterpret_cast<void*>(&RenderHook::hkSetFullscreenState),
-                            "RenderHook", "IDXGISwapChain::SetFullscreenState");
     allInstalled &= _hookResizeBuffers.installLogged(resizeBuffersAddr,
                             reinterpret_cast<void*>(&RenderHook::hkResizeBuffers),
                             "RenderHook", "IDXGISwapChain::ResizeBuffers");
 
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32) {
+        auto targetSetCursorPos = reinterpret_cast<void*>(GetProcAddress(user32, "SetCursorPos"));
+        if (targetSetCursorPos) {
+            _hookSetCursorPos.installLogged(reinterpret_cast<uintptr_t>(targetSetCursorPos),
+                                           reinterpret_cast<void*>(&RenderHook::hkSetCursorPos),
+                                           "RenderHook", "SetCursorPos");
+        }
+    }
+
     _requestedWindowMode = loadWindowModeConfig();
-    _windowModeDirty = true;
+    _windowModeDirty = false;
 
     return allInstalled;
 }
@@ -154,6 +161,7 @@ void RenderHook::uninitialize()
     _hookPresent.remove();
     _hookSetFullscreenState.remove();
     _hookResizeBuffers.remove();
+    _hookSetCursorPos.remove();
 
     if (_backendInitialized) {
         ImGui_ImplDX11_Shutdown();
@@ -168,9 +176,11 @@ void RenderHook::uninitialize()
 // Sets cursor visibility state based on whether menus are currently open.
 void RenderHook::updateCursorVisibility()
 {
-    bool wanted = _menuOpen || _modMenuOpen;
-    ImGui::GetIO().MouseDrawCursor = wanted;
-    if (wanted) {
+    // The mouse cursor is ONLY shown for the Insert console overlay (_menuOpen).
+    // The F5 mod menu (_modMenuOpen) is purely keyboard/gamepad driven.
+    bool showCursor = _menuOpen.load();
+    ImGui::GetIO().MouseDrawCursor = showCursor;
+    if (showCursor) {
         ClipCursor(nullptr);
     }
 }
@@ -187,6 +197,9 @@ void RenderHook::toggleMenu()
 void RenderHook::toggleModMenu()
 {
     _modMenuOpen = !_modMenuOpen;
+    if (_modMenuOpen) {
+        _overlay.onModMenuOpened();
+    }
     updateCursorVisibility();
     Logger::getInstance().debug("RenderHook: mod menu {}.", _modMenuOpen ? "opened" : "closed");
 }
@@ -211,15 +224,10 @@ void RenderHook::requestWindowMode(WindowMode mode)
 }
 
 // Changes window style and dimensions and updates swapchain buffers if needed.
-void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
+void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapChain)
 {
     if (!_windowModeDirty.exchange(false) || !_hwnd) {
         return;
-    }
-
-    BOOL wasFullscreen = FALSE;
-    if (SUCCEEDED(swapChain->GetFullscreenState(&wasFullscreen, nullptr)) && wasFullscreen) {
-        swapChain->SetFullscreenState(FALSE, nullptr);
     }
 
     RECT targetRect{};
@@ -234,37 +242,36 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
         }
 
         targetRect = monitorInfo.rcMonitor;
+
+        // Force WS_EX_APPWINDOW so the game always remains visible on the Windows taskbar
+        LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
+        exStyle |= WS_EX_APPWINDOW;
+        exStyle &= ~WS_EX_TOOLWINDOW;
+        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
+
         SetWindowLongPtrW(_hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
         SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top,
                     targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
                     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     } else {
         targetRect = _originalRect;
-        SetWindowLongPtrW(_hwnd, GWL_STYLE, _originalStyle);
-        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
-                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
-                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-    }
+        int w = targetRect.right - targetRect.left;
+        int h = targetRect.bottom - targetRect.top;
+        if (w > 100 && h > 100) {
+            LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
+            exStyle |= WS_EX_APPWINDOW;
+            exStyle &= ~WS_EX_TOOLWINDOW;
+            SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
 
-    DXGI_SWAP_CHAIN_DESC desc{};
-    if (SUCCEEDED(swapChain->GetDesc(&desc))) {
-        UINT targetW = static_cast<UINT>(targetRect.right - targetRect.left);
-        UINT targetH = static_cast<UINT>(targetRect.bottom - targetRect.top);
-        if (desc.BufferDesc.Width != targetW || desc.BufferDesc.Height != targetH) {
-            releaseRenderTarget();
-            if (_context) {
-                _context->ClearState();
-                _context->OMSetRenderTargets(0, nullptr, nullptr);
-            }
-            HRESULT hr = swapChain->ResizeBuffers(0, targetW, targetH, DXGI_FORMAT_UNKNOWN, desc.Flags);
-            if (SUCCEEDED(hr)) {
-                createRenderTarget(swapChain);
-            } else {
-                Logger::getInstance().warning("RenderHook: ResizeBuffers failed (0x{:X}).", static_cast<uint32_t>(hr));
-            }
+            SetWindowLongPtrW(_hwnd, GWL_STYLE, _originalStyle | WS_VISIBLE);
+            SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top, w, h,
+                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
         }
     }
 
+    ShowWindow(_hwnd, SW_SHOW);
+    BringWindowToTop(_hwnd);
+    SetForegroundWindow(_hwnd);
     saveWindowModeConfig(currentMode);
 
     Logger::getInstance().info("RenderHook: window mode set to {}.",
@@ -287,6 +294,12 @@ RenderHook::t_ResizeBuffers RenderHook::originalResizeBuffers() const
 RenderHook::t_SetFullscreenState RenderHook::originalSetFullscreenState() const
 {
     return reinterpret_cast<t_SetFullscreenState>(_hookSetFullscreenState.getOriginal());
+}
+
+// Returns the trampoline to the original SetCursorPos function.
+RenderHook::t_SetCursorPos RenderHook::originalSetCursorPos() const
+{
+    return reinterpret_cast<t_SetCursorPos>(_hookSetCursorPos.getOriginal());
 }
 
 // Releases the active backbuffer render target view.
@@ -328,14 +341,10 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     _originalStyle = GetWindowLongPtrW(_hwnd, GWL_STYLE);
     GetWindowRect(_hwnd, &_originalRect);
 
-    IDXGIFactory* factory = nullptr;
-    if (SUCCEEDED(swapChain->GetParent(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&factory))) && factory) {
-        factory->MakeWindowAssociation(_hwnd, DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER);
-        factory->Release();
-    }
-
     ImGui_ImplWin32_Init(_hwnd);
     ImGui_ImplDX11_Init(_device, _context);
+
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
     _originalWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrW(_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&RenderHook::hkWndProc)));
@@ -362,6 +371,16 @@ HRESULT __stdcall RenderHook::hkSetFullscreenState(IDXGISwapChain* swapChain, BO
     return self.originalSetFullscreenState()(swapChain, fullscreen, target);
 }
 
+// Intercepts SetCursorPos calls from the game to suppress cursor centering while overlay is open.
+BOOL WINAPI RenderHook::hkSetCursorPos(int X, int Y)
+{
+    RenderHook& self = RenderHook::get();
+    if (self._menuOpen.load()) {
+        return TRUE;
+    }
+    return self.originalSetCursorPos()(X, Y);
+}
+
 // Drives frame rendering, pending mode application, and UI overlay rendering.
 HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
 {
@@ -379,11 +398,6 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             ImGui_ImplDX11_NewFrame();
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
-
-            void* L = Loader::get().getLuaState();
-            if (L && Loader::get().isGameState(L)) {
-                Crabe::Domain::ModManager::get().dispatchDraw(L);
-            }
 
             if (self._menuOpen)
                 self._overlay.renderOverlay();
@@ -434,15 +448,23 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     if (msg == WM_ACTIVATE) {
         if (LOWORD(wParam) == WA_INACTIVE) {
             ClipCursor(nullptr);
-            ShowCursor(TRUE);
         } else {
             self.updateCursorVisibility();
         }
     } else if (msg == WM_KILLFOCUS) {
         ClipCursor(nullptr);
-        ShowCursor(TRUE);
     } else if (msg == WM_SETFOCUS) {
         self.updateCursorVisibility();
+    }
+
+    // When the Insert console overlay is open, ImGui draws the software cursor.
+    // Suppress the OS cursor ONLY while the Insert overlay is open, so that
+    // the game's native menus (Pause, Level Select, Toy Box) retain their normal cursor.
+    if (msg == WM_SETCURSOR && self._menuOpen.load()) {
+        if (LOWORD(lParam) == HTCLIENT) {
+            SetCursor(nullptr);
+            return TRUE;
+        }
     }
 
     if (msg == WM_SYSKEYDOWN) {
@@ -454,7 +476,6 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         }
         if (wParam == VK_TAB && (lParam & (1 << 29))) {
             ClipCursor(nullptr);
-            ShowCursor(TRUE);
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
         if (wParam == VK_F4 && (lParam & (1 << 29))) {
@@ -469,19 +490,45 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         }
     }
 
-    if (self._menuOpen || self._modMenuOpen) {
+    // Case 1: Insert console overlay is open
+    if (self._menuOpen.load()) {
         if (msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
             if (wParam == VK_TAB || wParam == VK_F4 || wParam == VK_SPACE || wParam == VK_MENU)
                 return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);
         }
 
-        ImGuiIO& io = ImGui::GetIO();
-        bool isMouseMsg = (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST);
-        bool isKeyboardMsg = (msg == WM_KEYDOWN || msg == WM_KEYUP ||
-                            msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP || msg == WM_CHAR);
-
-        if ((isMouseMsg && io.WantCaptureMouse) || (isKeyboardMsg && io.WantCaptureKeyboard))
+        // Consume all mouse messages so clicks, drags, and wheel do not pass through to the game
+        if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) {
             return 0;
+        }
+
+        // Consume keyboard messages except hotkeys so console typing doesn't steer the game
+        if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
+            if (wParam != VK_INSERT && wParam != VK_F5 && wParam != VK_F4) {
+                return 0;
+            }
+        }
+    }
+
+    // Case 2: F5 mod menu is open (purely keyboard/gamepad driven, no mouse)
+    if (self._modMenuOpen.load() && !self._menuOpen.load()) {
+        if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
+            switch (wParam) {
+                case VK_UP:
+                case VK_DOWN:
+                case VK_LEFT:
+                case VK_RIGHT:
+                case VK_RETURN:
+                case VK_BACK:
+                case VK_PRIOR:
+                case VK_NEXT:
+                case VK_HOME:
+                case VK_END:
+                    return 0; // Navigation consumed by mod menu
+                default:
+                    break;
+            }
+        }
     }
 
     return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);

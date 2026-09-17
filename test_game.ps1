@@ -1,66 +1,61 @@
 $ErrorActionPreference = "Stop"
 
-$gameDir = "D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition" # change the path here to your game files folder
+$gameDir = "D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition"
 $gameExe = Join-Path $gameDir "DisneyInfinity3.exe"
-$dllSource = "Release\bink2w32.dll"
-$logFile = Join-Path $gameDir "loader.log"
+$dllCandidates = @(
+    "build\Release\bink2w32.dll",
+    "Release\bink2w32.dll",
+    "build\vs2022-dll\Release\bink2w32.dll"
+)
 
-Write-Host "=== 1. Closing the game (if running) ===" -ForegroundColor Cyan
+Write-Host "=== 1. Fermeture du jeu (si en cours) ===" -ForegroundColor Cyan
 Stop-Process -Name "DisneyInfinity3" -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 1 # give the process time to exit
+Start-Sleep -Milliseconds 800
 
-Write-Host "`n=== 2. Building the DLL ===" -ForegroundColor Cyan
-.\build.ps1
+Write-Host "=== 2. Build de la DLL (Release Win32) ===" -ForegroundColor Cyan
+cmake --build build --config Release
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Build failed. Aborting test."
+    Write-Error "Échec de la compilation."
     exit $LASTEXITCODE
 }
 
-Write-Host "`n=== 3. Deploying files ===" -ForegroundColor Cyan
-if (!(Test-Path $gameDir)) {
-    Write-Error "Game folder not found: $gameDir"
-    exit 1
+Write-Host "=== 3. Déploiement ===" -ForegroundColor Cyan
+$origDll = Join-Path $gameDir "bink2w32_orig.dll"
+$targetDll = Join-Path $gameDir "bink2w32.dll"
+if (!(Test-Path $origDll) -and (Test-Path $targetDll)) {
+    Copy-Item -Path $targetDll -Destination $origDll -Force
 }
 
-# Back up the original bink2w32.dll to bink2w32_orig.dll (once), which our proxy forwards to.
-$origDllPath = Join-Path $gameDir "bink2w32_orig.dll"
-$targetDllPath = Join-Path $gameDir "bink2w32.dll"
+$dllSrc = $dllCandidates | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTime } -Descending | Select-Object -First 1
+Copy-Item -Path $dllSrc -Destination $targetDll -Force
+Write-Host "[OK] bink2w32.dll -> $gameDir" -ForegroundColor Green
 
-if (!(Test-Path $origDllPath)) {
-    if (Test-Path $targetDllPath) {
-        Write-Host "Backing up the original bink2w32.dll to bink2w32_orig.dll..."
-        Rename-Item -Path $targetDllPath -NewName "bink2w32_orig.dll"
+# Nettoyage de l'ancien dossier api (l'API Lua est désormais compilée dans la DLL)
+$apiDir = Join-Path $gameDir "api"
+if (Test-Path $apiDir) {
+    Remove-Item -Path $apiDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Déploiement dans mods/ uniquement
+$modsDir = Join-Path $gameDir "mods"
+if (!(Test-Path $modsDir)) { New-Item -ItemType Directory -Force -Path $modsDir | Out-Null }
+if (Test-Path "mods") {
+    Copy-Item -Path "mods\*.lua" -Destination $modsDir -Force -ErrorAction SilentlyContinue
+}
+$menuMod = "..\CrabeMenu\mods\crabemenu.lua"
+if (Test-Path $menuMod) {
+    Copy-Item -Path $menuMod -Destination (Join-Path $modsDir "crabemenu.lua") -Force
+}
+
+# Synchro characters & skilltrees si présents
+foreach ($folder in @("characters", "skilltrees")) {
+    if (Test-Path $folder) {
+        $dest = Join-Path $gameDir $folder
+        if (!(Test-Path $dest)) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
+        Copy-Item -Path "$folder\*" -Destination $dest -Recurse -Force
     }
 }
 
-Write-Host "Copying the new DLL..."
-Copy-Item -Path $dllSource -Destination $targetDllPath -Force
-
-# Two Lua folders, deployed side by side and kept strictly apart:
-#   api/  = the loader's own runtime (src/api/), loaded before anything else
-#   mods/ = user mods, run once the game's Lua state is up
-# Both targets are purged first so no stale or deleted file lingers.
-foreach ($folder in @(@{ Source = "src\api"; Name = "api" }, @{ Source = "mods"; Name = "mods" }, @{ Source = "skilltrees"; Name = "skilltrees" }, @{ Source = "characters"; Name = "characters" })) {
-    if (!(Test-Path $folder.Source)) { continue }
-
-    Write-Host "Copying $($folder.Name)/ ..."
-    $target = Join-Path $gameDir $folder.Name
-    if (Test-Path $target) { Remove-Item -Path $target -Recurse -Force }
-    Copy-Item -Path $folder.Source -Destination $target -Recurse -Force
-}
-if (Test-Path $logFile) {
-    Clear-Content $logFile -ErrorAction SilentlyContinue
-}
-
-Write-Host "`n=== 4. Launching the game ===" -ForegroundColor Cyan
-Write-Host "Running: $gameExe" -ForegroundColor Yellow
+Write-Host "=== 4. Lancement du jeu ===" -ForegroundColor Green
 Start-Process -FilePath $gameExe -WorkingDirectory $gameDir
-
-Write-Host "`n=== 5. Log monitoring (press Ctrl+C to quit) ===" -ForegroundColor Cyan
-Start-Sleep -Seconds 2
-
-if (Test-Path $logFile) {
-    Get-Content $logFile -Wait -Tail 10
-} else {
-    Write-Host "[-] Log file not found: $logFile" -ForegroundColor Red
-}
+Write-Host "Jeu lance avec succes !" -ForegroundColor Green
