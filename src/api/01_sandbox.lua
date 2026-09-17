@@ -2,16 +2,56 @@ Crabe = Crabe or {}
 Crabe.Sandbox = Crabe.Sandbox or {}
 Crabe.Exports = Crabe.Exports or {}
 
---- Creates an isolated sandbox environment table for a mod.
+local function makeReadOnlyProxy(realTable, tableName, modName)
+    if type(realTable) ~= "table" then return realTable end
+    local proxy = {}
+    local mt = {
+        __index = realTable,
+        __newindex = function(t, k, v)
+            local msg = string.format(
+                "! [Crabe.Sandbox] Security Violation: Mod '%s' attempted to modify protected table '%s' at key '%s'. Mutation was blocked.",
+                tostring(modName or "unknown"),
+                tostring(tableName),
+                tostring(k)
+            )
+            if Crabe.write then
+                Crabe.write(msg)
+            end
+            error(msg, 2)
+        end,
+        __metatable = false
+    }
+    setmetatable(proxy, mt)
+    return proxy
+end
+
+--- Creates an isolated sandbox environment table for a mod with deep-frozen protection.
 --- Global reads fall back to _G while variable writes remain isolated.
+--- Standard library tables and Game API are guarded against mutation.
 function Crabe.Sandbox.create(modName)
     local env = {}
-    env._G = _G
     env._ENV = env
     env._M = env
     env.modName = modName
     env.Crabe = Crabe
-    setmetatable(env, { __index = _G })
+
+    -- Wrap standard tables in read-only proxies for this mod environment
+    if Game then env.Game = makeReadOnlyProxy(Game, "Game", modName) end
+    if table then env.table = makeReadOnlyProxy(table, "table", modName) end
+    if string then env.string = makeReadOnlyProxy(string, "string", modName) end
+    if math then env.math = makeReadOnlyProxy(math, "math", modName) end
+    if coroutine then env.coroutine = makeReadOnlyProxy(coroutine, "coroutine", modName) end
+    if os then env.os = makeReadOnlyProxy(os, "os", modName) end
+    if debug then env.debug = makeReadOnlyProxy(debug, "debug", modName) end
+
+    -- Guard _G inside the sandbox as well
+    env._G = makeReadOnlyProxy(_G, "_G", modName)
+
+    setmetatable(env, {
+        __index = function(t, k)
+            return _G[k]
+        end
+    })
     return env
 end
 
