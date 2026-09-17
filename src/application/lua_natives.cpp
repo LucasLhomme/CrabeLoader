@@ -47,6 +47,17 @@ namespace {
         return 0;
     }
 
+    // Returns the active window mode as a string: borderless or windowed.
+    int __cdecl nativeGetWindowMode(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        bool borderless = (RenderHook::get().getCurrentWindowMode() == WindowMode::BorderlessWindowed);
+        lua.pushString(L, borderless ? "borderless" : "windowed");
+        return 1;
+    }
+
     // Crabe._findGameNative(name) -> address, or nil. Looks in the image's
     // registration table, unlike type(_G[name]).
     int __cdecl nativeFindGameNative(void* L)
@@ -260,6 +271,7 @@ bool LuaRuntime::registerNatives(void* L)
 
     static constexpr Entry kNatives[] = {
         { "_setWindowModeNative", &nativeSetWindowMode },
+        { "_getWindowModeNative", &nativeGetWindowMode },
         { "_findGameNative",      &nativeFindGameNative },
         { "_moduleBase",          &nativeModuleBase },
         { "_inputReport",         &nativeInputReport },
