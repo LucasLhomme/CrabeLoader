@@ -1,0 +1,446 @@
+-- CrabeLoader API - Multiplayer Module
+-- Overrides the PC Gold Edition offline engine flags and exposes Crabe.Multiplayer
+
+Crabe = Crabe or {}
+Game = Game or {}
+
+-- ---------------------------------------------------------------------------
+-- 1. Engine Visibility & Privilege Overrides
+-- ---------------------------------------------------------------------------
+
+-- In Disney Infinity 3.0 Gold Edition, UI_IsTOGOOfflineGame() returned true,
+-- which completely masked "Scn_Pause_OnlineMP" in pausemenu.lua:1019.
+-- Forcing this to false unlocks the native Online Multiplayer menus!
+_G.UI_IsTOGOOfflineGame = function()
+    return false
+end
+
+-- Force account privileges & online status to true
+_G.IsMultiplayerAllowed = function(playerNum)
+    return true
+end
+
+_G.IsInviteAllowed = function(playerNum)
+    return true
+end
+
+_G.IsOnline = function(playerNum)
+    return true
+end
+
+_G.IsSignedIntoDisneyID = function(playerNum)
+    return true
+end
+
+_G.IsSignedIntoPlatform = function(playerNum)
+    return true
+end
+
+_G.IsOnlineContentAllowed = function()
+    return true
+end
+
+-- Tell the session engine that Quazal Net-Z P2P is active
+_G.NETZ = true
+
+-- Additional gates unmasked via KnowledgeExplorer decompiled presentation scripts
+_G.IsWaitingForSession = function(playerNum)
+    return false
+end
+
+_G.GetSocialAuthState = function(service)
+    return 2 -- 2 = Authenticated & Ready for friends and party services
+end
+
+_G.UI_IsLoggedIn = function()
+    return true
+end
+
+_G.UI_IsCloudMigrationComplete = function()
+    return true
+end
+
+_G.CanInviteFriendToGame = function(name)
+    return true
+end
+
+_G.UGC_IsLegalParentalCheck = function(playerNum)
+    return 1, ""
+end
+
+_G.UGC_IsLegalContentRequest = function(playerNum)
+    return 1, ""
+end
+
+-- Track whether an active networked session is currently hosted
+_G._mpHostingActive = false
+local nativeHosting = _G.UI_HostingNetworkedGame
+_G.UI_HostingNetworkedGame = function(playerNum)
+    if _G._mpHostingActive then
+        return true
+    end
+    if type(nativeHosting) == "function" then
+        return nativeHosting(playerNum)
+    end
+    return false
+end
+
+-- ---------------------------------------------------------------------------
+-- 1.1 Hook ClassFactory for OnlineMP_Options on PC Gold Edition
+-- ---------------------------------------------------------------------------
+
+local function installClassFactoryHook()
+    local cf = (package and package.loaded and package.loaded["ClassFactory"]) or _G.ClassFactory
+    if not cf or type(cf.CreateClass) ~= "function" then
+        return false
+    end
+    if cf._mpHooked then
+        return true
+    end
+    cf._mpHooked = true
+
+    local origCreateClass = cf.CreateClass
+    cf.CreateClass = function(className, baseClass, isBase)
+        local newClass = origCreateClass(className, baseClass, isBase)
+        if className == "OnlineMP_Options" then
+            local origBuildList = newClass.BuildList
+            newClass.BuildList = function(self)
+                if origBuildList then
+                    origBuildList(self)
+                end
+                if self.listData then
+                    local hasFriends = false
+                    local hasInvites = false
+                    local hasLock = false
+                    local hasViewPlayers = false
+                    for _, item in ipairs(self.listData) do
+                        if item.id == "Scn_View_Friends" then hasFriends = true end
+                        if item.id == "ACT_Invites" then hasInvites = true end
+                        if item.id == "Scn_Lock_Game" or item.id == "Scn_Unlock_Game" then hasLock = true end
+                        if item.id == "Scn_ViewPlayers" then hasViewPlayers = true end
+                    end
+                    if not hasFriends then
+                        self:AddListButton("Scn_View_Friends")
+                    end
+                    if not hasInvites then
+                        self:AddListButton("ACT_Invites")
+                    end
+                    if not hasLock then
+                        if type(_G.UI_GameIsLocked) == "function" and _G.UI_GameIsLocked() then
+                            self:AddListButton("Scn_Unlock_Game")
+                        else
+                            self:AddListButton("Scn_Lock_Game")
+                        end
+                    end
+                    local numPlayers = type(_G.Players_NumPlayers) == "function" and _G.Players_NumPlayers() or 1
+                    local numLocal = type(_G.Players_NumLocalPlayers) == "function" and _G.Players_NumLocalPlayers() or 1
+                    if numPlayers > 1 and numPlayers > numLocal and not hasViewPlayers then
+                        self:AddListButton("Scn_ViewPlayers")
+                    end
+                    self:AddListButton("Scn_Pause_OnlineInvites")
+                end
+            end
+        end
+        return newClass
+    end
+    return true
+end
+
+if not installClassFactoryHook() then
+    local origRequire = _G.require
+    if type(origRequire) == "function" then
+        _G.require = function(modName)
+            local res = origRequire(modName)
+            if modName == "ClassFactory" then
+                installClassFactoryHook()
+            end
+            return res
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- 2. Ergonomic Crabe.Multiplayer API
+-- ---------------------------------------------------------------------------
+
+Crabe.Multiplayer = Crabe.Multiplayer or {}
+
+function Crabe.Multiplayer.checkServerReachability(host, port, timeoutMs)
+    local rawFn = Crabe._mpCheckServerReachability
+    if type(rawFn) == "function" then
+        local ok, res = pcall(rawFn, tostring(host or "127.0.0.1"), tonumber(port) or 3000, tonumber(timeoutMs) or 250)
+        if ok and res then
+            return res == 1
+        end
+    end
+    return false
+end
+
+function Crabe.Multiplayer.getStatus()
+    local rawFn = Crabe._mpGetStatus
+    if type(rawFn) ~= "function" then
+        return {
+            patchesActive = false,
+            patchedCount = 0,
+            redirectorActive = false,
+            host = "127.0.0.1",
+            port = 3000,
+            isServerOnline = false
+        }
+    end
+
+    local patchesActive, patchedCount, redirectorActive, host, port = rawFn()
+    local sHost = tostring(host or "127.0.0.1")
+    local sPort = tonumber(port) or 3000
+    local isOnline = Crabe.Multiplayer.checkServerReachability(sHost, sPort, 200)
+
+    return {
+        patchesActive = (patchesActive == 1),
+        patchedCount = tonumber(patchedCount) or 0,
+        redirectorActive = (redirectorActive == 1),
+        host = sHost,
+        port = sPort,
+        isServerOnline = isOnline
+    }
+end
+
+function Crabe.Multiplayer.setTargetHost(host, port)
+    if type(host) ~= "string" or host == "" then
+        error("Crabe.Multiplayer.setTargetHost: host must be a non-empty string", 2)
+    end
+    port = tonumber(port) or 3000
+
+    local rawFn = Crabe._mpSetTarget
+    if type(rawFn) == "function" then
+        rawFn(host, port)
+        return true
+    end
+    return false
+end
+
+function Crabe.Multiplayer.applyPatches()
+    local rawFn = Crabe._mpApplyPatches
+    if type(rawFn) == "function" then
+        return rawFn() == 1
+    end
+    return false
+end
+
+-- Session management helpers (wrapping Game.* natives)
+function Crabe.Multiplayer.isSessionLocked()
+    if type(Game.IsSessionLocked) == "function" then
+        return Game.IsSessionLocked()
+    end
+    return false
+end
+
+function Crabe.Multiplayer.setSessionLocked(locked)
+    if type(Game.SetSessionLocked) == "function" then
+        return Game.SetSessionLocked(locked)
+    end
+    return false
+end
+
+function Crabe.Multiplayer.getPlayerCounts()
+    if type(Game.PlayerCounts) == "function" then
+        return Game.PlayerCounts()
+    end
+    return { total = 1, localPlayers = 1, max = 4 }
+end
+
+function Crabe.Multiplayer.kickPlayer(playerNum)
+    if type(Game.KickPlayer) == "function" then
+        Game.KickPlayer(playerNum)
+        return true
+    end
+    return false
+end
+
+function Crabe.Multiplayer.getNatInfo()
+    local rawFn = Crabe._mpGetNatInfo
+    if type(rawFn) ~= "function" then
+        return {
+            upnpAvailable = false,
+            portForwarded = false,
+            externalIp = "",
+            externalPort = 3074,
+            localIp = "127.0.0.1",
+            internalPort = 3074,
+            statusMessage = "UPnP native binding unavailable"
+        }
+    end
+
+    local upnpAvail, portFwd, extIp, extPort, locIp, intPort, statusMsg = rawFn()
+    return {
+        upnpAvailable = (upnpAvail == 1),
+        portForwarded = (portFwd == 1),
+        externalIp = tostring(extIp or ""),
+        externalPort = tonumber(extPort) or 3074,
+        localIp = tostring(locIp or "127.0.0.1"),
+        internalPort = tonumber(intPort) or 3074,
+        statusMessage = tostring(statusMsg or "")
+    }
+end
+
+function Crabe.Multiplayer.triggerPortForward(port, proto)
+    port = tonumber(port) or 3074
+    proto = tostring(proto or "UDP")
+    local rawFn = Crabe._mpTriggerPortForward
+    if type(rawFn) == "function" then
+        return rawFn(port, proto) == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.setDirectConnect(friendName, ip, port, hostDid)
+    friendName = tostring(friendName or "DirectPeer")
+    ip = tostring(ip or "127.0.0.1")
+    port = tonumber(port) or 3074
+    hostDid = tostring(hostDid or "{00000000-0000-0000-0000-000000000000}")
+    local rawFn = Crabe._mpSetDirectConnect
+    if type(rawFn) == "function" then
+        return rawFn(friendName, ip, port, hostDid) == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.buildLocationString(opts)
+    opts = opts or {}
+    local pubIp = tostring(opts.publicIp or opts.ip or "127.0.0.1")
+    local pubPort = tonumber(opts.publicPort or opts.port or 3074)
+    local privIp = tostring(opts.privateIp or pubIp)
+    local privPort = tonumber(opts.privatePort or pubPort)
+    local hostDid = tostring(opts.hostDid or "{00000000-0000-0000-0000-000000000000}")
+    local gameName = tostring(opts.gameName or "IN2PC")
+
+    local rawFn = Crabe._mpBuildLocation
+    if type(rawFn) == "function" then
+        local loc = rawFn(pubIp, pubPort, privIp, privPort, hostDid, gameName)
+        if loc and loc ~= "" then
+            return loc
+        end
+    end
+
+    -- Pure Lua fallback for testing or standalone execution
+    local function ipToHex(ip)
+        local o1, o2, o3, o4 = ip:match("(%d+)%.(%d+)%.(%d+)%.(%d+)")
+        if not o1 then return "100007F" end
+        local val = (tonumber(o1) + tonumber(o2)*256 + tonumber(o3)*65536 + tonumber(o4)*16777216)
+        return string.format("%X", val)
+    end
+    local function portToHex(p)
+        return string.format("%X", p)
+    end
+
+    return string.format('{"Pu":{"IP":"%s","P":"%s"},"Pr":{"IP":"%s","P":"%s"},"Host":{"DID":"%s"},"J":1,"L":0,"GameName":"%s"}',
+        ipToHex(pubIp), portToHex(pubPort),
+        ipToHex(privIp), portToHex(privPort),
+        hostDid, gameName)
+end
+
+-- ---------------------------------------------------------------------------
+-- 3. Steamworks P2P & Lobby Integration (Crabe.Multiplayer.Steam)
+-- ---------------------------------------------------------------------------
+
+Crabe.Multiplayer.Steam = Crabe.Multiplayer.Steam or {}
+
+function Crabe.Multiplayer.Steam.isAvailable()
+    local rawFn = Crabe._steamIsAvailable
+    if type(rawFn) == "function" then
+        return rawFn() == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.Steam.getPersonaName()
+    local rawFn = Crabe._steamGetPersonaName
+    if type(rawFn) == "function" then
+        return tostring(rawFn() or "Player")
+    end
+    return "Player"
+end
+
+function Crabe.Multiplayer.Steam.getLocalSteamId()
+    local rawFn = Crabe._steamGetLocalId
+    if type(rawFn) == "function" then
+        return tostring(rawFn() or "0")
+    end
+    return "0"
+end
+
+function Crabe.Multiplayer.Steam.createLobby(friendsOnly, maxMembers)
+    local rawFn = Crabe._steamCreateLobby
+    friendsOnly = (friendsOnly ~= false)
+    maxMembers = tonumber(maxMembers) or 4
+    if type(rawFn) == "function" then
+        local ok = rawFn(friendsOnly and 1 or 0, maxMembers) == 1
+        if ok then
+            -- Configure DirectConnect payload automatically with our host info
+            local nat = Crabe.Multiplayer.getNatInfo()
+            local ip = (nat.externalIp ~= "") and nat.externalIp or nat.localIp
+            local loc = Crabe.Multiplayer.buildLocationString({
+                publicIp = ip,
+                publicPort = nat.externalPort or 3074,
+                privateIp = nat.localIp or "127.0.0.1",
+                privatePort = nat.internalPort or 3074,
+                hostDid = "{00000000-0000-0000-0000-000000000001}",
+                gameName = "IN2PC"
+            })
+            Crabe.Multiplayer.setDirectConnect(Crabe.Multiplayer.Steam.getPersonaName(), ip, nat.externalPort or 3074)
+        end
+        return ok
+    end
+    return false
+end
+
+function Crabe.Multiplayer.Steam.leaveLobby()
+    local rawFn = Crabe._steamLeaveLobby
+    if type(rawFn) == "function" then
+        rawFn()
+    end
+end
+
+function Crabe.Multiplayer.Steam.openInviteOverlay()
+    local rawFn = Crabe._steamOpenInviteOverlay
+    if type(rawFn) == "function" then
+        return rawFn() == 1
+    end
+    return false
+end
+
+function Crabe.Multiplayer.Steam.getLobbyStatus()
+    local rawFn = Crabe._steamGetLobbyStatus
+    if type(rawFn) ~= "function" then
+        return {
+            inLobby = false,
+            isHost = false,
+            lobbyId = "0",
+            hostId = "0",
+            memberCount = 0,
+            memberLimit = 4
+        }
+    end
+
+    local inLobby, isHost, lobbyId, hostId, count, limit = rawFn()
+    return {
+        inLobby = (inLobby == 1),
+        isHost = (isHost == 1),
+        lobbyId = tostring(lobbyId or "0"),
+        hostId = tostring(hostId or "0"),
+        memberCount = tonumber(count) or 0,
+        memberLimit = tonumber(limit) or 4
+    }
+end
+
+function Crabe.Multiplayer.Steam.getFriendCount()
+    local rawFn = Crabe._steamGetFriendCount or Crabe._steamGetFriends
+    if type(rawFn) == "function" then
+        local ok, res = pcall(rawFn)
+        if ok and res then
+            return tonumber(res) or 0
+        end
+    end
+    return 0
+end
+
+

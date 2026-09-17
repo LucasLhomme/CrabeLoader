@@ -2,7 +2,14 @@
 -- Loaded first: the other modules report their errors through Crabe.write.
 
 Crabe = Crabe or {}
-Crabe.version = "0.1.0"
+Crabe.version = "0.2.0"
+Crabe.versionMajor = 0
+Crabe.versionMinor = 2
+Crabe.versionPatch = 0
+Crabe.version = Crabe.version or "0.2.0"
+Crabe.versionMajor = Crabe.versionMajor or 0
+Crabe.versionMinor = Crabe.versionMinor or 2
+Crabe.versionPatch = Crabe.versionPatch or 0
 
 Crabe._lines = {}
 Crabe._maxLines = 200
@@ -43,9 +50,9 @@ if not Crabe._printHooked then
     end
 end
 
--- Window Mode (merged from 05_window.lua)
-Crabe._windowMode = "windowed"
+Crabe._windowMode = "borderless"
 
+-- Sets the window display mode to borderless or windowed.
 function Crabe.SetWindowMode(mode)
     if mode ~= "windowed" and mode ~= "borderless" then
         error("Crabe.SetWindowMode: expected 'windowed' or 'borderless', got '" .. tostring(mode) .. "'", 2)
@@ -56,7 +63,11 @@ function Crabe.SetWindowMode(mode)
     return true
 end
 
+-- Returns the active window display mode from native state.
 function Crabe.GetWindowMode()
+    if type(Crabe._getWindowModeNative) == "function" then
+        return Crabe._getWindowModeNative()
+    end
     return Crabe._windowMode
 end
 
@@ -77,9 +88,30 @@ function Crabe.splitList(csv)
     local out = {}
     if type(csv) ~= "string" then return out end
 
-    for field in string.gmatch(csv, "([^,]+)") do
-        field = string.gsub(field, "^%s*(.-)%s*$", "%1")
-        if field ~= "" then out[#out + 1] = field end
+    for item in string.gmatch(csv, "([^,]+)") do
+        local trimmed = string.gsub(item, "^%s*(.-)%s*$", "%1")
+        if trimmed ~= "" then out[#out + 1] = trimmed end
     end
     return out
+end
+
+-- Disk module loader for require(): enables loading submodules from disk (mods/, mods/disneyinfinitymp/, etc.)
+if package and type(package.loaders) == "table" and not Crabe._diskLoaderInstalled then
+    Crabe._diskLoaderInstalled = true
+    table.insert(package.loaders, 2, function(modname)
+        local subpath = string.gsub(modname, "%.", "/")
+        local candidates = {
+            "mods/disneyinfinitymp/" .. subpath .. ".lua",
+            "mods/" .. subpath .. ".lua",
+            "mods/" .. subpath .. "/init.lua",
+            subpath .. ".lua"
+        }
+        for _, path in ipairs(candidates) do
+            local chunk = loadfile(path)
+            if chunk then
+                return chunk
+            end
+        end
+        return "\n\t[CrabeLoader] no file on disk matching '" .. modname .. "'"
+    end)
 end
