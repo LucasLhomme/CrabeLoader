@@ -10783,7 +10783,7 @@ namespace Crabe::EmbeddedApi {
         size_t size;
     };
 
-    inline constexpr Module kModules[] = {
+    inline const Module kModules[] = {
         { "00_core.lua", reinterpret_cast<const char*>(Modules::mod_00_core_lua), sizeof(Modules::mod_00_core_lua) },
         { "05_events.lua", reinterpret_cast<const char*>(Modules::mod_05_events_lua), sizeof(Modules::mod_05_events_lua) },
         { "10_game.lua", reinterpret_cast<const char*>(Modules::mod_10_game_lua), sizeof(Modules::mod_10_game_lua) },
