@@ -8,8 +8,10 @@
 #include <windows.h>
 #include <thread>
 #include <string>
-#include "logger/logger.hpp"
-#include "loader/loader.hpp"
+#include "shared/logger.hpp"
+#include "shared/version.hpp"
+#include "application/loader.hpp"
+#include "application/multiplayer/MultiplayerManager.hpp"
 
 namespace {
     std::string moduleLogPath(HMODULE hModule) {
@@ -36,7 +38,8 @@ void initLogger(HMODULE hModule) {
     Logger& logger = Logger::getInstance();
     logger.setLogFile(moduleLogPath(hModule));
     logger.setLogLevel(LogLevel::DEBUG);
-    logger.info("Logger initialized.");
+    logger.info("CrabeLoader v{} initialized (built {} {}).",
+                Crabe::Version::String, Crabe::Version::BuildDate, Crabe::Version::BuildTime);
 }
 
 void initMain() {
@@ -45,11 +48,13 @@ void initMain() {
 
 bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
+    (void)lpReserved;
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         initLogger(hModule);
         SetUnhandledExceptionFilter(crashFilter);
         Logger::getInstance().debug("CrabeLoader DLL loaded.");
+        Multiplayer::Application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
         std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
