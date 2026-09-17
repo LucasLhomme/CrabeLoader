@@ -1,9 +1,3 @@
-/*
-** CrabeLoader
-** File description:
-** render_hook
-*/
-
 #ifndef RENDER_HOOK_HPP_
 #define RENDER_HOOK_HPP_
 
@@ -15,9 +9,6 @@
 #include "presentation/overlay.hpp"
 #include "infrastructure/hook.hpp"
 
-// Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's D3D11
-// device/context/HWND from inside an injected DLL, and drives the per-frame
-// ImGui render sequence from there. Owns all D3D11/Win32 hooking detail.
 enum class WindowMode {
     Windowed,
     BorderlessWindowed,
@@ -25,63 +16,99 @@ enum class WindowMode {
 
 class RenderHook {
     public:
+        // Returns the singleton instance of RenderHook.
         static RenderHook& get();
 
-        // Hooks IDXGISwapChain::Present/ResizeBuffers to reach the game's D3D11
-        // device/context/HWND from inside an injected DLL, then drives the
-        // per-frame ImGui render sequence from there.
+        // Resolves DXGI vtable entries and installs hooks for render interception.
         bool initialize();
+
+        // Removes all active DirectX and window hooks and releases resources.
         void uninitialize();
 
-        // The debug overlay (console, log): Insert.
+        // Toggles visibility of the debug overlay console.
         void toggleMenu();
+
+        // Returns true if the debug overlay is currently open.
         bool isMenuOpen() const;
 
-        // The mod menu: F5. A separate window with its own visibility, so the
-        // two can be open independently -- a player wants the menu without the
-        // developer console behind it.
+        // Toggles visibility of the mod menu interface.
         void toggleModMenu();
+
+        // Returns true if the mod menu interface is currently open.
         bool isModMenuOpen() const;
 
-        // Thread-safe; only records the request. hkPresent applies it next
-        // frame, since window calls must happen on the thread that owns it.
+        // Thread-safely requests a change of window display mode.
         void requestWindowMode(WindowMode mode);
 
+        // Returns the current requested window display mode.
+        WindowMode getCurrentWindowMode() const noexcept { return _requestedWindowMode.load(); }
+
+        // Returns the underlying Win32 window handle.
         HWND getHwnd() const noexcept { return _hwnd; }
 
-    protected:
     private:
         RenderHook() = default;
         ~RenderHook() = default;
         RenderHook(const RenderHook&) = delete;
         RenderHook& operator=(const RenderHook&) = delete;
 
-        // Resolves Present/ResizeBuffers via a throwaway device+swapchain's
-        // vtable; the pointers stay valid after the dummy objects are freed.
-        static bool resolveSwapChainFunctions(uintptr_t& outPresent, uintptr_t& outResizeBuffers);
+        // Reads window mode configuration file or defaults to borderless.
+        static WindowMode loadWindowModeConfig();
 
-        // ImGui draws the cursor whenever either window wants the mouse.
+        // Writes active window mode to the configuration file.
+        static void saveWindowModeConfig(WindowMode mode);
+
+        // Resolves Present, ResizeBuffers, and SetFullscreenState vtable pointers.
+        static bool resolveSwapChainFunctions(uintptr_t& outPresent,
+                                              uintptr_t& outResizeBuffers,
+                                              uintptr_t& outSetFullscreenState);
+
+        // Synchronizes cursor visibility according to active menus and focus.
         void updateCursorVisibility();
 
+        // Initializes ImGui Win32/DX11 backends once swapchain device is ready.
         void ensureBackendInit(IDXGISwapChain* swapChain);
+
+        // Releases any existing Direct3D 11 render target view.
         void releaseRenderTarget();
+
+        // Creates a Direct3D 11 render target view for swapchain backbuffer.
         void createRenderTarget(IDXGISwapChain* swapChain);
+
+        // Applies pending window styles and dimensions on the render thread.
         void applyPendingWindowMode(IDXGISwapChain* swapChain);
 
+        // Hook for IDXGISwapChain::Present driving ImGui rendering.
         static HRESULT __stdcall hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
+
+        // Hook for IDXGISwapChain::ResizeBuffers managing render target lifecycle.
         static HRESULT __stdcall hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
                                                 UINT width, UINT height, DXGI_FORMAT newFormat,
                                                 UINT swapChainFlags);
+
+        // Hook for IDXGISwapChain::SetFullscreenState enforcing windowed mode.
+        static HRESULT __stdcall hkSetFullscreenState(IDXGISwapChain* swapChain, BOOL fullscreen,
+                                                     IDXGIOutput* target);
+
+        // Subclassed window procedure handling hotkeys, alt-tab, and input routing.
         static LRESULT CALLBACK hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
         typedef HRESULT(__stdcall* t_Present)(IDXGISwapChain*, UINT, UINT);
         typedef HRESULT(__stdcall* t_ResizeBuffers)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
+        typedef HRESULT(__stdcall* t_SetFullscreenState)(IDXGISwapChain*, BOOL, IDXGIOutput*);
 
+        // Returns pointer to the original Present method.
         t_Present originalPresent() const;
+
+        // Returns pointer to the original ResizeBuffers method.
         t_ResizeBuffers originalResizeBuffers() const;
+
+        // Returns pointer to the original SetFullscreenState method.
+        t_SetFullscreenState originalSetFullscreenState() const;
 
         Hook _hookPresent;
         Hook _hookResizeBuffers;
+        Hook _hookSetFullscreenState;
 
         Overlay _overlay;
 
@@ -98,7 +125,7 @@ class RenderHook {
         RECT _originalRect{};
 
         std::atomic<bool> _windowModeDirty{false};
-        std::atomic<WindowMode> _requestedWindowMode{WindowMode::Windowed};
+        std::atomic<WindowMode> _requestedWindowMode{WindowMode::BorderlessWindowed};
 };
 
 #endif /* !RENDER_HOOK_HPP_ */

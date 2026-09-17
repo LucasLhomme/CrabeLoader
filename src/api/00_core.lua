@@ -50,9 +50,9 @@ if not Crabe._printHooked then
     end
 end
 
--- Window Mode (merged from 05_window.lua)
-Crabe._windowMode = "windowed"
+Crabe._windowMode = "borderless"
 
+-- Sets the window display mode to borderless or windowed.
 function Crabe.SetWindowMode(mode)
     if mode ~= "windowed" and mode ~= "borderless" then
         error("Crabe.SetWindowMode: expected 'windowed' or 'borderless', got '" .. tostring(mode) .. "'", 2)
@@ -63,7 +63,11 @@ function Crabe.SetWindowMode(mode)
     return true
 end
 
+-- Returns the active window display mode from native state.
 function Crabe.GetWindowMode()
+    if type(Crabe._getWindowModeNative) == "function" then
+        return Crabe._getWindowModeNative()
+    end
     return Crabe._windowMode
 end
 
