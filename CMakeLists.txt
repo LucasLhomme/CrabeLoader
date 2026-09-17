@@ -39,7 +39,6 @@ set(CRABELOADER_CORE_SOURCES
 
     # Presentation Layer
     src/presentation/overlay.cpp
-    src/presentation/menu.cpp
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
     src/presentation/imgui_bindings.cpp
@@ -47,24 +46,14 @@ set(CRABELOADER_CORE_SOURCES
     # Application Layer
     src/application/Loader.cpp
     src/application/loader_content.cpp
-    src/application/gateway.cpp
     src/application/lua_runtime.cpp
     src/application/lua_natives.cpp
-    src/application/cheat_natives.cpp
-    src/application/freecam_natives.cpp
-    src/application/debug_watch_natives.cpp
     src/application/multiplayer/MultiplayerManager.cpp
     src/application/multiplayer/multiplayer_natives.cpp
 
     # Domain Layer
     src/domain/ModManifest.cpp
     src/domain/ModManager.cpp
-    src/domain/cheats.cpp
-    src/domain/freecam.cpp
-    src/domain/speedhack.cpp
-    src/domain/player_movement.cpp
-    src/domain/debug_watch.cpp
-    src/domain/entity_registry.cpp
 
     # Infrastructure Layer
     src/infrastructure/crash_handler.cpp
@@ -72,10 +61,8 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/hook.cpp
     src/infrastructure/codecave.cpp
     src/infrastructure/message_hook.cpp
-    src/infrastructure/avatar_relay_hook.cpp
     src/infrastructure/luacall.cpp
     src/infrastructure/lua_symbols.cpp
-    src/infrastructure/engine_patches.cpp
     src/infrastructure/multiplayer/MemoryPatcher.cpp
     src/infrastructure/multiplayer/WinHttpRedirector.cpp
     src/infrastructure/multiplayer/FallbackResponseProvider.cpp
@@ -133,6 +120,7 @@ target_include_directories(${PROJECT_NAME}
         include/shared
         include/imgui
         include/minhook
+        src
 )
 
 target_compile_definitions(${PROJECT_NAME}
