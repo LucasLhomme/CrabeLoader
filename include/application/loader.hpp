@@ -87,10 +87,6 @@ class Loader {
         // before LuaCall installs the loadbuffer hook. See skilltrees/README.md.
         void loadOverridesFromDisk();
 
-        // Reads <gameDir>/characters/*.lua into one named patch on
-        // VirtualReaderPC_Data.lua. See characters/README.md.
-        void loadCharactersFromDisk();
-
         void loadModDirectory(const std::filesystem::path& modPath);
 
         struct Keybind {

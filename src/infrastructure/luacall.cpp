@@ -129,10 +129,6 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
     loader.ensureRuntimeReady(L);
     if (loader.isGameState(L)) {
         loader.runTicks(L);
-        loader.drainPendingKeybindCalls(L);
-        loader.drainRemoteCommandFile(L);
-        loader.drainPendingSnippets(L);
-        loader.drainLuaOutput(L);
     }
 
     int result = LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);

@@ -16,13 +16,10 @@
 #include <windows.h>
 
 #include "application/loader.hpp"
-#include "application/gateway.hpp"
 #include "application/lua_runtime.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/luacall.hpp"
-#include "presentation/menu.hpp"
 #include "infrastructure/memory.hpp"
-#include "infrastructure/avatar_relay_hook.hpp"
 #include "presentation/input_hook.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/MultiplayerManager.hpp"
@@ -273,7 +270,10 @@ void Loader::runTicks(void* L)
     double dt = std::chrono::duration<double>(elapsed).count();
     LuaCall::get().callTick(L, dt);
 
-    Menu::get().drain(L);
+    drainPendingKeybindCalls(L);
+    drainRemoteCommandFile(L);
+    drainPendingSnippets(L);
+    drainLuaOutput(L);
 }
 
 void Loader::drainPendingSnippets(void* L)
@@ -366,25 +366,12 @@ void Loader::drainLuaOutput(void* L)
 
 void Loader::registerDefaultKeybinds()
 {
-    static constexpr std::pair<int, const char*> kLuaKeybinds[] = {
-        { VK_F1, "OnKeyF1" }, { VK_F2, "OnKeyF2" }, { VK_F3, "OnKeyF3" },
-        { VK_F6, "OnKeyF6" }, { VK_F7, "OnKeyF7" }, { VK_F8, "OnKeyF8" }, { VK_F9, "OnKeyF9" },
-        { VK_F10, "OnKeyF10" }, { VK_F11, "OnKeyF11" }, { VK_F12, "OnKeyF12" },
-    };
-    for (const auto& [virtualKey, luaFunctionName] : kLuaKeybinds) {
-        registerLuaKeybind(virtualKey, luaFunctionName);
-    }
-
     registerKeybind(VK_F4, []() {
         Crabe::Domain::ModManager::get().requestHotReload();
     });
 
     registerKeybind(VK_INSERT, []() {
         RenderHook::get().toggleMenu();
-    });
-
-    registerKeybind(VK_F5, []() {
-        RenderHook::get().toggleModMenu();
     });
 }
 
@@ -395,18 +382,23 @@ void Loader::onKeyEvent(int virtualKey, bool isDown)
     {
         std::lock_guard<std::mutex> lock(_keybindsMutex);
         auto it = _keybinds.find(virtualKey);
-        if (it == _keybinds.end())
-            return;
-
-        if (isDown && !it->second.wasDown)
-            callback = it->second.onPress;
-        it->second.wasDown = isDown;
+        if (it != _keybinds.end()) {
+            if (isDown && !it->second.wasDown)
+                callback = it->second.onPress;
+            it->second.wasDown = isDown;
+        }
     }
 
     if (callback) {
         Logger::getInstance().debug("Loader: keybind pressed: {} (virtual key 0x{:X}).",
                                     virtualKeyName(virtualKey), virtualKey);
         callback();
+    }
+
+    if (isDown && _runtimeReady && _luaState) {
+        LuaCall::get().runSnippet(_luaState, std::format(
+            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}) end",
+            virtualKey));
     }
 }
 
@@ -415,8 +407,6 @@ bool Loader::initialize()
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
     loadOverridesFromDisk();
-    loadCharactersFromDisk();
-
     LuaApiAddresses addresses = LuaSymbols::resolveAll(base);
 
     if (!LuaCall::get().initialize(addresses)) {
@@ -433,7 +423,6 @@ bool Loader::initialize()
 
     InputHook::get().initialize();
     MessageHook::get().initialize();
-    AvatarRelayHook::get().initialize();
     Multiplayer::Application::MultiplayerManager::getInstance().initialize();
 
     return true;
@@ -444,7 +433,6 @@ void Loader::uninitialize()
     Multiplayer::Application::MultiplayerManager::getInstance().uninitialize();
     InputHook::get().uninitialize();
     MessageHook::get().uninitialize();
-    AvatarRelayHook::get().uninitialize();
     RenderHook::get().uninitialize();
     LuaCall::get().uninitialize();
 }
