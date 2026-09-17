@@ -41,6 +41,57 @@ function Crabe.hostPlayer(playerId) end
 function Crabe.splitList(csv) end
 
 --------------------------------------------------------------------------------
+-- Crabe.Mod: Mod Lifecycle Management
+--------------------------------------------------------------------------------
+
+---@class ModDef
+---@field public id string Unique alphanumeric identifier for the mod.
+---@field public name string Display name of the mod.
+---@field public onInit? fun(): any Called once when the Lua VM and API are ready.
+---@field public onUpdate? fun(dt: number): any Called every frame (~60 Hz) on the main script thread.
+---@field public onDraw? fun(): any Called during DX11 Present to render Dear ImGui interfaces.
+---@field public onShutdown? fun(): any Called when the mod is unloaded or hot-reloaded (F4).
+
+---@class CrabeMod
+Crabe.Mod = {}
+
+--- Registers a mod with its lifecycle hooks.
+---@param def ModDef Mod definition table.
+function Crabe.Mod.register(def) end
+
+--- Retrieves a registered mod by ID.
+---@param id string Mod ID.
+---@return ModDef? mod Mod definition or nil.
+function Crabe.Mod.get(id) end
+
+--- Lists all currently registered mods.
+---@return ModDef[] mods Table of registered mod definitions.
+function Crabe.Mod.list() end
+
+--------------------------------------------------------------------------------
+-- Crabe.Sandbox: Mod Isolation & Cross-Mod Exports
+--------------------------------------------------------------------------------
+
+---@class CrabeSandbox
+Crabe.Sandbox = {}
+
+--- Creates an isolated environment table for a mod with protected global tables.
+---@param modName string Unique name or ID of the mod.
+---@param opt? table Optional configuration options.
+---@return table env Sandboxed environment table.
+function Crabe.Sandbox.create(modName, opt) end
+
+--- Exports a shared service or table to other sandboxed mods.
+---@param name string Service identifier.
+---@param value any Value, function, or table to expose.
+function Crabe.Sandbox.export(name, value) end
+
+--- Imports a shared service exposed by another mod.
+---@param name string Service identifier.
+---@return any value The exported value or nil.
+function Crabe.Sandbox.import(name) end
+
+--------------------------------------------------------------------------------
 -- Crabe.Events: Unified Event Bus
 --------------------------------------------------------------------------------
 
@@ -48,7 +99,7 @@ function Crabe.splitList(csv) end
 Crabe.Events = {}
 
 --- Registers an event handler for the given event name.
---- Standard events: "init", "tick", "update", "playerDeath".
+--- Standard events: "init", "tick", "update", "keyDown", "reload", "playerDeath".
 ---@param eventName string Event identifier.
 ---@param handler fun(...: any): any Callback function.
 ---@return fun(...: any): any handler The registered handler.
@@ -74,6 +125,155 @@ function Crabe.Events.emit(eventName, ...) end
 --- Clears registered listeners.
 ---@param eventName? string If specified, clears only this event; otherwise clears all.
 function Crabe.Events.clear(eventName) end
+
+--------------------------------------------------------------------------------
+-- Crabe.Memory: Native Memory & Code Cave Primitives
+--------------------------------------------------------------------------------
+
+---@class CrabeMemory
+Crabe.Memory = {}
+
+--- Scans process memory for an IDA-style AOB pattern (e.g. "55 8B EC ?? ?? 8B").
+---@param pattern string IDA-style hex pattern with optional wildcards (??).
+---@return number address Target address, or 0 if not found.
+function Crabe.Memory.patternScan(pattern) end
+
+--- Writes executable byte patches to memory with automatic memory protection.
+---@param address number Virtual address in memory.
+---@param bytes number[] Table of byte values (0-255).
+---@return boolean success True if patch succeeded.
+---@return string? error Error message if failed.
+function Crabe.Memory.patchBytes(address, bytes) end
+
+--- Reads a 32-bit floating point value from memory.
+---@param address number Virtual address.
+---@return number value Float value.
+function Crabe.Memory.readFloat(address) end
+
+--- Writes a 32-bit floating point value to memory.
+---@param address number Virtual address.
+---@param value number Float value to write.
+---@return boolean success
+function Crabe.Memory.writeFloat(address, value) end
+
+--- Reads an unsigned 32-bit integer from memory.
+---@param address number Virtual address.
+---@return number value Integer value.
+function Crabe.Memory.readU32(address) end
+
+--- Writes an unsigned 32-bit integer to memory.
+---@param address number Virtual address.
+---@param value number Integer value to write.
+---@return boolean success
+function Crabe.Memory.writeU32(address, value) end
+
+--- Installs an x86 code cave using HDE32 dynamic instruction boundary analysis.
+---@param address number Hook site virtual address.
+---@param shellcodeBytes number[] Assembly payload bytes.
+---@param stolenLen? number Optional manual stolen byte count override.
+---@return number trampolineAddress Address of allocated trampoline, or 0 on failure.
+function Crabe.Memory.installCodeCave(address, shellcodeBytes, stolenLen) end
+
+--------------------------------------------------------------------------------
+-- Crabe.Hooks: Engine Chunk & Bytecode Interception
+--------------------------------------------------------------------------------
+
+---@class CrabeHooks
+Crabe.Hooks = {}
+
+--- Arms a Lua patch to run immediately after a chunk containing matchPattern is executed.
+---@param matchPattern string Substring or identifier matching chunk source.
+---@param luaCode string Lua code string to execute after chunk completion.
+function Crabe.Hooks.patchChunk(matchPattern, luaCode) end
+
+--- Arms a Lua patch to run immediately after a chunk with the exact name executes.
+---@param chunkName string Full name of target chunk.
+---@param luaCode string Lua code string to execute.
+function Crabe.Hooks.patchNamedChunk(chunkName, luaCode) end
+
+--- Completely replaces the source code of a chunk before bytecode compilation.
+---@param matchPattern string Substring or identifier matching chunk source.
+---@param luaCode string Replacement Lua source code.
+function Crabe.Hooks.overrideChunk(matchPattern, luaCode) end
+
+--- Installs an x86 code cave (facade over Crabe.Memory.installCodeCave).
+---@param address number Hook site virtual address.
+---@param shellcodeBytes number[] Assembly payload bytes.
+---@param stolenLen? number Optional manual stolen byte count override.
+---@return number trampolineAddress Address of allocated trampoline, or 0 on failure.
+function Crabe.Hooks.installCodeCave(address, shellcodeBytes, stolenLen) end
+
+--------------------------------------------------------------------------------
+-- Crabe.Input: Keybinding Management
+--------------------------------------------------------------------------------
+
+---@class CrabeInput
+Crabe.Input = {}
+
+--- Binds a virtual key to a callback handler.
+---@param vk number Virtual Key code (e.g. 0x74 for VK_F5).
+---@param callback fun(): any Function called on key press.
+function Crabe.Input.bindKey(vk, callback) end
+
+--- Unbinds a previously registered virtual key callback.
+---@param vk number Virtual Key code.
+function Crabe.Input.unbindKey(vk) end
+
+--------------------------------------------------------------------------------
+-- Crabe.ImGui: Dear ImGui Rendering Primitives
+--------------------------------------------------------------------------------
+
+---@class CrabeImGui
+Crabe.ImGui = {}
+
+--- Begins an ImGui window. Must be called inside onDraw.
+---@param title string Window title.
+---@param open? boolean Window open state.
+---@return boolean isVisible True if window is open and uncollapsed.
+function Crabe.ImGui.begin(title, open) end
+
+--- Ends the current ImGui window.
+function Crabe.ImGui.endWindow() end
+
+--- Renders text in the current window.
+---@param text string Text to display.
+function Crabe.ImGui.text(text) end
+
+--- Renders a clickable button.
+---@param label string Button label.
+---@return boolean clicked True if clicked this frame.
+function Crabe.ImGui.button(label) end
+
+--- Renders a checkbox toggle.
+---@param label string Checkbox label.
+---@param checked boolean Current checked state.
+---@return boolean changed True if clicked this frame.
+---@return boolean newState New boolean value.
+function Crabe.ImGui.checkbox(label, checked) end
+
+--- Renders a floating point slider.
+---@param label string Slider label.
+---@param value number Current value.
+---@param min number Minimum value.
+---@param max number Maximum value.
+---@return boolean changed True if dragged this frame.
+---@return number newValue New float value.
+function Crabe.ImGui.sliderFloat(label, value, min, max) end
+
+--- Renders an integer slider.
+---@param label string Slider label.
+---@param value number Current value.
+---@param min number Minimum value.
+---@param max number Maximum value.
+---@return boolean changed True if dragged this frame.
+---@return number newValue New integer value.
+function Crabe.ImGui.sliderInt(label, value, min, max) end
+
+--- Draws a visual separator line.
+function Crabe.ImGui.separator() end
+
+--- Places the next widget on the same line as the previous widget.
+function Crabe.ImGui.sameLine() end
 
 --------------------------------------------------------------------------------
 -- Crabe.Menu: In-Game ImGui Mod Menu (F5)
@@ -117,86 +317,7 @@ function Crabe.Menu.addSlider(categoryName, label, getFn, setFn, min, max, step)
 function Crabe.Menu.setStatus(message) end
 
 --------------------------------------------------------------------------------
--- Crabe.Multiplayer: Quazal Net-Z P2P Subsystem
---------------------------------------------------------------------------------
-
----@class NatInfo
----@field public available boolean True if NAT subsystem is active.
----@field public publicIp string Detected public WAN IP.
----@field public localIp string Detected local LAN IP.
----@field public portForwarded boolean True if UPnP port forward succeeded.
----@field public port number Port forwarded (typically 3074).
----@field public natType string NAT description ("Open", "Moderate", "Strict").
-
----@class LocationStringOpts
----@field public publicIp string Public WAN IPv4 address.
----@field public publicPort? number Public port (default: 3074).
----@field public privateIp? string Local LAN IPv4 address (default: publicIp).
----@field public privatePort? number Local port (default: publicPort).
----@field public hostDid? string Host Disney ID GUID.
----@field public gameName? string Internal game identifier (default: "IN2PC").
-
----@class ParsedLocation
----@field public ip string Resolved IPv4 address.
----@field public port number Resolved port.
----@field public hostDid string Host Disney ID GUID.
----@field public gameName string Game identifier.
-
----@class CrabeMultiplayer
-Crabe.Multiplayer = {}
-
---- Checks if the multiplayer subsystem is active in the engine.
----@return boolean available
-function Crabe.Multiplayer.isAvailable() end
-
---- Queries current NAT and port forwarding status.
----@return NatInfo info
-function Crabe.Multiplayer.getNatInfo() end
-
---- Triggers an UPnP port forward on the router for P2P traffic.
----@param port? number Port to open (default: 3074).
----@param protocol? "UDP"|"TCP" Protocol (default: "UDP").
----@return boolean success
-function Crabe.Multiplayer.triggerPortForward(port, protocol) end
-
---- Primes the HTTP redirector to inject a direct connect target into the friends list.
----@param friendName string Display name for the peer.
----@param ip string Target IPv4 address.
----@param port? number Target port (default: 3074).
----@param hostDid? string Optional host GUID.
----@return boolean success
-function Crabe.Multiplayer.setDirectConnect(friendName, ip, port, hostDid) end
-
---- Encodes connection endpoints into a Net-Z JSON locationString.
----@param opts LocationStringOpts Endpoint details.
----@return string locationString
-function Crabe.Multiplayer.buildLocationString(opts) end
-
---- Parses an engine locationString back into an IP and port table.
----@param locationStr string Raw locationString.
----@return ParsedLocation parsed
-function Crabe.Multiplayer.parseLocationString(locationStr) end
-
---------------------------------------------------------------------------------
--- Crabe.Speedhack
---------------------------------------------------------------------------------
-
----@class CrabeSpeedhack
-Crabe.Speedhack = {}
-
---- Sets the global game speed multiplier.
----@param speed number Speed multiplier (e.g. 0.5 for half speed, 2.0 for double).
-function Crabe.Speedhack.setGameSpeed(speed) end
-
---- Gets the current game speed multiplier.
----@return number speed
-function Crabe.Speedhack.getGameSpeed() end
-
---- Resets the game speed multiplier to normal (1.0).
-function Crabe.Speedhack.resetGameSpeed() end
-
---------------------------------------------------------------------------------
--- Crabe.VirtualReader (Character Injection)
+-- Crabe.VirtualReader: Character & Figurine Roster Injection
 --------------------------------------------------------------------------------
 
 ---@class CharacterEntry
@@ -204,6 +325,7 @@ function Crabe.Speedhack.resetGameSpeed() end
 ---@field public baseCharacter? string Existing catalog name to inherit from.
 ---@field public sku_id? string Numeric SKU identifier.
 ---@field public Icon? string Path to character icon asset.
+---@field public ProgressionTree? string Stem of the progression tree file.
 
 ---@class CrabeVirtualReader
 Crabe.VirtualReader = {}
@@ -223,13 +345,13 @@ function Crabe.VirtualReader.addCharacter(entry) end
 function Crabe.VirtualReader.listCharacters() end
 
 --------------------------------------------------------------------------------
--- Game Engine Hooks
+-- Game: Guarded Engine Facade
 --------------------------------------------------------------------------------
 
 ---@class Game
 Game = {}
 
---- Registers a per-frame callback running at ~60 Hz.
+--- Registers a per-frame callback running at ~60 Hz on the script thread.
 ---@param fn fun(dt: number): any
 function Game.onTick(fn) end
 
@@ -243,30 +365,15 @@ function Game.onDeath(playerId, fn) end
 ---@return boolean isDead
 function Game.IsCharacterDead(playerId) end
 
---------------------------------------------------------------------------------
--- Common Avalanche / Disney Infinity Engine Natives
---------------------------------------------------------------------------------
+--- Returns the local player entity pointer or index if available.
+---@return number? player
+function Game.GetLocalPlayer() end
 
---- Sets session mode (false = hosting, true = joining).
----@param isJoin boolean
-function Network_SetJoinSession(isJoin) end
+--- Sets the health value of a player entity.
+---@param player number
+---@param health number
+function Game.SetPlayerHealth(player, health) end
 
---- Sets the session identifier or join string for the network engine.
----@param sessionName string
-function Network_SetSessionName(sessionName) end
-
---- Opens the in-game friends overlay.
----@param unused number
-function UI_ViewFriends(unused) end
-
---- Opens the in-game multiplayer invitations overlay.
-function UI_ViewInvitations() end
-
---- Sends in-game text chat across the active multiplayer session.
----@param text string
-function TransmitChatText(text) end
-
---- Returns the primary host player ID.
----@return number playerId
-function Players_GetHostPlayerID() end
-
+--- Changes the active player avatar to the specified SKU ID.
+---@param skuId number
+function Avatar_ChangeAvatar(skuId) end

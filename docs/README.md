@@ -21,4 +21,4 @@ A dedicated suite of structured guides in plain English explaining every modding
 * **[Lua API Type Definitions (`crabe_api.def.lua`)](crabe_api.def.lua)** — EmmyLua type definitions for code completion and static analysis in VS Code / IDEs.
 
 ### 4. Architectural Invariants & Blueprint
-* **[Architecture Blueprint (Long-Term Reference)](ARCHITECTURE_BLUEPRINT.md)** — Invariant rules, the 5-layer stack, decision flowchart ("where does my code belong?"), and the Definition of Done (DoD).
+* **[Architecture Blueprint (Long-Term Reference)](ARCHITECTURE_BLUEPRINT.md)** — Invariant rules, the 4-layer architecture model, decision flowchart ("where does my code belong?"), and the Definition of Done (DoD).

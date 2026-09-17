@@ -1,15 +1,15 @@
 # Architectural Code of Conduct & Technical Invariants
 
-> **Repository:** DIM2 / CrabeLoader
-> **Target:** *Disney Infinity 3.0: Gold Edition (PC)* — Win32 x86 / DirectX 11 / Lua 5.1
-> **Status:** Mandatory Technical Standard & Invariant Blueprint
-> **Audience:** All contributors, developers, and pair-programming agents
+> **Repository:** CrabeLoader  
+> **Target:** *Disney Infinity 3.0: Gold Edition (PC)* — Win32 x86 / DirectX 11 / Lua 5.1  
+> **Status:** Mandatory Technical Standard & Invariant Blueprint  
+> **Audience:** All contributors, developers, and pair-programming agents  
 
 ---
 
 ## 1. Core Architectural Invariant
 
-All development across the DIM2 codebase must adhere to one non-negotiable principle:
+All development across the CrabeLoader codebase must adhere to one non-negotiable principle:
 
 ```text
 +-------------------------------------------------------------------------------+
@@ -26,7 +26,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ## 2. Mandatory Architectural Rules
 
 ### Rule 1: Zero Gameplay Logic in C++
-
 * **The Rule:** No C++ file may contain hardcoded game attributes (health, sparks, damage), character names, figurine SKUs, menu UI layouts, or game-specific keyboard shortcuts (such as hardcoding `VK_F5` to open a menu).
 * **Why it is this way:** Hardcoding game mechanics into the C++ DLL binds the binary to specific game memory offsets, bloats compilation cycles, and prevents live hot-reloading (`F4`). Every gameplay change would require rebuilding the DLL in Visual Studio.
 * **Failure Scenario (Anti-Pattern):** Writing a `cheats.cpp` file inside the C++ loader with hardcoded `GodMode` toggles or speed multipliers.
@@ -35,7 +34,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ---
 
 ### Rule 2: Deep-Frozen Sandboxing & Variable Isolation
-
 * **The Rule:** Every mod must run within an isolated environment table (`_ENV`). Global standard tables (`Game`, `table`, `string`, `math`, `coroutine`, `os`, `debug`, and `_G`) must be shielded by deep read-only proxy metatables.
 * **Why it is this way:** In Lua 5.1, undeclared variables default to global scope `_G`. If Mod A declares `target = 0x1234` and Mod B declares `target = 0x5678`, they silently corrupt each other's execution, resulting in intermittent, non-reproducible bugs. Furthermore, if a mod mutates `Game.UnlockAllControls = nil`, the entire engine state is permanently corrupted.
 * **Failure Scenario (Anti-Pattern):** Executing mods directly inside `_G` without scoping.
@@ -44,7 +42,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ---
 
 ### Rule 3: Execution Context & Thread Boundaries
-
 * **The Rule:** Lua script execution must occur exclusively on the engine's main script thread (`Loader::runTicks`). DirectX 11 UI rendering must occur exclusively inside the Present hook (`RenderHook::hkPresent`). Cross-thread data exchange must use thread-safe queues or atomic variables.
 * **Why it is this way:** The embedded Lua 5.1 runtime is **not thread-safe**. Calling `lua_pcall` or reading the Lua stack from an asynchronous thread causes immediate pointer corruption and uncatchable crashes. Similarly, issuing DirectX 11 draw commands outside `IDXGISwapChain::Present` causes driver deadlocks and swapchain invalidation.
 * **Failure Scenario (Anti-Pattern):** Spawning a `std::thread` that directly executes a Lua file via `LuaCall::runFile`.
@@ -53,7 +50,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ---
 
 ### Rule 4: Rate-Limited Infrastructure (No Heavy Logic in Tight Loops)
-
 * **The Rule:** Hooks called at high frequencies (such as `hkPcall`, which executes up to 10,000 times per second) must run in $O(1)$ time with zero mutex contention and zero disk I/O. Background worker tasks must be throttled to 60 Hz (~16ms).
 * **Why it is this way:** Acquiring a `std::mutex` or checking filesystem timestamps inside `hkPcall` forces the engine's primary execution loop to serialize on lock acquisition thousands of times per frame, dropping game framerates from 60 FPS to unplayable single digits.
 * **Failure Scenario (Anti-Pattern):** Reading a command file from disk or acquiring locks inside `hkPcall`.
@@ -62,7 +58,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ---
 
 ### Rule 5: Dynamic Instruction Boundary Code Caves (HDE32)
-
 * **The Rule:** Any x86 code cave that diverts execution (`jmp rel32`) must dynamically disassemble target opcodes using an instruction length decoder (HDE32) to calculate stolen bytes. Slicing a fixed number of bytes is strictly prohibited.
 * **Why it is this way:** x86 instructions range from 1 to 15 bytes in length. A relative jump requires 5 bytes (`E9 xx xx xx xx`). If a 5-byte slice cuts across the middle of a 6-byte instruction (e.g. `mov dword ptr [ebp-04], eax`), the trailing byte is left stranded at the hook site. The CPU decodes this orphan byte as garbage, causing an immediate Illegal Instruction crash (`0xC000001D`).
 * **Failure Scenario (Anti-Pattern):** `std::memcpy(stolen, site, 5);` followed by writing `0xE9`.
@@ -71,7 +66,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ---
 
 ### Rule 6: Mandatory Hardware Exception Handling (SEH Crash Armor)
-
 * **The Rule:** Every native C++ execution bridge that invokes untrusted memory access, third-party hooks, or Lua execution callbacks must be wrapped in Microsoft Structured Exception Handling (`__try / __except`).
 * **Why it is this way:** Standard C++ `try/catch` statements **cannot intercept hardware-level exceptions** such as Access Violations (`0xC0000005`) or Integer Division by Zero (`0xC0000094`). An unhandled hardware fault instantly terminates the game process with zero diagnostic logs.
 * **Failure Scenario (Anti-Pattern):** Calling a raw function pointer retrieved from memory without a guard.
@@ -80,7 +74,6 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 ---
 
 ### Rule 7: Declarative Roster & Skill Tree Injections
-
 * **The Rule:** Adding new characters or modifying progression trees must be achieved through declarative scripts (`characters/*.lua`, `skilltrees/*.patch`, `skilltrees/*.lua`) matched by chunk content keys, never by hardcoding memory addresses.
 * **Why it is this way:** Memory addresses shift with compiler optimizations and game updates. Matching content strings during `luaL_loadbuffer` (e.g. matching `TCW_MaceWindu` or `HULK_BASEHEALTH`) remains 100% resilient across game versions and asset repacks.
 * **Failure Scenario (Anti-Pattern):** Hardcoding game memory offsets in C++ to patch Hulk's health.
@@ -88,7 +81,7 @@ All development across the DIM2 codebase must adhere to one non-negotiable princ
 
 ---
 
-## 3. The 5-Layer Stack Specification
+## 3. The 4-Layer Architecture Model
 
 ```mermaid
 flowchart TD
@@ -111,34 +104,21 @@ flowchart TD
         TYPES["EmmyLua Typing (crabe_api.def.lua) for IDE Autocomplete"]
     end
 
-    subgraph L3["Layer 3: Official System Mods (mods/)"]
-        CRABEMENU["CrabeMenu (mods/crabemenu.lua): F5 Menu, Trainer, Teleport, Freecam"]
+    subgraph L3["Layer 3: Lua Mods & Content Ecosystem (mods/)"]
+        CRABEMENU["CrabeMenu (mods/crabemenu.lua): In-Game Menu, Trainer, Cheats, UI"]
         WINDOW_MODE["Window Mode (mods/window_mode.lua): Borderless Fullscreen"]
-    end
-
-    subgraph L4["Layer 4: Community & Content Ecosystem"]
-        CUSTOM_SKILLS["skilltrees/*.patch & *.lua (Progression Trees)"]
-        CUSTOM_HEROES["characters/*.lua (New Heroes, Roster Injections & Skins)"]
-        COMMUNITY_MODS["mods/*/ (Third-Party Gameplay Mods, Quests, Mini-Games)"]
-    end
-
-    subgraph L5["Layer 5: Satellite Projects & R&D (Decoupled)"]
-        DIMP["DisneyInfinityMP (Standalone P2P Networking Mod Consuming Crabe.*)"]
-        TOOLS["External Tooling (FTS5 Search, Cheat Engine Bridge, QuickBMS)"]
+        CUSTOM_SKILLS["skilltrees/*.patch & *.lua (Custom Progression Trees)"]
+        CUSTOM_HEROES["characters/*.lua (Roster Expansions & Hero Declarations)"]
     end
 
     L0 <--> L1
     L1 --> L2
     L2 --> L3
-    L2 --> L4
-    L2 --> L5
 
     style L0 fill:#eceff1,stroke:#455a64,stroke-width:2px;
     style L1 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
     style L2 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     style L3 fill:#fff3e0,stroke:#e65100,stroke-width:2px;
-    style L4 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    style L5 fill:#fbe9e7,stroke:#bf360c,stroke-width:2px;
 ```
 
 ---
@@ -150,14 +130,14 @@ Consult this decision tree before adding or modifying any feature:
 ```mermaid
 flowchart TD
     Q1{"Can Lua implement this<br/>via Crabe.* or Game.* ?"}
-  
+    
     Q1 -->|"YES"| Q2{"What type of feature is it?"}
-    Q1 -->|"NO"| Q3{"Is it a reusable system primitive<br/>(Memory, Hook, Network, OS) ?"}
+    Q1 -->|"NO"| Q3{"Is it a reusable system primitive<br/>(Memory, Hook, OS) ?"}
 
     Q2 -->|"Menu, cheats, camera, or tools"| DEST_CRABEMENU["Implement in CrabeMenu (mods/crabemenu.lua)"]
     Q2 -->|"New hero, figure, or costume skin"| DEST_CHAR["Implement in characters/ (.lua)"]
     Q2 -->|"Ability tree or progression tweak"| DEST_SKILL["Implement in skilltrees/ (.patch or .lua)"]
-    Q2 -->|"Independent gameplay feature"| DEST_MOD["Create standalone mod in mods/<mod_name>/"]
+    Q2 -->|"Standalone game mode or tool"| DEST_MOD["Create standalone mod in mods/<mod_name>/"]
 
     Q3 -->|"YES (Generic)"| DEST_CPP["Implement in C++23 in CrabeLoader<br/>+ Expose abstract primitive in src/api/"]
     Q3 -->|"NO (Game-specific DI3 hack)"| STOP["STOP: Flawed architecture!<br/>Convert into a runtime memory patch executed from Lua."]
@@ -176,9 +156,9 @@ flowchart TD
 
 Every Pull Request and commit must pass this checklist before being accepted:
 
-- [ ]  **Portability Invariant:** Does this C++ code contain zero Disney-specific identifiers? Could it run unchanged in another 32-bit DirectX 11 game?
-- [ ]  **Hot-Reload Verification:** Can the feature be modified and reloaded via **F4** in under 50ms without restarting `DisneyInfinity3.exe`?
-- [ ]  **Fault Resilience (SEH):** If the function dereferences `nullptr`, does the game continue running without a crash to desktop?
-- [ ]  **Strict Comment Constraints:** Does the code contain **ZERO inline comments** inside function bodies, and only descriptive comments (max 3 lines) placed directly above function declarations?
-- [ ]  **Documentation Sync:** Is the feature documented in English in [`docs/guides/`](guides/) with a clear, minimal working example?
-- [ ]  **Build Hygiene:** Does CMake compile cleanly (Win32 Release) with **0 errors and 0 warnings**?
+- [ ] **Portability Invariant:** Does this C++ code contain zero Disney-specific identifiers? Could it run unchanged in another 32-bit DirectX 11 game?
+- [ ] **Hot-Reload Verification:** Can the feature be modified and reloaded via **F4** in under 50ms without restarting `DisneyInfinity3.exe`?
+- [ ] **Fault Resilience (SEH):** If the function dereferences `nullptr`, does the game continue running without a crash to desktop?
+- [ ] **Strict Comment Constraints:** Does the code contain **ZERO inline comments** inside function bodies, and only descriptive comments (max 3 lines) placed directly above function declarations?
+- [ ] **Documentation Sync:** Is the feature documented in English in [`docs/guides/`](guides/) with a clear, minimal working example?
+- [ ] **Build Hygiene:** Does CMake compile cleanly (Win32 Release) with **0 errors and 0 warnings**?

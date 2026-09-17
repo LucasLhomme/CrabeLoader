@@ -36,7 +36,7 @@ Complete, structured guides in plain English are available in the **[`docs/`](do
 | **[Character & Figurine Guide](docs/guides/characters.md)** | Learn the 5-step figurine resolution pipeline (`SKU -> AvatarData -> Name -> ActorList -> DNA`), how to expose unreleased heroes (Mace Windu, Thanos), and create costume variants. |
 | **[Native Function Database](docs/nativedb.md)** | Catalog of 1,200+ native C++ engine functions exposed to Lua. |
 | **[Lua API Type Definitions](docs/crabe_api.def.lua)** | EmmyLua autocomplete and static typing definitions for IDEs. |
-| **[Architecture Blueprint](docs/ARCHITECTURE_BLUEPRINT.md)** | Long-term architectural invariants, 5-layer stack, decision flowchart, and Definition of Done. |
+| **[Architecture Blueprint](docs/ARCHITECTURE_BLUEPRINT.md)** | Long-term architectural invariants, 4-layer architecture model, decision flowchart, and Definition of Done. |
 
 ---
 
