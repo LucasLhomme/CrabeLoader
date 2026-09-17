@@ -27,6 +27,7 @@ class Overlay {
         // flag: ImGui clears it when the title-bar close button is used, so
         // the window and the F5 toggle stay in agreement.
         void renderModMenu(bool* open);
+        void onModMenuOpened() { _focusNext = true; }
 
     protected:
     private:
@@ -46,6 +47,8 @@ class Overlay {
         int _menuCursor = 0;
         // Set when the cursor moves, so the list scrolls to follow it.
         bool _menuScrollTo = false;
+        // Request window focus on next render (set on F5 open)
+        bool _focusNext = false;
         // Last title drawn. A change means a different view, so the selection
         // goes back to the top instead of pointing at an unrelated row.
         std::string _menuTitle;

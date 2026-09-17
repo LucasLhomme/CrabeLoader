@@ -90,12 +90,16 @@ class RenderHook {
         static HRESULT __stdcall hkSetFullscreenState(IDXGISwapChain* swapChain, BOOL fullscreen,
                                                      IDXGIOutput* target);
 
+        // Hook for SetCursorPos to suppress cursor centering while overlay is open.
+        static BOOL WINAPI hkSetCursorPos(int X, int Y);
+
         // Subclassed window procedure handling hotkeys, alt-tab, and input routing.
         static LRESULT CALLBACK hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
         typedef HRESULT(__stdcall* t_Present)(IDXGISwapChain*, UINT, UINT);
         typedef HRESULT(__stdcall* t_ResizeBuffers)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
         typedef HRESULT(__stdcall* t_SetFullscreenState)(IDXGISwapChain*, BOOL, IDXGIOutput*);
+        typedef BOOL(WINAPI* t_SetCursorPos)(int, int);
 
         // Returns pointer to the original Present method.
         t_Present originalPresent() const;
@@ -106,9 +110,13 @@ class RenderHook {
         // Returns pointer to the original SetFullscreenState method.
         t_SetFullscreenState originalSetFullscreenState() const;
 
+        // Returns pointer to the original SetCursorPos function.
+        t_SetCursorPos originalSetCursorPos() const;
+
         Hook _hookPresent;
         Hook _hookResizeBuffers;
         Hook _hookSetFullscreenState;
+        Hook _hookSetCursorPos;
 
         Overlay _overlay;
 

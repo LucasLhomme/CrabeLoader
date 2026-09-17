@@ -51,6 +51,11 @@ bool Overlay::isLevelVisible(LogLevel level) const
 // requests. Nothing here touches Lua: the render thread must not.
 void Overlay::renderModMenu(bool* open)
 {
+    if (_focusNext) {
+        ImGui::SetNextWindowFocus();
+        _focusNext = false;
+    }
+
     ImGui::SetNextWindowSize(ImVec2(360.0f, 420.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Crabe Menu", open)) {
         ImGui::End();
@@ -93,8 +98,10 @@ void Overlay::renderModMenu(bool* open)
         _menuScrollTo = true;
     };
 
-    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)) moveCursor(1);
-    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true)) moveCursor(-1);
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) moveCursor(1);
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true)) moveCursor(-1);
     if (ImGui::IsKeyPressed(ImGuiKey_PageDown, true)) moveCursor(5);
     if (ImGui::IsKeyPressed(ImGuiKey_PageUp, true)) moveCursor(-5);
     if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) { _menuCursor = 0; _menuScrollTo = true; }
@@ -103,11 +110,15 @@ void Overlay::renderModMenu(bool* open)
     // Lua indexes from 1 throughout.
     if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
         ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
+        ImGui::IsKeyPressed(ImGuiKey_RightArrow, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false))
         Menu::get().requestActivate(_menuCursor + 1);
 
     if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
-        ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+        ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, false))
         Menu::get().requestBack();
 
     const float footerHeight = ImGui::GetStyle().ItemSpacing.y * 2.0f
@@ -118,12 +129,7 @@ void Overlay::renderModMenu(bool* open)
         ImGui::PushID(i);
 
         const bool selected = (i == _menuCursor);
-        if (ImGui::Selectable(view.items[i].c_str(), selected)) {
-            // Clicking still works, and moves the keyboard cursor with it so
-            // the two never disagree about what is selected.
-            _menuCursor = i;
-            Menu::get().requestActivate(i + 1);
-        }
+        ImGui::Selectable(view.items[i].c_str(), selected);
         if (selected && _menuScrollTo)
             ImGui::SetScrollHereY(0.5f);
 
@@ -218,6 +224,7 @@ void Overlay::initialize()
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.IniFilename = nullptr; // Do not litter game root with imgui.ini
     io.LogFilename = nullptr; // Do not litter game root with imgui_log.txt
 
