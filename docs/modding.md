@@ -11,19 +11,36 @@ For dedicated, comprehensive topic guides:
 
 ---
 
-## 1. Where a Mod Lives
+## 1. Where Mods, Characters & Skill Trees Live
 
-Drop a `.lua` file or a folder with a `mod.json` manifest into `mods/`:
+CrabeLoader discovers content in both global directories and modular mod folders:
+
 ```text
 Disney Infinity 3.0 Gold Edition/
-├── mods/
-│   ├── hello.lua
-│   └── my_mod/
-│       ├── mod.json
-│       └── main.lua
+├── bink2w32.dll              <- CrabeLoader V2 proxy DLL (embedded API)
+├── bink2w32_orig.dll         <- Original game Bink DLL
+├── mods/                     <- Mods directory (scripts & modular packages)
+│   ├── hello.lua             <- Standalone single-file mod
+│   └── hero_overhaul/        <- Modular mod folder with manifest
+│       ├── mod.json          <- Mod metadata manifest
+│       ├── main.lua          <- Primary entry script
+│       ├── characters/       <- Mod-bundled character declarations
+│       │   └── CustomHero.lua
+│       └── skilltrees/       <- Mod-bundled skill tree patches/overrides
+│           └── CombatBuff.patch
+├── characters/               <- Global character declarations
+│   ├── CRABE_MaceWindu.lua   <- Standalone unreleased hero
+│   └── CRABE_Thanos.lua      <- Standalone hero
+└── skilltrees/               <- Global skill tree modifications
+    ├── HULK_BASEHEALTH.patch <- Chunk patch (runs after matching chunk)
+    └── tcw_macewindu.lua     <- Source override (replaces chunk before compilation)
 ```
 
-No manual injector needed: CrabeLoader runs every mod once the game's Lua VM is ready and the `Crabe.*` / `Game.*` APIs are injected.
+No manual injector or archive repacking is needed: CrabeLoader scans and activates all three content types automatically:
+* **Mods (`mods/`):** Standalone `.lua` scripts and modular folders with `mod.json` execute as soon as the Lua VM is initialized.
+* **Characters (`characters/` & `mods/*/characters/`):** Registered into the game's `VirtualReader` catalog, unlocking heroes in the selection grid.
+* **Skill Trees (`skilltrees/` & `mods/*/skilltrees/`):** Intercepted on-the-fly during engine bytecode compilation via `luaL_loadbuffer`.
+
 
 ```lua
 -- mods/hello.lua
