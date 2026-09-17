@@ -386,13 +386,6 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             if (self._menuOpen)
                 self._overlay.renderOverlay();
 
-            void* L = Loader::get().getLuaState();
-            if (L) {
-                CrashHandler::runGuarded([L]() {
-                    Crabe::Domain::ModManager::get().dispatchDraw(L);
-                }, "RenderHook::dispatchDraw");
-            }
-
             ImGui::Render();
             self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

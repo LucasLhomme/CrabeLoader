@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <mutex>
 
 namespace Crabe::Domain {
 
@@ -234,20 +235,9 @@ void ModManager::reloadAllMods(void* L)
 }
 
 // Dispatches per-frame ImGui draw callbacks to all registered mods.
-void ModManager::dispatchDraw(void* L)
+// Deprecated: calling into Lua from the render thread causes VM race conditions.
+void ModManager::dispatchDraw([[maybe_unused]] void* L)
 {
-    if (!L)
-        return;
-
-    if (_hotReloadRequested.load()) {
-        reloadAllMods(L);
-        return;
-    }
-
-    LuaCall::get().runSnippet(L,
-        "if Crabe and Crabe.Mod and Crabe.Mod.dispatchDraw then "
-        "    Crabe.Mod.dispatchDraw() "
-        "end");
 }
 
 } // namespace Crabe::Domain

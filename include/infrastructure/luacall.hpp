@@ -182,7 +182,6 @@ class LuaCall {
         t_lua_isnumber _isnumber = nullptr;
         t_lua_pushcclosure _pushcclosure = nullptr;
         t_lua_rawset _rawset = nullptr;
-
 };
 
 #endif /* !LUACALL_HPP_ */
