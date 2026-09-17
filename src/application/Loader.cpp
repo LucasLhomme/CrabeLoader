@@ -17,6 +17,7 @@
 
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "infrastructure/crash_handler.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/luacall.hpp"
 #include "infrastructure/memory.hpp"
@@ -163,6 +164,21 @@ void Loader::registerKeybind(int virtualKey, std::function<void()> onPress)
     Logger::getInstance().debug("Loader: registered keybind for virtual key 0x{:X}.", virtualKey);
 }
 
+// Replaces the captured key set. An empty list restores normal forwarding.
+void Loader::setCapturedKeys(std::vector<int> virtualKeys)
+{
+    std::lock_guard<std::mutex> lock(_capturedKeysMutex);
+    _capturedKeys.clear();
+    for (int virtualKey : virtualKeys)
+        _capturedKeys.insert(virtualKey);
+}
+
+bool Loader::isKeyCaptured(int virtualKey) const
+{
+    std::lock_guard<std::mutex> lock(_capturedKeysMutex);
+    return _capturedKeys.count(virtualKey) != 0;
+}
+
 void Loader::registerLuaKeybind(int virtualKey, const std::string& luaFunctionName)
 {
     registerKeybind(virtualKey, [this, luaFunctionName]() {
@@ -270,10 +286,33 @@ void Loader::runTicks(void* L)
     double dt = std::chrono::duration<double>(elapsed).count();
     LuaCall::get().callTick(L, dt);
 
+    drainPendingKeyEvents(L);
     drainPendingKeybindCalls(L);
     drainRemoteCommandFile(L);
     drainPendingSnippets(L);
     drainLuaOutput(L);
+
+    CrashHandler::runGuarded([L]() {
+        Crabe::Domain::ModManager::get().dispatchDraw(L);
+    }, "Loader::dispatchDraw");
+}
+
+// Emits every key press collected by the window thread since the last tick.
+void Loader::drainPendingKeyEvents(void* L)
+{
+    std::vector<int> pending;
+    {
+        std::lock_guard<std::mutex> lock(_keyEventQueueMutex);
+        if (_pendingKeyEvents.empty())
+            return;
+        pending.swap(_pendingKeyEvents);
+    }
+
+    for (int virtualKey : pending) {
+        LuaCall::get().runSnippet(L, std::format(
+            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}) end",
+            virtualKey));
+    }
 }
 
 void Loader::drainPendingSnippets(void* L)
@@ -330,7 +369,6 @@ void Loader::ensureRuntimeReady(void* L)
 
     _initializedStates.insert(L);
     _luaState = L;
-    _runtimeReady = true;
 
     Logger::getInstance().info("Loader: game Lua state 0x{:X} ready, injecting the API ({} state(s) so far).",
                             reinterpret_cast<uintptr_t>(L), _initializedStates.size());
@@ -338,6 +376,7 @@ void Loader::ensureRuntimeReady(void* L)
     LuaRuntime::injectAll(L);
     LuaRuntime::registerNatives(L);
     onLoadmods();
+    _runtimeReady = true;
 }
 
 void Loader::drainLuaOutput(void* L)
@@ -395,10 +434,10 @@ void Loader::onKeyEvent(int virtualKey, bool isDown)
         callback();
     }
 
-    if (isDown && _runtimeReady && _luaState) {
-        LuaCall::get().runSnippet(_luaState, std::format(
-            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}) end",
-            virtualKey));
+    if (isDown && _runtimeReady) {
+        std::lock_guard<std::mutex> lock(_keyEventQueueMutex);
+        if (_pendingKeyEvents.size() < kMaxPendingKeyEvents)
+            _pendingKeyEvents.push_back(virtualKey);
     }
 }
 

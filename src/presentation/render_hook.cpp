@@ -3,8 +3,8 @@
 #include <string>
 
 #include "presentation/render_hook.hpp"
+#include "presentation/draw_buffer.hpp"
 #include "application/loader.hpp"
-#include "domain/ModManager.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "shared/logger.hpp"
 
@@ -174,16 +174,23 @@ void RenderHook::uninitialize()
     if (_device) { _device->Release(); _device = nullptr; }
 }
 
-// Sets cursor visibility state based on whether menus are currently open.
+// Flags the cursor state as stale. Called from the window thread, so the ImGui
+// IO write itself is deferred to Present (Architecture Blueprint, Rule 3).
 void RenderHook::updateCursorVisibility()
 {
-    // The mouse cursor is ONLY shown for the Insert console overlay (_menuOpen).
-    // The F5 mod menu (_modMenuOpen) is purely keyboard/gamepad driven.
-    bool showCursor = _menuOpen.load();
-    ImGui::GetIO().MouseDrawCursor = showCursor;
-    if (showCursor) {
+    _cursorDirty.store(true);
+    if (_menuOpen.load()) {
         ClipCursor(nullptr);
     }
+}
+
+// Applies a pending cursor state on the render thread. The mouse cursor is only
+// shown for the Insert console overlay; the F5 mod menu is keyboard driven.
+void RenderHook::applyPendingCursorVisibility()
+{
+    if (!_cursorDirty.exchange(false))
+        return;
+    ImGui::GetIO().MouseDrawCursor = _menuOpen.load();
 }
 
 // Toggles visibility of the debug overlay and updates mouse cursor.
@@ -379,12 +386,18 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
         }
 
         if (self._renderTargetView) {
+            self.applyPendingCursorVisibility();
+
             ImGui_ImplDX11_NewFrame();
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
 
             if (self._menuOpen)
                 self._overlay.renderOverlay();
+
+            CrashHandler::runGuarded([]() {
+                Crabe::Presentation::DrawBuffer::get().replay();
+            }, "RenderHook::replayDrawBuffer");
 
             ImGui::Render();
             self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
@@ -485,6 +498,12 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 return 0;
             }
         }
+    }
+
+    // Case 2: a mod asked for these keys, so the game must not also act on them.
+    if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
+        if (Loader::get().isKeyCaptured(static_cast<int>(wParam)))
+            return 0;
     }
 
     return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);

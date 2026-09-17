@@ -57,8 +57,11 @@ class RenderHook {
                                               uintptr_t& outResizeBuffers,
                                               uintptr_t& outSetFullscreenState);
 
-        // Synchronizes cursor visibility according to active menus and focus.
+        // Flags cursor visibility as stale from any thread.
         void updateCursorVisibility();
+
+        // Applies a pending cursor visibility change. Render thread only.
+        void applyPendingCursorVisibility();
 
         // Initializes ImGui Win32/DX11 backends once swapchain device is ready.
         void ensureBackendInit(IDXGISwapChain* swapChain);
@@ -121,6 +124,7 @@ class RenderHook {
         WNDPROC _originalWndProc = nullptr;
         std::atomic<bool> _backendInitialized{false};
         std::atomic<bool> _menuOpen{false};
+        std::atomic<bool> _cursorDirty{false};
 
         LONG_PTR _originalStyle = 0;
         RECT _originalRect{};

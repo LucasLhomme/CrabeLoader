@@ -8,6 +8,7 @@
 #define LOADER_HPP_
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -28,10 +29,19 @@ class Loader {
         void onLoadmods();
         void registerKeybind(int virtualKey, std::function<void()> onPress);
         void onKeyEvent(int virtualKey, bool isDown);
+
+        // Virtual keys the window procedure must swallow instead of forwarding
+        // to the game. Which keys those are is the caller's business, so a mod
+        // navigating a list can stop it from also steering the player.
+        void setCapturedKeys(std::vector<int> virtualKeys);
+        [[nodiscard]] bool isKeyCaptured(int virtualKey) const;
         [[nodiscard]] void* getLuaState() const noexcept { return _runtimeReady.load() ? _luaState : nullptr; }
         [[nodiscard]] bool isRuntimeReady() const noexcept { return _runtimeReady.load(); }
         void queueLuaCall(const std::string& luaFunctionName);
         void drainPendingKeybindCalls(void* L);
+
+        // Emits key presses recorded by the window thread. Script thread only.
+        void drainPendingKeyEvents(void* L);
         void queueConsoleSnippet(const std::string& code);
         void drainPendingSnippets(void* L);
         void drainLuaOutput(void* L);
@@ -103,6 +113,13 @@ class Loader {
         std::mutex _luaCallQueueMutex;
         std::vector<std::string> _pendingSnippets;
         std::mutex _snippetQueueMutex;
+        // Bounded: a key held down while the script thread is stalled must not
+        // grow this queue without limit.
+        static constexpr std::size_t kMaxPendingKeyEvents = 64;
+        std::vector<int> _pendingKeyEvents;
+        std::mutex _keyEventQueueMutex;
+        std::unordered_set<int> _capturedKeys;
+        mutable std::mutex _capturedKeysMutex;
         std::chrono::steady_clock::time_point _lastOutputDrain{};
         std::chrono::steady_clock::time_point _lastReadyProbe{};
         std::chrono::steady_clock::time_point _lastTick{};

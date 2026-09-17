@@ -42,6 +42,7 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
     src/presentation/imgui_bindings.cpp
+    src/presentation/draw_buffer.cpp
 
     # Application Layer
     src/application/Loader.cpp

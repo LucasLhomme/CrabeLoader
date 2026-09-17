@@ -1,6 +1,8 @@
 #include "domain/ModManager.hpp"
 #include "domain/ModManifest.hpp"
+#include "application/loader.hpp"
 #include "infrastructure/luacall.hpp"
+#include "presentation/draw_buffer.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 
@@ -234,10 +236,19 @@ void ModManager::reloadAllMods(void* L)
     discoverAndLoadMods(L, targetFolder);
 }
 
-// Dispatches per-frame ImGui draw callbacks to all registered mods.
-// Deprecated: calling into Lua from the render thread causes VM race conditions.
-void ModManager::dispatchDraw([[maybe_unused]] void* L)
+// Records one frame of mod ImGui calls on the script thread. Nothing is drawn
+// here: the commands are replayed later by RenderHook inside Present, which is
+// the only place allowed to touch Direct3D (Architecture Blueprint, Rule 3).
+void ModManager::dispatchDraw(void* L)
 {
+    if (!L || !Loader::get().isRuntimeReady())
+        return;
+
+    Crabe::Presentation::DrawBuffer& buffer = Crabe::Presentation::DrawBuffer::get();
+
+    buffer.beginFrame();
+    LuaCall::get().dispatchModDraw(L);
+    buffer.endFrame();
 }
 
 } // namespace Crabe::Domain

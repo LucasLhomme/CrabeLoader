@@ -50,6 +50,24 @@ namespace {
         return 1;
     }
 
+    // Crabe._setCapturedKeys(vk, ...) -> swallows those keys before the game
+    // sees them. Called with no arguments, it releases every captured key.
+    int __cdecl nativeSetCapturedKeys(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        std::vector<int> keys;
+
+        int top = lua.getTop(L);
+        for (int index = 1; index <= top; ++index) {
+            int virtualKey = static_cast<int>(lua.argToNumber(L, index, 0.0));
+            if (virtualKey > 0 && virtualKey < 256)
+                keys.push_back(virtualKey);
+        }
+
+        Loader::get().setCapturedKeys(std::move(keys));
+        return 0;
+    }
+
     // Crabe._findGameNative(name) -> address, or nil.
     int __cdecl nativeFindGameNative(void* L)
     {
@@ -407,6 +425,7 @@ bool LuaRuntime::registerNatives(void* L)
         { "_moduleBase",            &nativeModuleBase },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &InputNatives::keyDown },
+        { "_setCapturedKeys",       &nativeSetCapturedKeys },
         { "_messageWatch",          &nativeMessageWatch },
         { "_messageReport",         &nativeMessageReport },
         { "_messageClear",          &nativeMessageClear },

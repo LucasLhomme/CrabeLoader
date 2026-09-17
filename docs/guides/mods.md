@@ -73,9 +73,9 @@ Crabe.Mod.register({
         -- Perform periodic game checks or timers
     end,
 
-    -- 3. Called during the DirectX 11 Present loop to render ImGui UI
+    -- 3. Called once per frame on the script thread to describe the ImGui UI
     onDraw = function()
-        -- Render Dear ImGui windows and overlays safely
+        -- Queue Dear ImGui windows and widgets; the render thread draws them
     end,
 
     -- 4. Called when the mod is unloaded or reloaded (F4)
@@ -116,7 +116,12 @@ end
 
 ## 5. Designing In-Game User Interfaces (Dear ImGui)
 
-CrabeLoader V2 includes **Dear ImGui** bindings directly in Lua, executed on the DirectX 11 render pipeline. All UI rendering must take place inside the `onDraw` lifecycle callback:
+CrabeLoader V2 includes **Dear ImGui** bindings directly in Lua. All UI rendering must take place inside the `onDraw` lifecycle callback:
+
+> **How it executes.** `onDraw` runs on the engine's script thread, never on the render thread — the Lua VM is single-threaded, and calling into it from `Present` corrupts it. Your ImGui calls are recorded into a command buffer, which the render thread replays natively inside `Present`. Two consequences are worth knowing:
+>
+> * **Widget states arrive one frame late.** `ImGui.Button` reports the click measured on the previous frame. For menus this is imperceptible, but do not build logic that assumes same-frame feedback.
+> * **Unbalanced `Begin`/`End` cannot break the UI.** The replay tracks window scopes and closes anything your script left open, so a Lua error mid-draw degrades that frame instead of corrupting ImGui's state.
 
 ```lua
 local isMenuOpen = true

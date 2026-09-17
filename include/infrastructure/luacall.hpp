@@ -79,6 +79,10 @@ class LuaCall {
         bool runSnippet(void* L, const std::string& code) const;
         bool callTick(void* L, double dt) const;
 
+        // Calls Crabe.Mod.dispatchDraw() natively. Script thread only: the Lua
+        // VM is single-threaded (Architecture Blueprint, Rule 3).
+        bool dispatchModDraw(void* L) const;
+
         typedef int(__cdecl* t_lua_cfunction)(void* L);
 
         // Registers `cFunction` as `<tableName>.<fieldName>`, e.g. Crabe.SetWindowMode.
