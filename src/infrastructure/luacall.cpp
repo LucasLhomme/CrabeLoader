@@ -14,6 +14,24 @@
 // Lua's LUA_MULTRET: return every value the chunk produced.
 constexpr int kLuaMultret = -1;
 
+namespace {
+
+thread_local bool g_inLoaderTick = false;
+
+class ScopedFlag final {
+public:
+    explicit ScopedFlag(bool& flag) : _flag(flag) { _flag = true; }
+    ~ScopedFlag() { _flag = false; }
+
+    ScopedFlag(const ScopedFlag&) = delete;
+    ScopedFlag& operator=(const ScopedFlag&) = delete;
+
+private:
+    bool& _flag;
+};
+
+}
+
 LuaCall& LuaCall::get()
 {
     static LuaCall instance;
@@ -127,7 +145,8 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
 {
     Loader& loader = Loader::get();
     loader.ensureRuntimeReady(L);
-    if (loader.isGameState(L)) {
+    if (!g_inLoaderTick && loader.isGameState(L)) {
+        ScopedFlag tickScope(g_inLoaderTick);
         loader.runTicks(L);
     }
 
@@ -270,6 +289,42 @@ bool LuaCall::callTick(void* L, double dt) const
 
     _pushnumber(L, dt);
     int status = pcall(L, 1, 0, 0);
+    _settop(L, savedTop);
+
+    return status == kLuaOk;
+}
+
+// Executes Crabe.Mod.dispatchDraw() natively without string compilation or GC overhead.
+bool LuaCall::dispatchModDraw(void* L) const
+{
+    t_lua_pcall pcall = originalPcall();
+
+    if (!L || !pcall || !_getfield || !_gettop || !_settop || !_toboolean)
+        return false;
+
+    constexpr int kLuaGlobalsIndex = -10002;
+    constexpr int kLuaOk = 0;
+    int savedTop = _gettop(L);
+
+    _getfield(L, kLuaGlobalsIndex, "Crabe");
+    if (!_toboolean(L, -1)) {
+        _settop(L, savedTop);
+        return false;
+    }
+
+    _getfield(L, -1, "Mod");
+    if (!_toboolean(L, -1)) {
+        _settop(L, savedTop);
+        return false;
+    }
+
+    _getfield(L, -1, "dispatchDraw");
+    if (!_toboolean(L, -1)) {
+        _settop(L, savedTop);
+        return false;
+    }
+
+    int status = pcall(L, 0, 0, 0);
     _settop(L, savedTop);
 
     return status == kLuaOk;

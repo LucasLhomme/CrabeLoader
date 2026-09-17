@@ -110,6 +110,18 @@ function Hooks.overrideChunk(matchSubstring, replacementSource)
     end
 end
 
+--- Stops the game from seeing the given keys, so a mod can own them while a
+--- list or prompt is up. Call with nil or an empty table to release them.
+--- @param keys table|nil Array of Windows Virtual Key codes
+function Input.captureKeys(keys)
+    if not Crabe._setCapturedKeys then return end
+    if type(keys) ~= "table" then
+        Crabe._setCapturedKeys()
+        return
+    end
+    Crabe._setCapturedKeys(unpack(keys))
+end
+
 --- Binds a virtual key to a Lua callback function.
 --- @param vk number Windows Virtual Key code
 --- @param callback function Function to invoke on key down

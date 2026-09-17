@@ -1,219 +1,388 @@
 #include "presentation/imgui_bindings.hpp"
+#include "presentation/draw_buffer.hpp"
 #include "infrastructure/luacall.hpp"
 #include "shared/logger.hpp"
 #include "imgui/imgui.h"
 
 #include <cstddef>
 #include <cstring>
-#include <vector>
+#include <string>
 
 namespace {
 
-/// Begins an ImGui window and pushes its visibility boolean to Lua.
+using Crabe::Presentation::DrawBuffer;
+using Crabe::Presentation::DrawCommand;
+using Crabe::Presentation::DrawOp;
+using Crabe::Presentation::WidgetResult;
+
+/// Records `command` and reports what the render thread measured for it on the
+/// previous frame, leaving `out` untouched when the widget is new.
+bool recordAndRead(DrawCommand command, WidgetResult& out)
+{
+    std::uint32_t id = DrawBuffer::get().record(std::move(command));
+    return DrawBuffer::get().tryResult(id, out);
+}
+
+/// Records `command` without reading any state back.
+void recordOnly(DrawCommand command)
+{
+    DrawBuffer::get().record(std::move(command));
+}
+
+/// Reads argument `idx` as a string, or an empty string when absent.
+std::string argText(void* L, int idx)
+{
+    const char* value = LuaCall::get().argToString(L, idx);
+    return value ? std::string(value) : std::string();
+}
+
+/// Queues an ImGui window and pushes its visibility and close-button state.
 int __cdecl luaBegin(void* L)
 {
     LuaCall& lua = LuaCall::get();
-    const char* name = lua.argToString(L, 1);
+    DrawCommand command;
+    command.op = DrawOp::Begin;
+    command.label = argText(L, 1);
+
     int top = lua.getTop(L);
-    bool visible = false;
     if (top >= 3) {
-        bool openVal = lua.argToBoolean(L, 2, true);
-        auto flags = static_cast<ImGuiWindowFlags>(lua.argToNumber(L, 3, 0.0));
-        visible = ImGui::Begin(name ? name : "", &openVal, flags);
+        command.b0 = lua.argToBoolean(L, 2, true);
+        command.i0 = static_cast<int>(lua.argToNumber(L, 3, 0.0));
     } else if (top == 2) {
         if (lua.isNumber(L, 2)) {
-            auto flags = static_cast<ImGuiWindowFlags>(lua.argToNumber(L, 2, 0.0));
-            visible = ImGui::Begin(name ? name : "", nullptr, flags);
+            command.i0 = static_cast<int>(lua.argToNumber(L, 2, 0.0));
         } else {
-            bool openVal = lua.argToBoolean(L, 2, true);
-            visible = ImGui::Begin(name ? name : "", &openVal, 0);
+            command.b0 = lua.argToBoolean(L, 2, true);
         }
-    } else {
-        visible = ImGui::Begin(name ? name : "", nullptr, 0);
     }
-    lua.pushBoolean(L, visible);
-    return 1;
-}
 
-/// Ends the current ImGui window.
-int __cdecl luaEnd(void* L)
-{
-    (void)L;
-    ImGui::End();
-    return 0;
-}
-
-/// Renders unformatted text in the current ImGui window.
-int __cdecl luaText(void* L)
-{
-    const char* text = LuaCall::get().argToString(L, 1);
-    ImGui::TextUnformatted(text ? text : "");
-    return 0;
-}
-
-/// Renders colored text using RGBA float components.
-int __cdecl luaTextColored(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    auto r = static_cast<float>(lua.argToNumber(L, 1, 1.0));
-    auto g = static_cast<float>(lua.argToNumber(L, 2, 1.0));
-    auto b = static_cast<float>(lua.argToNumber(L, 3, 1.0));
-    auto a = static_cast<float>(lua.argToNumber(L, 4, 1.0));
-    const char* text = lua.argToString(L, 5);
-    ImGui::TextColored(ImVec4(r, g, b, a), "%s", text ? text : "");
-    return 0;
-}
-
-/// Renders a button and returns whether it was clicked.
-int __cdecl luaButton(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const char* label = lua.argToString(L, 1);
-    auto w = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    auto h = static_cast<float>(lua.argToNumber(L, 3, 0.0));
-    bool clicked = ImGui::Button(label ? label : "", ImVec2(w, h));
-    lua.pushBoolean(L, clicked);
-    return 1;
-}
-
-/// Renders a checkbox and returns its new boolean state.
-int __cdecl luaCheckbox(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const char* label = lua.argToString(L, 1);
-    bool value = lua.argToBoolean(L, 2, false);
-    ImGui::Checkbox(label ? label : "", &value);
-    lua.pushBoolean(L, value);
-    return 1;
-}
-
-/// Renders a float slider and returns its updated value.
-int __cdecl luaSliderFloat(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const char* label = lua.argToString(L, 1);
-    auto val = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    auto min = static_cast<float>(lua.argToNumber(L, 3, 0.0));
-    auto max = static_cast<float>(lua.argToNumber(L, 4, 1.0));
-    ImGui::SliderFloat(label ? label : "", &val, min, max);
-    lua.pushNumber(L, static_cast<double>(val));
-    return 1;
-}
-
-/// Renders an integer slider and returns its updated value.
-int __cdecl luaSliderInt(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const char* label = lua.argToString(L, 1);
-    auto val = static_cast<int>(lua.argToNumber(L, 2, 0.0));
-    auto min = static_cast<int>(lua.argToNumber(L, 3, 0.0));
-    auto max = static_cast<int>(lua.argToNumber(L, 4, 100.0));
-    ImGui::SliderInt(label ? label : "", &val, min, max);
-    lua.pushNumber(L, static_cast<double>(val));
-    return 1;
-}
-
-/// Renders a text input field and returns updated text and changed flag.
-int __cdecl luaInputText(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    const char* label = lua.argToString(L, 1);
-    const char* val = lua.argToString(L, 2);
-    auto maxLen = static_cast<size_t>(lua.argToNumber(L, 3, 256.0));
-    if (maxLen < 1) {
-        maxLen = 256;
-    } else if (maxLen > 65536) {
-        maxLen = 65536;
-    }
-    std::vector<char> buffer(maxLen + 1, '\0');
-    if (val) {
-        std::strncpy(buffer.data(), val, maxLen);
-        buffer[maxLen] = '\0';
-    }
-    bool changed = ImGui::InputText(label ? label : "", buffer.data(), buffer.size());
-    lua.pushString(L, buffer.data());
-    lua.pushBoolean(L, changed);
+    WidgetResult result;
+    result.flag = true;
+    recordAndRead(std::move(command), result);
+    lua.pushBoolean(L, result.flag);
+    lua.pushBoolean(L, result.open);
     return 2;
 }
 
-/// Positions the next widget on the same line.
-int __cdecl luaSameLine(void* L)
-{
-    LuaCall& lua = LuaCall::get();
-    auto offset = static_cast<float>(lua.argToNumber(L, 1, 0.0));
-    auto spacing = static_cast<float>(lua.argToNumber(L, 2, -1.0));
-    ImGui::SameLine(offset, spacing);
-    return 0;
-}
-
-/// Renders a horizontal separator line.
-int __cdecl luaSeparator(void* L)
+/// Queues the end of the current ImGui window.
+int __cdecl luaEnd(void* L)
 {
     (void)L;
-    ImGui::Separator();
+    DrawCommand command;
+    command.op = DrawOp::End;
+    recordOnly(std::move(command));
     return 0;
 }
 
-/// Adds vertical spacing before the next widget.
-int __cdecl luaSpacing(void* L)
+/// Queues unformatted text in the current ImGui window.
+int __cdecl luaText(void* L)
 {
-    (void)L;
-    ImGui::Spacing();
+    DrawCommand command;
+    command.op = DrawOp::Text;
+    command.text = argText(L, 1);
+    recordOnly(std::move(command));
     return 0;
 }
 
-/// Begins a scrolling child region and returns its visibility.
-int __cdecl luaBeginChild(void* L)
+/// Queues colored text using RGBA float components.
+int __cdecl luaTextColored(void* L)
 {
     LuaCall& lua = LuaCall::get();
-    const char* id = lua.argToString(L, 1);
-    auto w = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    auto h = static_cast<float>(lua.argToNumber(L, 3, 0.0));
-    bool border = lua.argToBoolean(L, 4, false);
-    auto flags = static_cast<ImGuiWindowFlags>(lua.argToNumber(L, 5, 0.0));
-    ImGuiChildFlags childFlags = border ? ImGuiChildFlags_Border : ImGuiChildFlags_None;
-    bool visible = ImGui::BeginChild(id ? id : "", ImVec2(w, h), childFlags, flags);
-    lua.pushBoolean(L, visible);
+    DrawCommand command;
+    command.op = DrawOp::TextColored;
+    command.f0 = static_cast<float>(lua.argToNumber(L, 1, 1.0));
+    command.f1 = static_cast<float>(lua.argToNumber(L, 2, 1.0));
+    command.f2 = static_cast<float>(lua.argToNumber(L, 3, 1.0));
+    command.f3 = static_cast<float>(lua.argToNumber(L, 4, 1.0));
+    command.text = argText(L, 5);
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues greyed-out text, used for hints and empty-state messages.
+int __cdecl luaTextDisabled(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::TextDisabled;
+    command.text = argText(L, 1);
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues a selectable row and pushes whether it was clicked.
+int __cdecl luaSelectable(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::Selectable;
+    command.label = argText(L, 1);
+    command.b0 = lua.argToBoolean(L, 2, false);
+    command.i0 = static_cast<int>(lua.argToNumber(L, 3, 0.0));
+
+    WidgetResult result;
+    recordAndRead(std::move(command), result);
+    lua.pushBoolean(L, result.flag);
     return 1;
 }
 
-/// Ends the current scrolling child region.
+/// Queues a scroll so that the previous row is brought into view.
+int __cdecl luaSetScrollHereY(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::SetScrollHereY;
+    command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.5));
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues a button and pushes whether it was clicked on the previous frame.
+int __cdecl luaButton(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::Button;
+    command.label = argText(L, 1);
+    command.f0 = static_cast<float>(lua.argToNumber(L, 2, 0.0));
+    command.f1 = static_cast<float>(lua.argToNumber(L, 3, 0.0));
+
+    WidgetResult result;
+    recordAndRead(std::move(command), result);
+    lua.pushBoolean(L, result.flag);
+    return 1;
+}
+
+/// Queues a checkbox and pushes its state, defaulting to the supplied value.
+int __cdecl luaCheckbox(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    bool value = lua.argToBoolean(L, 2, false);
+
+    DrawCommand command;
+    command.op = DrawOp::Checkbox;
+    command.label = argText(L, 1);
+    command.b0 = value;
+
+    WidgetResult result;
+    result.flag = value;
+    recordAndRead(std::move(command), result);
+    lua.pushBoolean(L, result.flag);
+    return 1;
+}
+
+/// Queues a float slider and pushes its value, defaulting to the supplied one.
+int __cdecl luaSliderFloat(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    double value = lua.argToNumber(L, 2, 0.0);
+
+    DrawCommand command;
+    command.op = DrawOp::SliderFloat;
+    command.label = argText(L, 1);
+    command.f0 = static_cast<float>(value);
+    command.f1 = static_cast<float>(lua.argToNumber(L, 3, 0.0));
+    command.f2 = static_cast<float>(lua.argToNumber(L, 4, 1.0));
+
+    WidgetResult result;
+    result.number = value;
+    recordAndRead(std::move(command), result);
+    lua.pushNumber(L, result.number);
+    return 1;
+}
+
+/// Queues an integer slider and pushes its value, defaulting to the supplied one.
+int __cdecl luaSliderInt(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    double value = lua.argToNumber(L, 2, 0.0);
+
+    DrawCommand command;
+    command.op = DrawOp::SliderInt;
+    command.label = argText(L, 1);
+    command.i0 = static_cast<int>(value);
+    command.f1 = static_cast<float>(lua.argToNumber(L, 3, 0.0));
+    command.f2 = static_cast<float>(lua.argToNumber(L, 4, 100.0));
+
+    WidgetResult result;
+    result.number = value;
+    recordAndRead(std::move(command), result);
+    lua.pushNumber(L, result.number);
+    return 1;
+}
+
+/// Queues a text input and pushes its buffer plus a changed flag.
+int __cdecl luaInputText(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    std::string value = argText(L, 2);
+
+    auto maxLen = static_cast<std::size_t>(lua.argToNumber(L, 3, 256.0));
+    if (maxLen < 1)
+        maxLen = 256;
+    else if (maxLen > 65536)
+        maxLen = 65536;
+
+    DrawCommand command;
+    command.op = DrawOp::InputText;
+    command.label = argText(L, 1);
+    command.text = value;
+    command.i0 = static_cast<int>(maxLen);
+
+    WidgetResult result;
+    result.text = value;
+    recordAndRead(std::move(command), result);
+    lua.pushString(L, result.text);
+    lua.pushBoolean(L, result.flag);
+    return 2;
+}
+
+/// Queues placement of the next widget on the current line.
+int __cdecl luaSameLine(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::SameLine;
+    command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.0));
+    command.f1 = static_cast<float>(lua.argToNumber(L, 2, -1.0));
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues a horizontal separator line.
+int __cdecl luaSeparator(void* L)
+{
+    (void)L;
+    DrawCommand command;
+    command.op = DrawOp::Separator;
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues vertical spacing before the next widget.
+int __cdecl luaSpacing(void* L)
+{
+    (void)L;
+    DrawCommand command;
+    command.op = DrawOp::Spacing;
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues a scrolling child region and pushes its visibility.
+int __cdecl luaBeginChild(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::BeginChild;
+    command.label = argText(L, 1);
+    command.f0 = static_cast<float>(lua.argToNumber(L, 2, 0.0));
+    command.f1 = static_cast<float>(lua.argToNumber(L, 3, 0.0));
+    command.b0 = lua.argToBoolean(L, 4, false);
+    command.i0 = static_cast<int>(lua.argToNumber(L, 5, 0.0));
+
+    WidgetResult result;
+    result.flag = true;
+    recordAndRead(std::move(command), result);
+    lua.pushBoolean(L, result.flag);
+    return 1;
+}
+
+/// Queues the end of the current scrolling child region.
 int __cdecl luaEndChild(void* L)
 {
     (void)L;
-    ImGui::EndChild();
+    DrawCommand command;
+    command.op = DrawOp::EndChild;
+    recordOnly(std::move(command));
     return 0;
 }
 
-/// Sets the position for the next created window.
+/// Queues a tab bar and pushes whether it was opened.
+int __cdecl luaBeginTabBar(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::BeginTabBar;
+    command.label = argText(L, 1);
+    command.i0 = static_cast<int>(lua.argToNumber(L, 2, 0.0));
+
+    bool opened = DrawBuffer::get().recordScope(std::move(command), true);
+    lua.pushBoolean(L, opened);
+    return 1;
+}
+
+/// Queues the end of the current tab bar.
+int __cdecl luaEndTabBar(void* L)
+{
+    (void)L;
+    DrawCommand command;
+    command.op = DrawOp::EndTabBar;
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues a tab and pushes whether it is the selected one. A tab never seen
+/// before reports unselected, so its body starts being recorded one frame later.
+int __cdecl luaBeginTabItem(void* L)
+{
+    LuaCall& lua = LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::BeginTabItem;
+    command.label = argText(L, 1);
+    command.i0 = static_cast<int>(lua.argToNumber(L, 2, 0.0));
+
+    bool selected = DrawBuffer::get().recordScope(std::move(command), false);
+    lua.pushBoolean(L, selected);
+    return 1;
+}
+
+/// Queues the end of the current tab.
+int __cdecl luaEndTabItem(void* L)
+{
+    (void)L;
+    DrawCommand command;
+    command.op = DrawOp::EndTabItem;
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Queues the position of the next created window.
 int __cdecl luaSetNextWindowPos(void* L)
 {
     LuaCall& lua = LuaCall::get();
-    auto x = static_cast<float>(lua.argToNumber(L, 1, 0.0));
-    auto y = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    auto cond = static_cast<ImGuiCond>(lua.argToNumber(L, 3, 0.0));
-    ImGui::SetNextWindowPos(ImVec2(x, y), cond);
+    DrawCommand command;
+    command.op = DrawOp::SetNextWindowPos;
+    command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.0));
+    command.f1 = static_cast<float>(lua.argToNumber(L, 2, 0.0));
+    command.i0 = static_cast<int>(lua.argToNumber(L, 3, 0.0));
+    recordOnly(std::move(command));
     return 0;
 }
 
-/// Sets the size for the next created window.
+/// Queues the size of the next created window.
 int __cdecl luaSetNextWindowSize(void* L)
 {
     LuaCall& lua = LuaCall::get();
-    auto w = static_cast<float>(lua.argToNumber(L, 1, 0.0));
-    auto h = static_cast<float>(lua.argToNumber(L, 2, 0.0));
-    auto cond = static_cast<ImGuiCond>(lua.argToNumber(L, 3, 0.0));
-    ImGui::SetNextWindowSize(ImVec2(w, h), cond);
+    DrawCommand command;
+    command.op = DrawOp::SetNextWindowSize;
+    command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.0));
+    command.f1 = static_cast<float>(lua.argToNumber(L, 2, 0.0));
+    command.i0 = static_cast<int>(lua.argToNumber(L, 3, 0.0));
+    recordOnly(std::move(command));
     return 0;
 }
 
-/// Checks if the previous item was clicked with the specified mouse button.
+/// Queues a click test against the previously queued widget.
 int __cdecl luaIsItemClicked(void* L)
 {
     LuaCall& lua = LuaCall::get();
-    auto button = static_cast<ImGuiMouseButton>(lua.argToNumber(L, 1, 0.0));
-    bool clicked = ImGui::IsItemClicked(button);
-    lua.pushBoolean(L, clicked);
+    DrawCommand command;
+    command.op = DrawOp::IsItemClicked;
+    command.i0 = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+
+    WidgetResult result;
+    recordAndRead(std::move(command), result);
+    lua.pushBoolean(L, result.flag);
     return 1;
 }
 
@@ -238,7 +407,10 @@ void ImGuiBindings::registerBindings(void* L)
         { "End", &luaEnd },
         { "Text", &luaText },
         { "TextColored", &luaTextColored },
+        { "TextDisabled", &luaTextDisabled },
         { "Button", &luaButton },
+        { "Selectable", &luaSelectable },
+        { "SetScrollHereY", &luaSetScrollHereY },
         { "Checkbox", &luaCheckbox },
         { "SliderFloat", &luaSliderFloat },
         { "SliderInt", &luaSliderInt },
@@ -248,6 +420,10 @@ void ImGuiBindings::registerBindings(void* L)
         { "Spacing", &luaSpacing },
         { "BeginChild", &luaBeginChild },
         { "EndChild", &luaEndChild },
+        { "BeginTabBar", &luaBeginTabBar },
+        { "EndTabBar", &luaEndTabBar },
+        { "BeginTabItem", &luaBeginTabItem },
+        { "EndTabItem", &luaEndTabItem },
         { "SetNextWindowPos", &luaSetNextWindowPos },
         { "SetNextWindowSize", &luaSetNextWindowSize },
         { "IsItemClicked", &luaIsItemClicked }
