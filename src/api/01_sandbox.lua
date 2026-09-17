@@ -2,6 +2,7 @@ Crabe = Crabe or {}
 Crabe.Sandbox = Crabe.Sandbox or {}
 Crabe.Exports = Crabe.Exports or {}
 
+--- Creates a read-only proxy table blocking writes with security logging.
 local function makeReadOnlyProxy(realTable, tableName, modName)
     if type(realTable) ~= "table" then return realTable end
     local proxy = {}
@@ -27,7 +28,6 @@ end
 
 --- Creates an isolated sandbox environment table for a mod with deep-frozen protection.
 --- Global reads fall back to _G while variable writes remain isolated.
---- Standard library tables and Game API are guarded against mutation.
 function Crabe.Sandbox.create(modName)
     local env = {}
     env._ENV = env
@@ -35,7 +35,6 @@ function Crabe.Sandbox.create(modName)
     env.modName = modName
     env.Crabe = Crabe
 
-    -- Wrap standard tables in read-only proxies for this mod environment
     if Game then env.Game = makeReadOnlyProxy(Game, "Game", modName) end
     if table then env.table = makeReadOnlyProxy(table, "table", modName) end
     if string then env.string = makeReadOnlyProxy(string, "string", modName) end
@@ -43,8 +42,6 @@ function Crabe.Sandbox.create(modName)
     if coroutine then env.coroutine = makeReadOnlyProxy(coroutine, "coroutine", modName) end
     if os then env.os = makeReadOnlyProxy(os, "os", modName) end
     if debug then env.debug = makeReadOnlyProxy(debug, "debug", modName) end
-
-    -- Guard _G inside the sandbox as well
     env._G = makeReadOnlyProxy(_G, "_G", modName)
 
     setmetatable(env, {

@@ -63,7 +63,6 @@ bool CodeCave::install(uintptr_t site, const std::vector<uint8_t>& body, size_t 
     if (_installed || !site) return false;
     if (body.empty() || body.size() > kMaxBody) return false;
 
-    // If stolenLength is 0, dynamically compute the instruction boundary using HDE32
     if (stolenLength == 0) {
         if (!Memory::isReadable(site, kJmpLength)) return false;
         size_t accumulated = 0;

@@ -10,3 +10,5 @@ __pycache__/
 backups/
 decypted/*
 include/application/embedded_api.hpp
+AUDIT_*.md
+DEVLOG_*.md

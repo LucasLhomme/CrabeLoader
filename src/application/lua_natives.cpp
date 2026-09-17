@@ -258,7 +258,6 @@ namespace {
         auto cave = std::make_unique<CodeCave>();
         bool ok = cave->install(addr, body, stolenLength);
         if (ok) {
-            // Intentionally leak cave memory to ensure trampoline permanence
             cave.release();
         }
         if (lua.hasReturnSupport()) {
