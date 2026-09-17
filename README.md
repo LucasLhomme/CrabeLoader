@@ -91,6 +91,10 @@ cmake --build build --config Release
 
 The compiled binary will be generated at `build/Release/bink2w32.dll`.
 
+## Contributing
+
+Contributions are welcome! Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for detailed guidelines on our architecture invariants, C++23 standards, Git workflow, and submission checklist.
+
 ---
 
 ## License
