@@ -8,31 +8,23 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <memory>
 #include <string>
+#include <vector>
 #include <windows.h>
 
 #include "shared/version.hpp"
-
-#include "infrastructure/avatar_relay_hook.hpp"
-#include "domain/cheats.hpp"
-#include "domain/debug_watch.hpp"
-#include "domain/freecam.hpp"
-#include "domain/speedhack.hpp"
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/input_hook.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
 #include "infrastructure/luacall.hpp"
 #include "infrastructure/memory.hpp"
+#include "infrastructure/codecave.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/multiplayer_natives.hpp"
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
-
-// Every function here is a Lua C function: it reads its arguments off the Lua
-// stack, pushes its results back, and returns how many it pushed. They are the
-// loader's whole surface to Lua -- memory access, hook control, window mode --
-// and src/api/*.lua wraps them into something ergonomic.
 
 namespace {
 
@@ -58,8 +50,7 @@ namespace {
         return 1;
     }
 
-    // Crabe._findGameNative(name) -> address, or nil. Looks in the image's
-    // registration table, unlike type(_G[name]).
+    // Crabe._findGameNative(name) -> address, or nil.
     int __cdecl nativeFindGameNative(void* L)
     {
         LuaCall& lua = LuaCall::get();
@@ -75,8 +66,7 @@ namespace {
         return 1;
     }
 
-    // Crabe._moduleBase() -> base address of the game image, so Lua can turn the
-    // absolute addresses above into RVAs comparable with a static disassembly.
+    // Crabe._moduleBase() -> base address of the game image
     int __cdecl nativeModuleBase(void* L)
     {
         LuaCall& lua = LuaCall::get();
@@ -96,9 +86,7 @@ namespace {
         return 1;
     }
 
-    // Crabe._messageWatch(substring) -> start recording engine messages whose
-    // name contains `substring`. The bus carries every message in the game, so
-    // nothing is recorded until something is watched.
+    // Crabe._messageWatch(substring)
     int __cdecl nativeMessageWatch(void* L)
     {
         const char* substring = LuaCall::get().argToString(L, 1);
@@ -123,41 +111,164 @@ namespace {
         return 0;
     }
 
-    // Crabe._armAvatarRelay(gamePlayersThis, targetPlayerIndex) -> 1, or 0 if
-    // the hook is not installed or gamePlayersThis is 0. See avatar_relay_hook.hpp.
-    int __cdecl nativeArmAvatarRelay(void* L)
+    // --- Generic Memory & Patch Primitives ---
+
+    // Crabe._patternScan("55 8B EC ...") -> address, or nil
+    int __cdecl nativePatternScan(void* L)
     {
         LuaCall& lua = LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto gamePlayersThis = static_cast<uintptr_t>(lua.argToNumber(L, 1));
-        auto targetPlayerIndex = static_cast<int>(lua.argToNumber(L, 2));
+        const char* pattern = lua.argToString(L, 1);
+        if (!pattern) return 0;
 
-        bool ok = AvatarRelayHook::get().arm(gamePlayersThis, targetPlayerIndex);
-        lua.pushNumber(L, ok ? 1.0 : 0.0);
+        uintptr_t address = Memory::patternScan(pattern);
+        if (!address) return 0;
+
+        lua.pushNumber(L, static_cast<double>(address));
         return 1;
     }
 
-    // Crabe._disarmAvatarRelay() -> cancels a pending arm.
-    int __cdecl nativeDisarmAvatarRelay(void* L)
+    // Crabe._patchBytes(addr, "90 90 ...") -> bool
+    int __cdecl nativePatchBytes(void* L)
     {
-        (void)L;
-        AvatarRelayHook::get().disarm();
+        LuaCall& lua = LuaCall::get();
+        auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
+        const char* hexStr = lua.argToString(L, 2);
+        if (!addr || !hexStr) {
+            if (lua.hasReturnSupport()) lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        std::vector<uint8_t> bytes;
+        const char* p = hexStr;
+        while (*p) {
+            while (*p == ' ' || *p == '\t') p++;
+            if (!*p) break;
+            char* next = nullptr;
+            unsigned long b = std::strtoul(p, &next, 16);
+            if (next == p) break;
+            bytes.push_back(static_cast<uint8_t>(b));
+            p = next;
+        }
+
+        bool ok = !bytes.empty() && CodeCave::patchBytes(addr, bytes.data(), bytes.size());
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, ok);
+            return 1;
+        }
         return 0;
     }
 
-    // Crabe._avatarRelayStatus() -> "armed=0 fired=1 lastHandle=0x... lastRelayResult=...".
-    int __cdecl nativeAvatarRelayStatus(void* L)
+    // Crabe._readFloat(addr) -> number or nil
+    int __cdecl nativeReadFloat(void* L)
     {
         LuaCall& lua = LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        lua.pushString(L, AvatarRelayHook::get().report());
+        auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
+        if (!addr || !Memory::isReadable(addr, sizeof(float))) return 0;
+
+        float val = *reinterpret_cast<const float*>(addr);
+        lua.pushNumber(L, static_cast<double>(val));
         return 1;
     }
 
-    // Crabe._registerLoadOverride(matchSubstring, luaSource). See
-    // Loader::registerLoadOverride/findLoadOverride.
+    // Crabe._writeFloat(addr, val) -> bool
+    int __cdecl nativeWriteFloat(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
+        auto val = static_cast<float>(lua.argToNumber(L, 2));
+        if (!addr) {
+            if (lua.hasReturnSupport()) lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        bool ok = CodeCave::patchBytes(addr, &val, sizeof(float));
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, ok);
+            return 1;
+        }
+        return 0;
+    }
+
+    // Crabe._readU32(addr) -> number or nil
+    int __cdecl nativeReadU32(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
+        if (!addr || !Memory::isReadable(addr, sizeof(uint32_t))) return 0;
+
+        uint32_t val = *reinterpret_cast<const uint32_t*>(addr);
+        lua.pushNumber(L, static_cast<double>(val));
+        return 1;
+    }
+
+    // Crabe._writeU32(addr, val) -> bool
+    int __cdecl nativeWriteU32(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
+        auto val = static_cast<uint32_t>(lua.argToNumber(L, 2));
+        if (!addr) {
+            if (lua.hasReturnSupport()) lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        bool ok = CodeCave::patchBytes(addr, &val, sizeof(uint32_t));
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, ok);
+            return 1;
+        }
+        return 0;
+    }
+
+    // Crabe._installCodeCave(addr, "90 90 ...", [stolenLength = 0]) -> bool
+    int __cdecl nativeInstallCodeCave(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
+        const char* hexBytes = lua.argToString(L, 2);
+        auto stolenLength = static_cast<size_t>(lua.argToNumber(L, 3));
+        if (!addr || !hexBytes) {
+            if (lua.hasReturnSupport()) lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        std::vector<uint8_t> body;
+        const char* p = hexBytes;
+        while (*p) {
+            while (*p == ' ' || *p == '\t') p++;
+            if (!*p) break;
+            char* next = nullptr;
+            unsigned long b = std::strtoul(p, &next, 16);
+            if (next == p) break;
+            body.push_back(static_cast<uint8_t>(b));
+            p = next;
+        }
+
+        if (body.empty()) {
+            if (lua.hasReturnSupport()) lua.pushBoolean(L, false);
+            return 1;
+        }
+
+        auto cave = std::make_unique<CodeCave>();
+        bool ok = cave->install(addr, body, stolenLength);
+        if (ok) {
+            // Intentionally leak cave memory to ensure trampoline permanence
+            cave.release();
+        }
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, ok);
+            return 1;
+        }
+        return 0;
+    }
+
+    // Crabe._registerLoadOverride(matchSubstring, luaSource)
     int __cdecl nativeRegisterLoadOverride(void* L)
     {
         LuaCall& lua = LuaCall::get();
@@ -169,11 +280,35 @@ namespace {
         return 0;
     }
 
-    // Crabe._clearLoadOverrides() -- drops every registered override.
+    // Crabe._clearLoadOverrides()
     int __cdecl nativeClearLoadOverrides(void* L)
     {
         (void)L;
         Loader::get().clearLoadOverrides();
+        return 0;
+    }
+
+    // Crabe._registerChunkPatch(matchSubstring, luaSource)
+    int __cdecl nativeRegisterChunkPatch(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        const char* match = lua.argToString(L, 1);
+        const char* source = lua.argToString(L, 2);
+        if (match && source) {
+            Loader::get().registerChunkPatch(match, source);
+        }
+        return 0;
+    }
+
+    // Crabe._registerNamedPatch(exactChunkName, luaSource)
+    int __cdecl nativeRegisterNamedPatch(void* L)
+    {
+        LuaCall& lua = LuaCall::get();
+        const char* name = lua.argToString(L, 1);
+        const char* source = lua.argToString(L, 2);
+        if (name && source) {
+            Loader::get().registerNamedPatch(name, source);
+        }
         return 0;
     }
 
@@ -259,9 +394,6 @@ namespace {
 
 } // namespace
 
-// All registered under underscore-prefixed names: these are the raw natives,
-// wrapped by the ergonomic API in src/api/*.lua, same as every other
-// internal detail in Crabe.
 bool LuaRuntime::registerNatives(void* L)
 {
     struct Entry {
@@ -270,30 +402,32 @@ bool LuaRuntime::registerNatives(void* L)
     };
 
     static constexpr Entry kNatives[] = {
-        { "_setWindowModeNative", &nativeSetWindowMode },
-        { "_getWindowModeNative", &nativeGetWindowMode },
-        { "_findGameNative",      &nativeFindGameNative },
-        { "_moduleBase",          &nativeModuleBase },
-        { "_inputReport",         &nativeInputReport },
-        { "_keyDown",             &InputNatives::keyDown },
-        { "_messageWatch",        &nativeMessageWatch },
-        { "_messageReport",       &nativeMessageReport },
-        { "_messageClear",        &nativeMessageClear },
-        { "_armAvatarRelay",      &nativeArmAvatarRelay },
-        { "_disarmAvatarRelay",   &nativeDisarmAvatarRelay },
-        { "_avatarRelayStatus",   &nativeAvatarRelayStatus },
-        { "_registerLoadOverride", &nativeRegisterLoadOverride },
-        { "_clearLoadOverrides",   &nativeClearLoadOverrides },
-        { "_storageSave",          &nativeStorageSave },
-        { "_storageLoad",          &nativeStorageLoad },
-        { "_fileLog",              &nativeFileLog },
+        { "_setWindowModeNative",   &nativeSetWindowMode },
+        { "_getWindowModeNative",   &nativeGetWindowMode },
+        { "_findGameNative",        &nativeFindGameNative },
+        { "_moduleBase",            &nativeModuleBase },
+        { "_inputReport",           &nativeInputReport },
+        { "_keyDown",               &InputNatives::keyDown },
+        { "_messageWatch",          &nativeMessageWatch },
+        { "_messageReport",         &nativeMessageReport },
+        { "_messageClear",          &nativeMessageClear },
+        { "_patternScan",           &nativePatternScan },
+        { "_patchBytes",            &nativePatchBytes },
+        { "_readFloat",             &nativeReadFloat },
+        { "_writeFloat",            &nativeWriteFloat },
+        { "_readU32",               &nativeReadU32 },
+        { "_writeU32",              &nativeWriteU32 },
+        { "_installCodeCave",       &nativeInstallCodeCave },
+        { "_registerLoadOverride",  &nativeRegisterLoadOverride },
+        { "_clearLoadOverrides",    &nativeClearLoadOverrides },
+        { "_registerChunkPatch",    &nativeRegisterChunkPatch },
+        { "_registerNamedPatch",    &nativeRegisterNamedPatch },
+        { "_storageSave",           &nativeStorageSave },
+        { "_storageLoad",           &nativeStorageLoad },
+        { "_fileLog",               &nativeFileLog },
     };
 
-    bool allOk = DebugWatchNatives::registerAll(L);
-    allOk = SpeedHackNatives::registerAll(L) && allOk;
-    allOk = CheatNatives::registerAll(L) && allOk;
-    allOk = FreecamNatives::registerAll(L) && allOk;
-    allOk = Multiplayer::Natives::registerAll(L) && allOk;
+    bool allOk = Multiplayer::Natives::registerAll(L);
     ImGuiBindings::registerBindings(L);
 
     LuaCall::get().runSnippet(L, std::format(
