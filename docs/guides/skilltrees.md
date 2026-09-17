@@ -37,27 +37,20 @@ flowchart TD
 
 ## 2. Directory Placement
 
-Skill tree files can be placed in two locations:
+In CrabeLoader V2, all custom skill tree files live strictly inside a mod folder under `mods/`:
 
-### Option A: Global Skilltrees Folder
-```text
-Disney Infinity 3.0 Gold Edition/
-└── skilltrees/
-    ├── HULK_BASEHEALTH.patch     <- Applied to Hulk
-    └── tcw_macewindu.lua         <- Complete override for Mace Windu
-```
-
-### Option B: Modular Mod Folder
 ```text
 Disney Infinity 3.0 Gold Edition/
 └── mods/
     └── my_combat_rebalance/
         ├── mod.json
+        ├── main.lua
         └── skilltrees/
-            └── ahsoka_custom.patch
+            ├── HULK_BASEHEALTH.patch <- Mod-bundled patch for Hulk
+            └── tcw_macewindu.lua     <- Mod-bundled override for Mace Windu
 ```
 
-CrabeLoader automatically scans both `<GameRoot>/skilltrees/` and `<GameRoot>/mods/*/skilltrees/` on startup.
+CrabeLoader automatically scans `<GameRoot>/mods/*/skilltrees/` on startup. You can also register patches dynamically from any Lua mod using `Crabe.Hooks.patchChunk()` or `Crabe.Hooks.overrideChunk()`.
 
 ---
 

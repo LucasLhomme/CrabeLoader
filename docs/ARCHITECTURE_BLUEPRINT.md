@@ -74,10 +74,10 @@ All development across the CrabeLoader codebase must adhere to one non-negotiabl
 ---
 
 ### Rule 7: Declarative Roster & Skill Tree Injections
-* **The Rule:** Adding new characters or modifying progression trees must be achieved through declarative scripts (`characters/*.lua`, `skilltrees/*.patch`, `skilltrees/*.lua`) matched by chunk content keys, never by hardcoding memory addresses.
+* **The Rule:** Adding new characters or modifying progression trees must be achieved through declarative scripts bundled inside mods (`mods/*/characters/*.lua`, `mods/*/skilltrees/*.patch`, `mods/*/skilltrees/*.lua`) matched by chunk content keys, never by hardcoding memory addresses.
 * **Why it is this way:** Memory addresses shift with compiler optimizations and game updates. Matching content strings during `luaL_loadbuffer` (e.g. matching `TCW_MaceWindu` or `HULK_BASEHEALTH`) remains 100% resilient across game versions and asset repacks.
 * **Failure Scenario (Anti-Pattern):** Hardcoding game memory offsets in C++ to patch Hulk's health.
-* **Compliant Implementation (Standard):** Dropping `skilltrees/HULK_BASEHEALTH.patch` into the mods folder; CrabeLoader intercepts compilation on-the-fly and applies the Lua patch in memory.
+* **Compliant Implementation (Standard):** Dropping `HULK_BASEHEALTH.patch` into a mod's `skilltrees/` directory (`mods/my_mod/skilltrees/`); CrabeLoader intercepts compilation on-the-fly and applies the Lua patch in memory.
 
 ---
 
@@ -107,8 +107,8 @@ flowchart TD
     subgraph L3["Layer 3: Lua Mods & Content Ecosystem (mods/)"]
         CRABEMENU["CrabeMenu (mods/crabemenu.lua): In-Game Menu, Trainer, Cheats, UI"]
         WINDOW_MODE["Window Mode (mods/window_mode.lua): Borderless Fullscreen"]
-        CUSTOM_SKILLS["skilltrees/*.patch & *.lua (Custom Progression Trees)"]
-        CUSTOM_HEROES["characters/*.lua (Roster Expansions & Hero Declarations)"]
+        CUSTOM_SKILLS["mods/*/skilltrees/ (*.patch & *.lua Custom Progression Trees)"]
+        CUSTOM_HEROES["mods/*/characters/ (*.lua Roster Expansions)"]
     end
 
     L0 <--> L1
@@ -135,8 +135,8 @@ flowchart TD
     Q1 -->|"NO"| Q3{"Is it a reusable system primitive<br/>(Memory, Hook, OS) ?"}
 
     Q2 -->|"Menu, cheats, camera, or tools"| DEST_CRABEMENU["Implement in CrabeMenu (mods/crabemenu.lua)"]
-    Q2 -->|"New hero, figure, or costume skin"| DEST_CHAR["Implement in characters/ (.lua)"]
-    Q2 -->|"Ability tree or progression tweak"| DEST_SKILL["Implement in skilltrees/ (.patch or .lua)"]
+    Q2 -->|"New hero, figure, or costume skin"| DEST_CHAR["Implement in a mod's characters/ folder"]
+    Q2 -->|"Ability tree or progression tweak"| DEST_SKILL["Implement in a mod's skilltrees/ folder"]
     Q2 -->|"Standalone game mode or tool"| DEST_MOD["Create standalone mod in mods/<mod_name>/"]
 
     Q3 -->|"YES (Generic)"| DEST_CPP["Implement in C++23 in CrabeLoader<br/>+ Expose abstract primitive in src/api/"]

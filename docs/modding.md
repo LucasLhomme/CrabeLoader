@@ -11,35 +11,31 @@ For dedicated, comprehensive topic guides:
 
 ---
 
-## 1. Where Mods, Characters & Skill Trees Live
+## 1. Where Mods Live (`mods/`)
 
-CrabeLoader discovers content in both global directories and modular mod folders:
+In CrabeLoader V2, **all user content lives strictly inside the `mods/` directory**. There are no loose asset or script folders polluting the root game directory:
 
 ```text
 Disney Infinity 3.0 Gold Edition/
 ├── bink2w32.dll              <- CrabeLoader V2 proxy DLL (embedded API)
 ├── bink2w32_orig.dll         <- Original game Bink DLL
-├── mods/                     <- Mods directory (scripts & modular packages)
-│   ├── hello.lua             <- Standalone single-file mod
-│   └── hero_overhaul/        <- Modular mod folder with manifest
-│       ├── mod.json          <- Mod metadata manifest
-│       ├── main.lua          <- Primary entry script
-│       ├── characters/       <- Mod-bundled character declarations
-│       │   └── CustomHero.lua
-│       └── skilltrees/       <- Mod-bundled skill tree patches/overrides
-│           └── CombatBuff.patch
-├── characters/               <- Global character declarations
-│   ├── CRABE_MaceWindu.lua   <- Standalone unreleased hero
-│   └── CRABE_Thanos.lua      <- Standalone hero
-└── skilltrees/               <- Global skill tree modifications
-    ├── HULK_BASEHEALTH.patch <- Chunk patch (runs after matching chunk)
-    └── tcw_macewindu.lua     <- Source override (replaces chunk before compilation)
+└── mods/                     <- Everything lives inside mods/
+    ├── hello.lua             <- Standalone single-file mod
+    └── hero_overhaul/        <- Modular mod package
+        ├── mod.json          <- Mod metadata manifest
+        ├── main.lua          <- Primary entry script
+        ├── characters/       <- Mod-bundled character declarations
+        │   ├── CRABE_MaceWindu.lua
+        │   └── CRABE_Thanos.lua
+        └── skilltrees/       <- Mod-bundled skill tree patches/overrides
+            ├── HULK_BASEHEALTH.patch
+            └── tcw_macewindu.lua
 ```
 
-No manual injector or archive repacking is needed: CrabeLoader scans and activates all three content types automatically:
-* **Mods (`mods/`):** Standalone `.lua` scripts and modular folders with `mod.json` execute as soon as the Lua VM is initialized.
-* **Characters (`characters/` & `mods/*/characters/`):** Registered into the game's `VirtualReader` catalog, unlocking heroes in the selection grid.
-* **Skill Trees (`skilltrees/` & `mods/*/skilltrees/`):** Intercepted on-the-fly during engine bytecode compilation via `luaL_loadbuffer`.
+No manual injector or archive repacking is needed: CrabeLoader scans `mods/` automatically:
+* **Standalone Scripts (`mods/*.lua`):** Executed directly in their own isolated sandboxes.
+* **Modular Packages (`mods/<folder>/`):** Read `mod.json`, execute their entry script, register custom characters (`characters/`), and arm skill tree patches (`skilltrees/`).
+
 
 
 ```lua

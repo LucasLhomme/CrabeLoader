@@ -11,30 +11,24 @@ CrabeLoader V2 is designed from the ground up on modern **SOLID architecture pri
 ## 1. Quick Start
 
 ### Directory Layout
-CrabeLoader organizes content across three dedicated subsystems (`mods/`, `characters/`, and `skilltrees/`). Content can be placed globally or bundled inside modular mod packages:
+In CrabeLoader V2, **all user content lives strictly inside the `mods/` directory**. There are no loose asset or script folders placed in the game root:
 
 ```text
 Disney Infinity 3.0 Gold Edition/
 ├── bink2w32.dll              <- CrabeLoader V2 proxy DLL (includes embedded API)
 ├── bink2w32_orig.dll         <- Original game Bink DLL
-├── mods/                     <- Mods directory (scripts & modular packages)
-│   ├── simple_mod.lua        <- Single-file standalone mod
-│   └── my_complex_mod/       <- Folder-based modular mod
-│       ├── mod.json          <- Mod manifest
-│       ├── main.lua          <- Primary entry script
-│       ├── characters/       <- Mod-bundled character definitions
-│       │   └── CustomJedi.lua
-│       └── skilltrees/       <- Mod-bundled skill tree patches
-│           └── ahsoka_buff.patch
-├── characters/               <- Global character definitions
-│   ├── CRABE_MaceWindu.lua   <- Standalone character declaration
-│   └── CRABE_Thanos.lua      <- Standalone character declaration
-└── skilltrees/               <- Global skill tree modifications
-    ├── HULK_BASEHEALTH.patch <- Chunk patch (runs after original chunk)
-    └── tcw_macewindu.lua     <- Source override (replaces chunk entirely)
+└── mods/                     <- All mods and content live here
+    ├── simple_mod.lua        <- Single-file standalone mod
+    └── my_complex_mod/       <- Folder-based modular mod
+        ├── mod.json          <- Mod manifest
+        ├── main.lua          <- Primary entry script
+        ├── characters/       <- Mod-bundled character definitions
+        │   └── CustomJedi.lua
+        └── skilltrees/       <- Mod-bundled skill tree patches
+            └── ahsoka_buff.patch
 ```
 
-You can write a single `.lua` file dropped directly into `mods/`, or create a self-contained multi-file package with a `mod.json` manifest that bundles custom code, characters, and skill trees together.
+You can write either a single `.lua` file dropped directly into `mods/`, or create a self-contained multi-file package with a `mod.json` manifest that bundles custom code, characters, and skill trees together.
 
 ---
 

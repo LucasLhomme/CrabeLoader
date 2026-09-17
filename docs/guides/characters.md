@@ -39,27 +39,20 @@ flowchart LR
 
 ## 3. Directory Placement
 
-Character definition scripts can be placed in two locations:
+In CrabeLoader V2, all custom character declarations live strictly inside a mod folder under `mods/`:
 
-### Option A: Global Characters Folder
-```text
-Disney Infinity 3.0 Gold Edition/
-└── characters/
-    ├── CRABE_MaceWindu.lua   <- Global character declaration
-    └── CRABE_Thanos.lua      <- Global character declaration
-```
-
-### Option B: Modular Mod Folder
 ```text
 Disney Infinity 3.0 Gold Edition/
 └── mods/
     └── my_hero_expansion/
         ├── mod.json
+        ├── main.lua
         └── characters/
-            └── CustomJedi.lua <- Mod-bundled character declaration
+            ├── CRABE_MaceWindu.lua <- Mod-bundled character declaration
+            └── CRABE_Thanos.lua    <- Mod-bundled character declaration
 ```
 
-CrabeLoader automatically scans both `<GameRoot>/characters/` and `<GameRoot>/mods/*/characters/` on startup.
+CrabeLoader scans `<GameRoot>/mods/*/characters/` on startup. You can also declare characters programmatically inside any mod's `main.lua` or `onInit` callback using `Crabe.VirtualReader.exposeCharacter()`.
 
 ---
 
