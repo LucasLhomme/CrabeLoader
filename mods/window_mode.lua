@@ -1,31 +1,32 @@
--- Example mod: adds a "Borderless Window" toggle to Settings > Video by
--- monkey-patching SettingsVideo:BuildList. SettingsVideo doesn't exist until
--- the player opens that screen once, so a __newindex watcher on _G catches
--- its creation, then a second one catches BuildList being assigned onto it.
-
--- Crabe.SetWindowMode is a side-effect-free native wrapper; other options
--- persist via the game's own save data, which this mod can't reach, so it
--- keeps its own tiny file next to loader.log instead.
 local kConfigPath = "crabe_window_mode.cfg"
 
+-- Loads saved window mode from configuration file or defaults to borderless.
 local function loadSavedMode()
     local file = io.open(kConfigPath, "r")
-    if not file then return "windowed" end
+    if not file then
+        return "borderless"
+    end
 
     local content = file:read("*a")
     file:close()
 
-    if content and content:match("^%s*borderless%s*$") then return "borderless" end
-    return "windowed"
+    if content and content:match("^%s*windowed%s*$") then
+        return "windowed"
+    end
+    return "borderless"
 end
 
+-- Persists user chosen window mode to configuration file.
 local function saveMode(mode)
     local file = io.open(kConfigPath, "w")
-    if not file then return end
+    if not file then
+        return
+    end
     file:write(mode)
     file:close()
 end
 
+-- Injects borderless window toggle into video settings menu list.
 local function installOption(cls)
     local originalBuildList = cls.BuildList
 
@@ -48,13 +49,7 @@ local function installOption(cls)
     end
 end
 
--- Restore last session's choice immediately, before the player ever opens
--- Settings > Video. "windowed" needs no call: it is already the window's
--- native starting state (src/render_hook.cpp captures it on backend init).
-if loadSavedMode() == "borderless" then
-    Crabe.SetWindowMode("borderless")
-end
-
+-- Watches for BuildList method assignment to hook options menu generation.
 local function watchForBuildList(cls)
     local mt = getmetatable(cls)
     if not mt then
@@ -64,11 +59,16 @@ local function watchForBuildList(cls)
 
     mt.__newindex = function(t, k, v)
         rawset(t, k, v)
-        if k ~= "BuildList" then return end
-        mt.__newindex = ni
+        if k ~= "BuildList" then
+            return
+        end
+        mt.__newindex = nil
         installOption(t)
     end
 end
+
+local savedMode = loadSavedMode()
+Crabe.SetWindowMode(savedMode)
 
 if SettingsVideo then
     installOption(SettingsVideo)
@@ -76,11 +76,11 @@ else
     local rootMt = getmetatable(_G) or {}
     rootMt.__newindex = function(t, k, v)
         rawset(t, k, v)
-        if k ~= "SettingsVideo" then return end
+        if k ~= "SettingsVideo" then
+            return
+        end
         rootMt.__newindex = nil
         watchForBuildList(v)
     end
     setmetatable(_G, rootMt)
 end
-
-print("window_mode mod loaded")

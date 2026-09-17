@@ -1,0 +1,51 @@
+/*
+** CrabeLoader Windows Resource Script (Generated automatically by CMake)
+*/
+
+#include <windows.h>
+
+#define VER_FILEVERSION             0,2,0,0
+#define VER_FILEVERSION_STR         "0.2.0.0\0"
+
+#define VER_PRODUCTVERSION          0,2,0,0
+#define VER_PRODUCTVERSION_STR      "0.2.0\0"
+
+#define VER_COMPANYNAME_STR         "CrabeLoader Team\0"
+#define VER_FILEDESCRIPTION_STR     "CrabeLoader Proxy DLL for Disney Infinity 3.0\0"
+#define VER_INTERNALNAME_STR        "bink2w32\0"
+#define VER_LEGALCOPYRIGHT_STR      "Copyright (C) 2026\0"
+#define VER_ORIGINALFILENAME_STR    "bink2w32.dll\0"
+#define VER_PRODUCTNAME_STR         "CrabeLoader\0"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     VER_FILEVERSION
+PRODUCTVERSION  VER_PRODUCTVERSION
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS       VS_FF_DEBUG
+#else
+FILEFLAGS       0x0L
+#endif
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_DLL
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName",      VER_COMPANYNAME_STR
+            VALUE "FileDescription",  VER_FILEDESCRIPTION_STR
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "InternalName",     VER_INTERNALNAME_STR
+            VALUE "LegalCopyright",   VER_LEGALCOPYRIGHT_STR
+            VALUE "OriginalFilename", VER_ORIGINALFILENAME_STR
+            VALUE "ProductName",      VER_PRODUCTNAME_STR
+            VALUE "ProductVersion",   VER_PRODUCTVERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
