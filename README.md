@@ -69,11 +69,11 @@ Comprehensive technical guides are available in the [`docs/`](docs/) directory:
 
 1. In your game installation folder (e.g., `D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
 2. Copy the release `bink2w32.dll` into the game root directory.
-3. Place mods or packages into the `mods/` folder.
+3. Place your mods or packages into the `mods/` directory (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
 4. Launch `DisneyInfinity3.exe`.
-   * **`Insert`**: Toggle developer debug overlay and log viewer.
+   * **`Insert`**: Toggle developer debug overlay and log console.
    * **`F4`**: Hot-reload all active mods.
-   * **`F5`**: Toggle menu interface (when using CrabeMenu).
+   * **`F5`**: Toggle in-game mod menu (optional, requires **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)**).
 
 ---
 
