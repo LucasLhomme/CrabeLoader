@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include "infrastructure/memory.hpp"
+#include "minhook/hde/hde32.h"
 #include "shared/logger.hpp"
 
 namespace {
@@ -60,8 +61,27 @@ bool CodeCave::patchBytes(uintptr_t address, const void* bytes, size_t count)
 bool CodeCave::install(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength)
 {
     if (_installed || !site) return false;
-    if (stolenLength < kJmpLength || stolenLength > kMaxStolen) return false;
     if (body.empty() || body.size() > kMaxBody) return false;
+
+    // If stolenLength is 0, dynamically compute the instruction boundary using HDE32
+    if (stolenLength == 0) {
+        if (!Memory::isReadable(site, kJmpLength)) return false;
+        size_t accumulated = 0;
+        const auto* p = reinterpret_cast<const uint8_t*>(site);
+        while (accumulated < kJmpLength) {
+            hde32s hs{};
+            unsigned int len = hde32_disasm(p + accumulated, &hs);
+            if (len == 0 || (hs.flags & F_ERROR)) {
+                Logger::getInstance().error("CodeCave: instruction disassembly failed at site 0x{:X} (offset +{}).",
+                                            site, accumulated);
+                return false;
+            }
+            accumulated += len;
+        }
+        stolenLength = accumulated;
+    }
+
+    if (stolenLength < kJmpLength || stolenLength > kMaxStolen) return false;
     if (!Memory::isReadable(site, stolenLength)) return false;
 
     size_t caveSize = body.size() + stolenLength + kJmpLength;
