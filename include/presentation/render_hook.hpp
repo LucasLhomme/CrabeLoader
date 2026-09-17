@@ -31,12 +31,6 @@ class RenderHook {
         // Returns true if the debug overlay is currently open.
         bool isMenuOpen() const;
 
-        // Toggles visibility of the mod menu interface.
-        void toggleModMenu();
-
-        // Returns true if the mod menu interface is currently open.
-        bool isModMenuOpen() const;
-
         // Thread-safely requests a change of window display mode.
         void requestWindowMode(WindowMode mode);
 
@@ -127,7 +121,6 @@ class RenderHook {
         WNDPROC _originalWndProc = nullptr;
         std::atomic<bool> _backendInitialized{false};
         std::atomic<bool> _menuOpen{false};
-        std::atomic<bool> _modMenuOpen{false};
 
         LONG_PTR _originalStyle = 0;
         RECT _originalRect{};
