@@ -67,11 +67,11 @@ namespace {
 
             // 1. mov [g_cameraObject], ebx (6 bytes)
             body.push_back(0x89); body.push_back(0x1D);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_cameraObject));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_cameraObject)));
 
             // 2. cmp byte ptr [g_freecamEnabled], 1 (7 bytes)
             body.push_back(0x80); body.push_back(0x3D);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamEnabled));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamEnabled)));
             body.push_back(0x01);
 
             // 3. je freecam_override (placeholder, 2 bytes)
@@ -92,13 +92,13 @@ namespace {
             // Sync coordinates:
             // movss [g_freecamX], xmm3
             body.push_back(0xF3); body.push_back(0x0F); body.push_back(0x11); body.push_back(0x1D);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamX));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamX)));
             // movss [g_freecamY], xmm4
             body.push_back(0xF3); body.push_back(0x0F); body.push_back(0x11); body.push_back(0x25);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamY));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamY)));
             // movss [g_freecamZ], xmm5
             body.push_back(0xF3); body.push_back(0x0F); body.push_back(0x11); body.push_back(0x2D);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamZ));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamZ)));
 
             // Jump past override block and past stolen bytes (placeholder, 2 bytes)
             const size_t normalJmpIndex = body.size();
@@ -110,17 +110,17 @@ namespace {
 
             // fld dword ptr [g_freecamX] ; fstp dword ptr [esp+24h]
             body.push_back(0xD9); body.push_back(0x05);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamX));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamX)));
             body.push_back(0xD9); body.push_back(0x5C); body.push_back(0x24); body.push_back(0x24);
 
             // fld dword ptr [g_freecamY] ; fstp dword ptr [esp+28h]
             body.push_back(0xD9); body.push_back(0x05);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamY));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamY)));
             body.push_back(0xD9); body.push_back(0x5C); body.push_back(0x24); body.push_back(0x28);
 
             // fld dword ptr [g_freecamZ] ; fstp dword ptr [esp+2Ch]
             body.push_back(0xD9); body.push_back(0x05);
-            CodeCave::putU32(body, body.size(), reinterpret_cast<uint32_t>(&g_freecamZ));
+            CodeCave::putU32(body, body.size(), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_freecamZ)));
             body.push_back(0xD9); body.push_back(0x5C); body.push_back(0x24); body.push_back(0x2C);
 
             // Jump past stolen bytes (placeholder, 2 bytes)

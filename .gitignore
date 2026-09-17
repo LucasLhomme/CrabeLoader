@@ -9,3 +9,4 @@ mods/*
 __pycache__/
 backups/
 decypted/*
+include/application/embedded_api.hpp

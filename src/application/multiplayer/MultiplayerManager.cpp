@@ -63,7 +63,6 @@ namespace Multiplayer::Application {
 
         // 4. Initialize Steamworks Integration
         if (_steamService) {
-            _steamService->initialize();
             (void)_steamService->initialize();
         }
 

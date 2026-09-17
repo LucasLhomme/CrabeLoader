@@ -43,28 +43,49 @@ namespace {
         return control;
     }
 
-    // A hit is keyed by the reporting address, so a loop storing through the
-    // same instruction a thousand times stays one row with a count.
+    // Records breakpoint hit instruction and registers into global hit table.
     void record(const CONTEXT* context)
     {
+#if defined(_M_X64)
+        uintptr_t ip = context->Rip;
+        uint32_t r0 = static_cast<uint32_t>(context->Rax);
+        uint32_t r1 = static_cast<uint32_t>(context->Rcx);
+        uint32_t r2 = static_cast<uint32_t>(context->Rdx);
+        uint32_t r3 = static_cast<uint32_t>(context->Rbx);
+        uint32_t r4 = static_cast<uint32_t>(context->Rsp);
+        uint32_t r5 = static_cast<uint32_t>(context->Rbp);
+        uint32_t r6 = static_cast<uint32_t>(context->Rsi);
+        uint32_t r7 = static_cast<uint32_t>(context->Rdi);
+#else
+        uintptr_t ip = context->Eip;
+        uint32_t r0 = context->Eax;
+        uint32_t r1 = context->Ecx;
+        uint32_t r2 = context->Edx;
+        uint32_t r3 = context->Ebx;
+        uint32_t r4 = context->Esp;
+        uint32_t r5 = context->Ebp;
+        uint32_t r6 = context->Esi;
+        uint32_t r7 = context->Edi;
+#endif
+
         for (size_t i = 0; i < g_used; ++i) {
-            if (g_hits[i].instruction != context->Eip) continue;
+            if (g_hits[i].instruction != ip) continue;
             ++g_hits[i].count;
             return;
         }
         if (g_used >= DebugWatch::kMaxHits) return;
 
         DebugWatch::Hit& fresh = g_hits[g_used++];
-        fresh.instruction = context->Eip;
+        fresh.instruction = ip;
         fresh.count = 1;
-        fresh.registers[0] = context->Eax;
-        fresh.registers[1] = context->Ecx;
-        fresh.registers[2] = context->Edx;
-        fresh.registers[3] = context->Ebx;
-        fresh.registers[4] = context->Esp;
-        fresh.registers[5] = context->Ebp;
-        fresh.registers[6] = context->Esi;
-        fresh.registers[7] = context->Edi;
+        fresh.registers[0] = r0;
+        fresh.registers[1] = r1;
+        fresh.registers[2] = r2;
+        fresh.registers[3] = r3;
+        fresh.registers[4] = r4;
+        fresh.registers[5] = r5;
+        fresh.registers[6] = r6;
+        fresh.registers[7] = r7;
     }
 
     // Runs on whatever game thread did the store. Everything here has to be
