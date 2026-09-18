@@ -123,6 +123,9 @@ CrabeLoader V2 includes **Dear ImGui** bindings directly in Lua. All UI renderin
 > * **Widget states arrive one frame late.** `ImGui.Button` reports the click measured on the previous frame. For menus this is imperceptible, but do not build logic that assumes same-frame feedback.
 > * **Unbalanced `Begin`/`End` cannot break the UI.** The replay tracks window scopes and closes anything your script left open, so a Lua error mid-draw degrades that frame instead of corrupting ImGui's state.
 
+Binding names match Dear ImGui's own, capital first letter included. They live in
+the global `ImGui` table, aliased as `Crabe.ImGui`.
+
 ```lua
 local isMenuOpen = true
 local customSpeed = 1.0
@@ -134,29 +137,56 @@ Crabe.Mod.register({
     onDraw = function()
         if not isMenuOpen then return end
 
-        if Crabe.ImGui.begin("My Mod Window", true) then
-            Crabe.ImGui.text("Welcome to Disney Infinity 3.0 Modding!")
-            Crabe.ImGui.separator()
+        if ImGui.Begin("My Mod Window", true) then
+            ImGui.Text("Welcome to Disney Infinity 3.0 Modding!")
+            ImGui.Separator()
 
-            -- Toggle Button
-            if Crabe.ImGui.button("Heal Player") then
+            if ImGui.Button("Heal Player") then
                 local player = Game.GetLocalPlayer and Game.GetLocalPlayer()
                 if player and Game.SetPlayerHealth then
                     Game.SetPlayerHealth(player, 1000.0)
                 end
             end
 
-            -- Slider
-            local changed, newSpeed = Crabe.ImGui.sliderFloat("Speed Multiplier", customSpeed, 1.0, 10.0)
-            if changed then
-                customSpeed = newSpeed
-            end
-
-            Crabe.ImGui.endWindow()
+            customSpeed = ImGui.SliderFloat("Speed Multiplier", customSpeed, 1.0, 10.0)
         end
+        ImGui.End()
     end
 })
 ```
+
+Available widgets: `Begin`, `End`, `BeginChild`, `EndChild`, `BeginTabBar`,
+`EndTabBar`, `BeginTabItem`, `EndTabItem`, `Text`, `TextColored`, `TextDisabled`,
+`Button`, `Selectable`, `Checkbox`, `SliderFloat`, `SliderInt`, `InputText`,
+`SameLine`, `Separator`, `Spacing`, `SetNextWindowPos`, `SetNextWindowSize`,
+`SetScrollHereY`, `IsItemClicked`.
+
+### Keyboard-driven menus (`Crabe.Input.captureKeys`)
+
+The game re-centres the mouse pointer every frame, so it cannot be trusted to sit
+on a row: a menu with more than a couple of entries should be driven by the arrow
+keys. Ask the loader to swallow the keys you navigate with, or the game will act
+on them too and the player will walk around while browsing the menu:
+
+```lua
+local NAV_KEYS = { 0x26, 0x28, 0x0D, 0x08 } -- Up, Down, Enter, Backspace
+local cursor = 1
+
+local function setOpen(open)
+    isMenuOpen = open
+    Crabe.Input.captureKeys(open and NAV_KEYS or nil) -- nil releases them
+end
+
+Crabe.Events.on("keyDown", function(vk)
+    if not isMenuOpen then return end
+    if vk == 0x28 then cursor = cursor + 1 end
+    if vk == 0x26 then cursor = cursor - 1 end
+end)
+```
+
+Render the highlighted row with `ImGui.Selectable(label, isSelected)`, and call
+`ImGui.SetScrollHereY(0.5)` right after the selected one so long lists keep it in
+view. `Selectable` still reports mouse clicks, so both input methods work.
 
 ---
 
