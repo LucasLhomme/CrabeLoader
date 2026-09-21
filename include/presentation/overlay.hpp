@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** Overlay
+** Declares the loader ImGui overlay: console log filtering and commands.
+** Runs on the render thread inside Present, so nothing here may call into Lua.
+** Draws no mod UI directly; a mod frame arrives through presentation/draw_buffer.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef OVERLAY_HPP_
@@ -13,6 +17,8 @@
 #include "imgui/imgui_impl_dx11.h"
 #include "imgui/imgui_impl_win32.h"
 #include "shared/logger.hpp"
+
+namespace crabe::presentation {
 
 class Overlay {
     public:
@@ -27,7 +33,7 @@ class Overlay {
     private:
         void drawConsoleTab();
         void submitConsoleInput();
-        bool isLevelVisible(LogLevel level) const;
+        bool isLevelVisible(crabe::shared::LogLevel level) const;
 
         char _consoleInputBuffer[1024] = {};
 
@@ -38,5 +44,7 @@ class Overlay {
         bool _showWarning = true;
         bool _showError = true;
 };
+
+} // namespace crabe::presentation
 
 #endif /* !OVERLAY_HPP_ */

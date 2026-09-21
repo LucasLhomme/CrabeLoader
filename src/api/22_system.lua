@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- System surface: display and video settings, pause, saving, and the debug tooling retail shipped.
+-- Several of these reach tooling the studio left in the retail build, which is why they exist.
+-- Changes no window mode directly; that request is posted to the render thread by a native.
+--
+-- Authors: @LucasLhomme
+
 -- System: display, video settings, pause, saves, multiplayer, and the debug
 -- tooling the studio shipped in the retail build.
 --

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** input_hook
+** Hooks XInputGetState to count which controller slots the game polls and which answer.
+** The image imports XINPUT9_1_0.dll specifically, so that is the module hooked, not any other.
+** Fakes no result: every call forwards to the real function and returns its answer unchanged.
+**
+** Authors: @LucasLhomme
 */
 
 #include <format>
@@ -9,8 +13,10 @@
 #include <windows.h>
 
 #include "presentation/input_hook.hpp"
-#include "infrastructure/luacall.hpp"
+#include "infrastructure/lua_call.hpp"
 #include "shared/logger.hpp"
+
+namespace crabe::presentation {
 
 InputHook& InputHook::get()
 {
@@ -23,7 +29,7 @@ InputHook& InputHook::get()
 // actually uses rather than whichever one happens to be loaded.
 bool InputHook::initialize()
 {
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
     HMODULE module = GetModuleHandleW(L"XINPUT9_1_0.dll");
     if (!module) {
@@ -37,7 +43,8 @@ bool InputHook::initialize()
         return false;
     }
 
-    if (!_hookGetState.install(target, reinterpret_cast<void*>(&InputHook::hkXInputGetState))) {
+    if (!_hookGetState.install(target, reinterpret_cast<void*>(&InputHook::hkXInputGetState),
+                               "InputHook::XInputGetState")) {
         logger.error("InputHook: failed to hook XInputGetState.");
         return false;
     }
@@ -82,14 +89,16 @@ std::string InputHook::report() const
     return out;
 }
 
+} // namespace crabe::presentation
+
 // Crabe._keyDown(virtualKey) -> 1 while the key is held, 0 otherwise.
 //
 // GetAsyncKeyState reports the physical state regardless of which window has
 // focus, which is what a tick-driven mod needs: the overlay may own the
 // keyboard while the mod still has to steer.
-int __cdecl InputNatives::keyDown(void* L)
+int __cdecl crabe::input_natives::keyDown(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     if (!lua.hasReturnSupport()) return 0;
 
     auto key = static_cast<int>(lua.argToNumber(L, 1, 0.0));

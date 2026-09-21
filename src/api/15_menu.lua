@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The mod menu: mods declare entries and categories here and the loader overlay draws them.
+-- Declared on the script thread; the overlay reads it on the render thread and never calls back.
+-- Draws nothing itself; rendering is src/presentation/overlay.cpp.
+--
+-- Authors: @LucasLhomme
+
 -- Mod menu. Mods declare entries here; the overlay draws them.
 --
 -- An entry is one of:

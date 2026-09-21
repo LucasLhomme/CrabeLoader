@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** loader_content -- load overrides, chunk patches, and the folders they load from
+** Implements load overrides and chunk patches: changing a chunk before the game compiles it.
+** Both are keyed on something recognisable inside the chunk, because the game names few of them.
+** Compiles nothing itself; the detours that see each chunk are src/infrastructure/lua_call.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <filesystem>
@@ -10,8 +14,12 @@
 #include <string_view>
 #include <vector>
 
+#include "application/gateway.hpp"
 #include "application/loader.hpp"
+#include "domain/mod_entry.hpp"
 #include "shared/logger.hpp"
+
+namespace crabe::application {
 
 // Two ways to change a chunk the game is about to compile, both keyed on
 // something recognisable in the chunk itself:
@@ -65,7 +73,7 @@ namespace {
     // cannot be opened or is empty -- both mean "skip this one, keep going".
     bool readTextFile(const std::filesystem::path& path, const char* folder, std::string& out)
     {
-        Logger& logger = Logger::getInstance();
+        crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
         std::string name = path.filename().string();
 
         std::ifstream file(path, std::ios::binary);
@@ -107,22 +115,27 @@ void Loader::registerChunkPatch(std::string matchSubstring, std::string patchSou
     upsert(_chunkPatches, std::move(matchSubstring), std::move(patchSource), std::move(label));
 }
 
-void Loader::armPatchIfMatched(const char* buff, size_t size)
+void Loader::armPatchIfMatched(const char* buff, size_t size, int depth)
 {
     if (const ChunkRule* rule = findByContent(_chunkPatches, buff, size))
-        _armedPatch = *rule;
+        _armedPatches.push_back(ArmedPatch{ *rule, depth });
 }
 
-bool Loader::hasArmedPatch() const
+std::optional<Loader::ChunkRule> Loader::takePatchForDepth(int depth)
 {
-    return !_armedPatch.source.empty();
-}
+    // Anything armed deeper than the call that just returned belongs to a
+    // chunk that was loaded and never run -- a load that failed, or source the
+    // game compiled and threw away. It can never fire, so it is dropped here
+    // rather than left to sit in front of the entries that still can.
+    while (!_armedPatches.empty() && _armedPatches.back().depth > depth)
+        _armedPatches.pop_back();
 
-Loader::ChunkRule Loader::takeArmedPatch()
-{
-    ChunkRule result = std::move(_armedPatch);
-    _armedPatch = {};
-    return result;
+    if (_armedPatches.empty() || _armedPatches.back().depth != depth)
+        return std::nullopt;
+
+    ChunkRule rule = std::move(_armedPatches.back().rule);
+    _armedPatches.pop_back();
+    return rule;
 }
 
 void Loader::registerNamedPatch(std::string exactName, std::string patchSource,
@@ -131,14 +144,33 @@ void Loader::registerNamedPatch(std::string exactName, std::string patchSource,
     upsert(_namedPatches, std::move(exactName), std::move(patchSource), std::move(label));
 }
 
-void Loader::armPatchIfNameMatched(const char* name)
+void Loader::armPatchIfNameMatched(const char* name, int depth)
 {
     if (!name || _namedPatches.empty())
         return;
 
+    std::string cleanName = name;
+    if (!cleanName.empty() && cleanName[0] == '@')
+        cleanName.erase(0, 1);
+    for (char& c : cleanName) {
+        if (c == '\\') c = '/';
+    }
+
     for (const ChunkRule& rule : _namedPatches) {
-        if (rule.key == name) {
-            _armedPatch = rule;
+        std::string cleanRuleKey = rule.key;
+        if (!cleanRuleKey.empty() && cleanRuleKey[0] == '@')
+            cleanRuleKey.erase(0, 1);
+        for (char& c : cleanRuleKey) {
+            if (c == '\\') c = '/';
+        }
+
+        if (cleanRuleKey == cleanName) {
+            crabe::shared::Logger::getInstance().debug(
+                "Loader: armed named patch '{}' for '{}' at depth {}.", rule.label, cleanName, depth);
+            if (!_armedPatches.empty() && _armedPatches.back().depth == depth)
+                _armedPatches.back().rule = rule;
+            else
+                _armedPatches.push_back(ArmedPatch{ rule, depth });
             return;
         }
     }
@@ -146,7 +178,7 @@ void Loader::armPatchIfNameMatched(const char* name)
 
     void loadOverridesFromDirectory(Loader& loader, const std::filesystem::path& folder, const std::string& labelPrefix)
     {
-        Logger& logger = Logger::getInstance();
+        crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
         size_t loadedOverrides = 0;
         size_t loadedPatches = 0;
 
@@ -180,6 +212,78 @@ void Loader::armPatchIfNameMatched(const char* name)
         }
     }
 
+    // Every characters/*.lua in one folder: its exposeCharacter declarations are
+    // collected for the registry, and its source appended to `combined` wrapped
+    // in do...end so two files cannot collide on a local.
+    void loadCharactersFromDirectory(const std::filesystem::path& folder,
+                                     const std::string& labelPrefix,
+                                     std::vector<gateway::Entry>& exposed,
+                                     std::string& combined)
+    {
+        for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".lua")
+                continue;
+
+            std::string content;
+            if (!readTextFile(entry.path(), labelPrefix.c_str(), content))
+                continue;
+
+            for (auto& exposedEntry : gateway::parseExposedCharacters(content))
+                exposed.push_back(std::move(exposedEntry));
+
+            combined += "do\n" + content + "\nend\n";
+        }
+    }
+
+void Loader::loadCharactersFromDisk()
+{
+    // The one window in which the catalog can still be changed: this patch runs
+    // immediately after the chunk below has built VirtualReaderPC_Data.AvatarData
+    // and before Presentation/pressstart.lua hands it to native code, after which
+    // it is frozen. No mod runs in that window -- which is why this is here and
+    // not in Lua. See characters/README.md.
+    constexpr const char* kTargetName = "Presentation/VirtualReaderPC_Data.lua";
+
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
+    std::vector<gateway::Entry> exposed;
+    std::string combined;
+
+    // mods/<name>/characters/ only. A <gameDir>/characters/ folder was read too
+    // until this was restored; it is not any more, because a character is mod
+    // content and belongs with the mod that ships it -- the same shape as
+    // mods/<name>/skilltrees/, which loadOverridesFromDisk below reads.
+    std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
+    if (std::filesystem::exists(modsFolder)) {
+        for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
+            if (!entry.is_directory())
+                continue;
+            std::string modName = entry.path().filename().string();
+            if (modName.empty() || modName[0] == '.' || modName[0] == '_')
+                continue;
+
+            for (const std::string_view sub : crabe::domain::kCharacterDirectories) {
+                auto subPath = entry.path() / sub;
+                if (std::filesystem::exists(subPath)) {
+                    loadCharactersFromDirectory(subPath, modName + "/" + std::string(sub),
+                                                exposed, combined);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (exposed.empty() && combined.empty()) {
+        logger.debug("Loader: no characters/*.lua found; the character grid is left alone.");
+        return;
+    }
+
+    _characterInjectionScript = gateway::buildSkuTableLua(exposed) + combined;
+    registerNamedPatch(kTargetName, _characterInjectionScript, "characters/");
+    registerChunkPatch(gateway::containerKey(), gateway::buildInjectionLua(exposed),
+                       "figure registry");
+    logger.info("Loader: {} total character definition(s) registered.", exposed.size());
+}
+
 void Loader::loadOverridesFromDisk()
 {
     std::filesystem::path rootFolder = std::filesystem::current_path() / "skilltrees";
@@ -198,12 +302,15 @@ void Loader::loadOverridesFromDisk()
         if (modName.empty() || modName[0] == '.' || modName[0] == '_')
             continue;
 
-        for (const char* sub : { "skilltrees", "Skillstree", "skilltree" }) {
+        for (const std::string_view sub : crabe::domain::kSkillTreeDirectories) {
             auto subPath = entry.path() / sub;
             if (std::filesystem::exists(subPath)) {
-                loadOverridesFromDirectory(*this, subPath, modName + "/" + sub);
+                loadOverridesFromDirectory(*this, subPath, modName + "/" + std::string(sub));
                 break;
             }
         }
     }
 }
+
+} // namespace crabe::application
+

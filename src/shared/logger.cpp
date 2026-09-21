@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** logger
+** Implements the log: level filtering, the ring the overlay reads, and the file on disk.
+** History is kept in memory as well as written out, because the overlay renders from the ring.
+** Decides no path; the file it writes is whichever one its caller set.
+**
+** Authors: @LucasLhomme
 */
 
 #include "shared/logger.hpp"
@@ -10,6 +14,8 @@
 #include <cstdio>
 #include <iomanip>
 #include <sstream>
+
+namespace crabe::shared {
 
 Logger& Logger::getInstance() {
     static Logger instance;
@@ -93,3 +99,5 @@ std::string Logger::getCurrentTime() const {
                             static_cast<int>(ms.count()));
     return std::string(buffer, len > 0 ? static_cast<size_t>(len) : 0);
 }
+
+} // namespace crabe::shared

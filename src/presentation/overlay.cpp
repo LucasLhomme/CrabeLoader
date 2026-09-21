@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** overlay
+** Draws the loader overlay: console log filtering, commands and diagnostics.
+** Runs on the render thread inside Present, so it reads snapshots and never calls into Lua.
+** Draws no mod window itself; those arrive already recorded in the draw buffer.
+**
+** Authors: @LucasLhomme
 */
 
 #include <format>
@@ -10,8 +14,11 @@
 
 #include "presentation/overlay.hpp"
 #include "application/loader.hpp"
+#include "domain/config.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
+
+namespace crabe::presentation {
 
 Overlay::Overlay()
 {
@@ -35,13 +42,13 @@ void Overlay::defaultSettings()
     ImGui::SetNextWindowSize(ImVec2(420.0f, 320.0f), ImGuiCond_FirstUseEver);
 }
 
-bool Overlay::isLevelVisible(LogLevel level) const
+bool Overlay::isLevelVisible(crabe::shared::LogLevel level) const
 {
     switch (level) {
-        case LogLevel::DEBUG:   return _showDebug;
-        case LogLevel::INFO:    return _showInfo;
-        case LogLevel::WARNING: return _showWarning;
-        case LogLevel::ERR:     return _showError;
+        case crabe::shared::LogLevel::DEBUG:   return _showDebug;
+        case crabe::shared::LogLevel::INFO:    return _showInfo;
+        case crabe::shared::LogLevel::WARNING: return _showWarning;
+        case crabe::shared::LogLevel::ERR:     return _showError;
         default:                return true;
     }
 }
@@ -56,7 +63,7 @@ void Overlay::drawConsoleTab()
     const float footerHeight = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 
     ImGui::BeginChild("ConsoleScroll", ImVec2(0.0f, -footerHeight), false, ImGuiWindowFlags_HorizontalScrollbar);
-    for (const LogEntry& entry : Logger::getInstance().getHistory()) {
+    for (const crabe::shared::LogEntry& entry : crabe::shared::Logger::getInstance().getHistory()) {
         if (isLevelVisible(entry.level))
             ImGui::TextUnformatted(entry.text.c_str());
     }
@@ -78,23 +85,23 @@ void Overlay::drawConsoleTab()
 }
 
 // Trimming, the "> {}" echo and the "=expr" -> "return tostring(expr)"
-// rewrite all live in Loader::queueConsoleSnippet now, shared with
-// Loader::drainRemoteCommandFile so both entry points behave identically.
+// rewrite all live in crabe::application::Loader::queueConsoleSnippet now, shared with
+// crabe::application::Loader::drainRemoteCommandFile so both entry points behave identically.
 void Overlay::submitConsoleInput()
 {
-    Loader::get().queueConsoleSnippet(_consoleInputBuffer);
+    crabe::application::Loader::get().queueConsoleSnippet(_consoleInputBuffer);
 }
 
 void Overlay::renderOverlay()
 {
     Overlay::defaultSettings();
 
-    std::string title = std::format("CrabeLoader v{} Overlay", Crabe::Version::String);
+    std::string title = std::format("CrabeLoader v{} Overlay", crabe::version::String);
     ImGui::Begin(title.c_str());
 
     if (ImGui::BeginTabBar("MainTabBar")) {
         if (ImGui::BeginTabItem("Main")) {
-            ImGui::Text("CrabeLoader v%s (Built: %s)", Crabe::Version::String.data(), Crabe::Version::BuildDate.data());
+            ImGui::Text("CrabeLoader v%s (Built: %s)", crabe::version::String.data(), crabe::version::BuildDate.data());
             ImGui::Separator();
             ImGui::Text("Press F5 to toggle the In-Game Mod Menu.");
             ImGui::EndTabItem();
@@ -127,3 +134,6 @@ void Overlay::uninitialize()
 {
     ImGui::DestroyContext();
 }
+
+} // namespace crabe::presentation
+

@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Creates the Crabe and Game namespaces and the write path every other module reports through.
+-- Loaded first by tools/embed_api.py, so nothing here may depend on a later module existing.
+-- Declares no gameplay call; those start at src/api/10_game.lua.
+--
+-- Authors: @LucasLhomme
+
 -- `Crabe` is the modloader namespace, `Game` the game API.
 -- Loaded first: the other modules report their errors through Crabe.write.
 

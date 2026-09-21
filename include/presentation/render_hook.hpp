@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the Present and ResizeBuffers detours, and the window mode the loader can request.
+** The only place allowed to touch Direct3D; a window-mode change must happen on this thread.
+** Persists nothing itself; the stored window mode lives in domain/config.hpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef RENDER_HOOK_HPP_
 #define RENDER_HOOK_HPP_
 
@@ -8,6 +18,8 @@
 
 #include "presentation/overlay.hpp"
 #include "infrastructure/hook.hpp"
+
+namespace crabe::presentation {
 
 enum class WindowMode {
     Windowed,
@@ -46,10 +58,14 @@ class RenderHook {
         RenderHook(const RenderHook&) = delete;
         RenderHook& operator=(const RenderHook&) = delete;
 
-        // Reads window mode configuration file or defaults to borderless.
+        // Reads the window mode from crabe.toml (domain::Config::active()),
+        // which has already migrated the legacy crabe_window_mode.cfg (if
+        // any) by the time this runs.
         static WindowMode loadWindowModeConfig();
 
-        // Writes active window mode to the configuration file.
+        // Persists the active window mode into crabe.toml's [display]
+        // section (domain::Config::active()). The legacy
+        // crabe_window_mode.cfg is never written to again.
         static void saveWindowModeConfig(WindowMode mode);
 
         // Resolves Present, ResizeBuffers, and SetFullscreenState vtable pointers.
@@ -90,6 +106,9 @@ class RenderHook {
         // Hook for SetCursorPos to suppress cursor centering while overlay is open.
         static BOOL WINAPI hkSetCursorPos(int X, int Y);
 
+        // Hook for ShowWindow to suppress SW_MINIMIZE in borderless mode for instant Alt+Tab.
+        static BOOL WINAPI hkShowWindow(HWND hWnd, int nCmdShow);
+
         // Subclassed window procedure handling hotkeys, alt-tab, and input routing.
         static LRESULT CALLBACK hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -97,6 +116,7 @@ class RenderHook {
         typedef HRESULT(__stdcall* t_ResizeBuffers)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
         typedef HRESULT(__stdcall* t_SetFullscreenState)(IDXGISwapChain*, BOOL, IDXGIOutput*);
         typedef BOOL(WINAPI* t_SetCursorPos)(int, int);
+        typedef BOOL(WINAPI* t_ShowWindow)(HWND, int);
 
         // Returns pointer to the original Present method.
         t_Present originalPresent() const;
@@ -110,10 +130,14 @@ class RenderHook {
         // Returns pointer to the original SetCursorPos function.
         t_SetCursorPos originalSetCursorPos() const;
 
-        Hook _hookPresent;
-        Hook _hookResizeBuffers;
-        Hook _hookSetFullscreenState;
-        Hook _hookSetCursorPos;
+        // Returns pointer to the original ShowWindow function.
+        t_ShowWindow originalShowWindow() const;
+
+        crabe::infrastructure::Hook _hookPresent;
+        crabe::infrastructure::Hook _hookResizeBuffers;
+        crabe::infrastructure::Hook _hookSetFullscreenState;
+        crabe::infrastructure::Hook _hookSetCursorPos;
+        crabe::infrastructure::Hook _hookShowWindow;
 
         Overlay _overlay;
 
@@ -131,6 +155,9 @@ class RenderHook {
 
         std::atomic<bool> _windowModeDirty{false};
         std::atomic<WindowMode> _requestedWindowMode{WindowMode::BorderlessWindowed};
+        std::atomic<bool> _isFocused{true};
 };
+
+} // namespace crabe::presentation
 
 #endif /* !RENDER_HOOK_HPP_ */

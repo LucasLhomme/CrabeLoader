@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The VirtualReader roster: the character select grid, and adding or editing an entry in it.
+-- A character is keyed by sku, and a name lookup exists only because skus are unreadable by hand.
+-- Does not swap the played character -- Game.SetCharacter in src/api/11_avatar.lua does.
+--
+-- Authors: @LucasLhomme
+
 -- VirtualReader roster -- the character-select grid.
 --
 -- VirtualReaderPC_Data.AvatarData is a plain global table the engine reads to
@@ -51,9 +59,99 @@ local defaultFields = {
     MetaData = "Disney,Franchise_DIS",
 }
 
+local pendingExposes = {}
+local pendingAdds = {}
+
+function Crabe.VirtualReader._flushPending(targetAvatarData)
+    local vrData = rawget(_G, "VirtualReaderPC_Data")
+    local avatarData = targetAvatarData or (vrData and vrData.AvatarData)
+    if type(avatarData) ~= "table" then return false end
+
+    if #pendingExposes > 0 then
+        local toProcess = pendingExposes
+        pendingExposes = {}
+        for _, entry in ipairs(toProcess) do
+            local alreadyThere = false
+            for _, row in ipairs(avatarData) do
+                if row.Name == entry.Name or row.sku_id == entry.sku_id then
+                    alreadyThere = true
+                    break
+                end
+            end
+            if not alreadyThere then
+                local row = {}
+                for k, v in pairs(defaultFields) do row[k] = v end
+                for k, v in pairs(entry) do row[k] = v end
+                table.insert(avatarData, row)
+            end
+        end
+    end
+
+    if #pendingAdds > 0 then
+        local toProcess = pendingAdds
+        pendingAdds = {}
+        for _, entry in ipairs(toProcess) do
+            local alreadyThere = false
+            for _, row in ipairs(avatarData) do
+                if row.Name == entry.Name then
+                    alreadyThere = true
+                    break
+                end
+            end
+            if not alreadyThere then
+                local row = {}
+                for k, v in pairs(defaultFields) do row[k] = v end
+                local skuId = entry.sku_id
+                if entry.baseCharacter then
+                    for _, r in ipairs(avatarData) do
+                        if r.Name == entry.baseCharacter or r.sku_id == entry.baseCharacter then
+                            skuId = skuId or r.sku_id
+                            row.Icon = r.Icon
+                            row.ProgressionTree = r.ProgressionTree
+                            row.MetaData = r.MetaData
+                            row.SteamDLCAppId = r.SteamDLCAppId
+                            row.PCSKU = r.PCSKU
+                            row.WINRTSKU = r.WINRTSKU
+                            break
+                        end
+                    end
+                end
+                for k, v in pairs(entry) do
+                    if k ~= "baseCharacter" then row[k] = v end
+                end
+                row.sku_id = skuId
+                table.insert(avatarData, row)
+            end
+        end
+    end
+    return true
+end
+
+local native_SetData = nil
+local function ensureSetDataHooked()
+    if native_SetData then return end
+    local candidate = rawget(_G, "VirtualReaderPC_SetData")
+    if type(candidate) == "function" then
+        native_SetData = candidate
+        _G.VirtualReaderPC_SetData = function(data)
+            if type(data) == "table" and type(rawget(data, "AvatarData")) == "table" then
+                if not rawget(_G, "VirtualReaderPC_Data") then
+                    rawset(_G, "VirtualReaderPC_Data", data)
+                end
+                Crabe.VirtualReader._flushPending(data.AvatarData)
+            else
+                Crabe.VirtualReader._flushPending()
+            end
+            return native_SetData(data)
+        end
+    end
+end
+ensureSetDataHooked()
+
 -- Live listing, mostly useful to check whether a sku_id/Name is already
 -- taken before adding one. nil in a Lua state without VirtualReaderPC_Data.
 function Crabe.VirtualReader.listCharacters()
+    Crabe.VirtualReader._flushPending()
     if not (VirtualReaderPC_Data and VirtualReaderPC_Data.AvatarData) then
         return nil
     end
@@ -80,10 +178,10 @@ function Crabe.VirtualReader.addCharacter(entry)
     if type(entry) ~= "table" or type(entry.Name) ~= "string" or entry.Name == "" then
         error("Crabe.VirtualReader.addCharacter: expected a table with at least Name (string)", 2)
     end
+
     if not (VirtualReaderPC_Data and VirtualReaderPC_Data.AvatarData) then
-        error("Crabe.VirtualReader.addCharacter: VirtualReaderPC_Data.AvatarData not present in this Lua state " ..
-            "(only the front-end/menu state has it -- call this from Game.onTick and check " ..
-            "VirtualReaderPC_Data ~= nil first, see docs/modding.md)", 2)
+        table.insert(pendingAdds, entry)
+        return entry
     end
 
     local row = {}
@@ -130,7 +228,17 @@ end
 -- can never disagree.
 function Crabe.VirtualReader.skuForName(name)
     local skus = Crabe.VirtualReader._skus
-    return skus and skus[name] or nil
+    if not skus then return nil end
+    if skus[name] then return skus[name] end
+    if type(name) == "string" then
+        local lowerName = string.lower(name)
+        for k, v in pairs(skus) do
+            if type(k) == "string" and string.lower(k) == lowerName then
+                return v
+            end
+        end
+    end
+    return nil
 end
 
 -- Surfaces a character the game ships in full -- actor row, .dnax, 3D assets
@@ -172,9 +280,10 @@ function Crabe.VirtualReader.exposeCharacter(entry)
         error("Crabe.VirtualReader.exposeCharacter: baseCharacter has no meaning here -- this " ..
             "character has its own model. Use addCharacter for a borrowed-model identity", 2)
     end
+
     if not (VirtualReaderPC_Data and VirtualReaderPC_Data.AvatarData) then
-        error("Crabe.VirtualReader.exposeCharacter: VirtualReaderPC_Data.AvatarData not present in " ..
-            "this Lua state (call this from characters/*.lua, see characters/README.md)", 2)
+        table.insert(pendingExposes, entry)
+        return entry
     end
 
     local clash = Crabe.VirtualReader.findCharacter(entry.Name)
@@ -222,6 +331,14 @@ end
 local gridUnlockPatchedClass = nil
 
 local function patchGridCharacter()
+    ensureSetDataHooked()
+    Crabe.VirtualReader._flushPending()
+
+    local vrpc = rawget(_G, "VirtualReaderPC")
+    if type(vrpc) == "table" and type(vrpc.IsOnboardTutorialActive) == "function" then
+        vrpc.IsOnboardTutorialActive = function() return false end
+    end
+
     local cls = rawget(_G, "VirtualReaderPC_GridCharacter")
     if type(cls) ~= "table" then return false end
     if gridUnlockPatchedClass == cls then return true end

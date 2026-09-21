@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The Crabe.Multiplayer surface: server target, reachability, session locking and player counts.
+-- The Gold Edition ships with multiplayer disabled by engine flags, which the loader patches first.
+-- Patches nothing from Lua; every patch is applied in src/application/multiplayer/.
+--
+-- Authors: @LucasLhomme
+
 -- CrabeLoader API - Multiplayer Module
 -- Overrides the PC Gold Edition offline engine flags and exposes Crabe.Multiplayer
 
@@ -70,6 +78,15 @@ end
 
 _G.UGC_IsLegalContentRequest = function(playerNum)
     return 1, ""
+end
+
+-- Disable onboard tutorial popups and gates (e.g. Collection / VirtualReader welcome callout)
+_G.UI_IsOnboardTutorialActive = function()
+    return false
+end
+
+_G.UI_GetOnboardTutorialStateString = function()
+    return ""
 end
 
 -- Track whether an active networked session is currently hosted

@@ -1,4 +1,14 @@
 /*
+** CrabeLoader
+** File description:
+** The DLL version resource CMake stamps in from src/version.rc.in; never edit the output.
+** This is what a file properties dialog shows for bink2w32.dll, so it must match the build.
+** Declares no code; the same values reach C++ through include/shared/version.hpp.in.
+**
+** Authors: @LucasLhomme
+*/
+
+/*
 ** CrabeLoader Windows Resource Script (Generated automatically by CMake)
 */
 

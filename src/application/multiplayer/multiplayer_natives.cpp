@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** multiplayer_natives implementation
+** Implements the multiplayer natives, each returning plain Lua values rather than a table.
+** Every one is callable before multiplayer is up and must answer with a state, never an error.
+** Performs no network or memory work itself; it delegates to MultiplayerManager.
+**
+** Authors: @LucasLhomme
 */
 
 #include "application/multiplayer/multiplayer_natives.hpp"
@@ -9,19 +13,19 @@
 #include <string>
 #include <windows.h>
 
-#include "infrastructure/luacall.hpp"
-#include "application/multiplayer/MultiplayerManager.hpp"
+#include "infrastructure/lua_call.hpp"
+#include "application/multiplayer/multiplayer_manager.hpp"
 #include "shared/logger.hpp"
 
-namespace Multiplayer::Natives {
+namespace crabe::multiplayer::natives {
 
     int __cdecl getStatus(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) {
             return 0;
         }
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         bool patchesActive = mp.arePatchesActive();
         unsigned patchedCount = mp.getPatchedCount();
         bool redirectorActive = mp.isRedirectorActive();
@@ -41,7 +45,7 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl setTarget(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* hostStr = lua.argToString(L, 1);
         double portNum = lua.argToNumber(L, 2, 3000.0);
 
@@ -52,10 +56,10 @@ namespace Multiplayer::Natives {
         wchar_t hostW[128]{};
         MultiByteToWideChar(CP_UTF8, 0, hostStr, -1, hostW, sizeof(hostW) / sizeof(wchar_t));
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         mp.setTargetServer(hostW, static_cast<uint16_t>(portNum));
 
-        Logger::getInstance().info("MultiplayerNatives: updated target server to {}:{}", hostStr, static_cast<int>(portNum));
+        crabe::shared::Logger::getInstance().info("MultiplayerNatives: updated target server to {}:{}", hostStr, static_cast<int>(portNum));
         if (lua.hasReturnSupport()) {
             lua.pushNumber(L, 1.0);
             return 1;
@@ -64,8 +68,8 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl applyPatches(void* L) {
-        LuaCall& lua = LuaCall::get();
-        auto& mp = Application::MultiplayerManager::getInstance();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        auto& mp = application::MultiplayerManager::getInstance();
         bool ok = mp.initialize();
 
         if (lua.hasReturnSupport()) {
@@ -76,12 +80,12 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl getNatInfo(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) {
             return 0;
         }
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         auto nat = mp.getNatStatus();
 
         // Return: upnpAvailable, portForwarded, externalIp, externalPort, localIp, internalPort, statusMsg
@@ -96,11 +100,11 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl triggerPortForward(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         double port = lua.argToNumber(L, 1, 3074.0);
         const char* proto = lua.argToString(L, 2);
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         bool ok = mp.triggerPortForward(static_cast<uint16_t>(port), proto ? proto : "UDP");
 
         if (lua.hasReturnSupport()) {
@@ -111,7 +115,7 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl setDirectConnect(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* friendName = lua.argToString(L, 1);
         const char* ip = lua.argToString(L, 2);
         double port = lua.argToNumber(L, 3, 3074.0);
@@ -121,7 +125,7 @@ namespace Multiplayer::Natives {
             return 0;
         }
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         mp.setDirectConnectTarget(friendName, ip, static_cast<uint16_t>(port), hostDid ? hostDid : "");
 
         if (lua.hasReturnSupport()) {
@@ -132,7 +136,7 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl buildLocation(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) {
             return 0;
         }
@@ -143,7 +147,7 @@ namespace Multiplayer::Natives {
         const char* hostDid = lua.argToString(L, 5);
         const char* gameName = lua.argToString(L, 6);
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         std::string loc = mp.formatLocationString(
             pubIp ? pubIp : "127.0.0.1", static_cast<uint16_t>(pubPort),
             privIp ? privIp : "", static_cast<uint16_t>(privPort),
@@ -154,14 +158,14 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl checkServerReachability(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
         const char* hostStr = lua.argToString(L, 1);
         double portNum = lua.argToNumber(L, 2, 3000.0);
         double timeoutMs = lua.argToNumber(L, 3, 250.0);
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         std::string host = hostStr ? hostStr : "127.0.0.1";
         bool reachable = mp.isServerReachable(host, static_cast<uint16_t>(portNum), static_cast<uint32_t>(timeoutMs));
 
@@ -170,40 +174,40 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl steamIsAvailable(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         lua.pushNumber(L, mp.isSteamAvailable() ? 1.0 : 0.0);
         return 1;
     }
 
     int __cdecl steamGetPersonaName(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         std::string name = mp.getSteamPersonaName();
         lua.pushString(L, name.c_str());
         return 1;
     }
 
     int __cdecl steamGetLocalId(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         uint64_t id = mp.getSteamId();
         lua.pushString(L, std::to_string(id).c_str());
         return 1;
     }
 
     int __cdecl steamCreateLobby(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         bool friendsOnly = lua.argToNumber(L, 1, 1.0) != 0.0;
         double maxMembers = lua.argToNumber(L, 2, 4.0);
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         bool ok = mp.createSteamLobby(friendsOnly, static_cast<int>(maxMembers));
 
         if (lua.hasReturnSupport()) {
@@ -215,14 +219,14 @@ namespace Multiplayer::Natives {
 
     int __cdecl steamLeaveLobby(void* L) {
         (void)L;
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         mp.leaveSteamLobby();
         return 0;
     }
 
     int __cdecl steamOpenInviteOverlay(void* L) {
-        LuaCall& lua = LuaCall::get();
-        auto& mp = Application::MultiplayerManager::getInstance();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        auto& mp = application::MultiplayerManager::getInstance();
         bool ok = mp.openSteamInviteOverlay();
 
         if (lua.hasReturnSupport()) {
@@ -233,10 +237,10 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl steamGetLobbyStatus(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         auto st = mp.getSteamLobbyStatus();
 
         // Return: inLobby (1/0), isHost (1/0), lobbyId (string), hostId (string), memberCount (num), memberLimit (num)
@@ -250,20 +254,20 @@ namespace Multiplayer::Natives {
     }
 
     int __cdecl steamGetFriendCount(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         int count = mp.getSteamFriendCount();
         lua.pushNumber(L, static_cast<double>(count));
         return 1;
     }
 
     int __cdecl steamGetFriends(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        auto& mp = Application::MultiplayerManager::getInstance();
+        auto& mp = application::MultiplayerManager::getInstance();
         auto friends = mp.getSteamFriends();
 
         // Return count of friends as simple confirmation
@@ -272,7 +276,7 @@ namespace Multiplayer::Natives {
     }
 
     bool registerAll(void* L) {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         bool ok = true;
 
         ok = lua.registerNativeFunction(L, "Crabe", "_mpGetStatus", &getStatus) && ok;
@@ -296,11 +300,11 @@ namespace Multiplayer::Natives {
         ok = lua.registerNativeFunction(L, "Crabe", "_steamGetFriends", &steamGetFriends) && ok;
 
         if (ok) {
-            Logger::getInstance().info("MultiplayerNatives: successfully bound Crabe._mp* and Crabe._steam* natives.");
+            crabe::shared::Logger::getInstance().info("MultiplayerNatives: successfully bound Crabe._mp* and Crabe._steam* natives.");
         } else {
-            Logger::getInstance().warning("MultiplayerNatives: some native bindings failed.");
+            crabe::shared::Logger::getInstance().warning("MultiplayerNatives: some native bindings failed.");
         }
         return ok;
     }
 
-} // namespace Multiplayer::Natives
+} // namespace crabe::multiplayer::natives

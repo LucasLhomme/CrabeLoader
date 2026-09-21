@@ -1,13 +1,17 @@
 /*
 ** CrabeLoader
 ** File description:
-** multiplayer_natives - Lua C function bindings for Multiplayer subsystem
+** The Lua-facing surface of multiplayer: status, target server, patch arming, NAT and Steam.
+** Every entry is a raw lua_CFunction on the script thread, never called from the overlay.
+** Implements no networking; it forwards to multiplayer_manager.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MULTIPLAYER_NATIVES_HPP_
 #define MULTIPLAYER_NATIVES_HPP_
 
-namespace Multiplayer::Natives {
+namespace crabe::multiplayer::natives {
 
     bool registerAll(void* L);
 
@@ -30,7 +34,7 @@ namespace Multiplayer::Natives {
     int __cdecl steamGetLobbyStatus(void* L);
     int __cdecl steamGetFriends(void* L);
 
-} // namespace Multiplayer::Natives
+} // namespace crabe::multiplayer::natives
 
 #endif /* !MULTIPLAYER_NATIVES_HPP_ */
 

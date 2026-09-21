@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_runtime
+** Injects the embedded API into a Lua state, in the order tools/embed_api.py emitted the modules.
+** classifyState must answer inside a state where no global it tests exists, such as the shader VM.
+** Holds none of the API text; that is generated into include/application/embedded_api.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <algorithm>
@@ -16,7 +20,7 @@
 #include "application/loader.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "application/lua_runtime.hpp"
-#include "infrastructure/luacall.hpp"
+#include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
@@ -28,7 +32,7 @@ namespace {
 
 } // namespace
 
-std::filesystem::path LuaRuntime::apiFolder()
+std::filesystem::path crabe::lua_runtime::apiFolder()
 {
     return std::filesystem::current_path() / kApiFolderName;
 }
@@ -36,7 +40,7 @@ std::filesystem::path LuaRuntime::apiFolder()
 // Must stay answerable in a state where none of the globals it tests exist:
 // the natives are what tell the game apart from the shader compiler's state,
 // which has a full base library and none of them.
-LuaRuntime::StateKind LuaRuntime::classifyState(void* L)
+crabe::lua_runtime::StateKind crabe::lua_runtime::classifyState(void* L)
 {
     static constexpr const char* kProbe = R"lua(
 if not (type and pairs and tostring and table and pcall and error) then return 'unusable' end
@@ -45,7 +49,7 @@ return 'game'
 )lua";
 
     std::string result;
-    if (!LuaCall::get().runSnippet(L, kProbe, result))
+    if (!crabe::infrastructure::LuaCall::get().runSnippet(L, kProbe, result))
         return StateKind::Unusable;
 
     if (result == "game") return StateKind::Game;
@@ -53,9 +57,9 @@ return 'game'
     return StateKind::Unusable;
 }
 
-bool LuaRuntime::injectAll(void* L)
+bool crabe::lua_runtime::injectAll(void* L)
 {
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     std::filesystem::path folder = apiFolder();
 
     // 1. Developer override: If an 'api/' directory exists on disk and contains .lua files,
@@ -74,7 +78,7 @@ bool LuaRuntime::injectAll(void* L)
 
             bool allOk = true;
             for (const auto& path : diskModules) {
-                if (LuaCall::get().runFile(L, path.string().c_str()))
+                if (crabe::infrastructure::LuaCall::get().runFile(L, path.string().c_str()))
                     continue;
 
                 logger.error("LuaRuntime: API module '{}' failed to load from disk.", path.filename().string());
@@ -88,11 +92,11 @@ bool LuaRuntime::injectAll(void* L)
     }
 
     // 2. Standard release: Load all embedded API modules directly from DLL memory.
-    logger.info("LuaRuntime: Loading embedded API ({} modules)...", Crabe::EmbeddedApi::kModuleCount);
+    logger.info("LuaRuntime: Loading embedded API ({} modules)...", crabe::embedded_api::kModuleCount);
 
     bool allOk = true;
-    for (const auto& mod : Crabe::EmbeddedApi::kModules) {
-        if (LuaCall::get().runBuffer(L, reinterpret_cast<const char*>(mod.data), mod.size, mod.name.data()))
+    for (const auto& mod : crabe::embedded_api::kModules) {
+        if (crabe::infrastructure::LuaCall::get().runBuffer(L, reinterpret_cast<const char*>(mod.data), mod.size, mod.name.data()))
             continue;
 
         logger.error("LuaRuntime: Embedded API module '{}' failed to load.", mod.name);
@@ -101,7 +105,7 @@ bool LuaRuntime::injectAll(void* L)
 
     if (allOk) {
         logger.info("LuaRuntime: Embedded API loaded successfully ({} modules).",
-                    Crabe::EmbeddedApi::kModuleCount);
+                    crabe::embedded_api::kModuleCount);
     }
     return allOk;
 }

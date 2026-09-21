@@ -36,8 +36,8 @@ def generate_header(api_dir: Path, output_file: Path):
     lines.append("#define CRABELOADER_APPLICATION_EMBEDDED_API_HPP_\n")
     lines.append("#include <cstddef>")
     lines.append("#include <string_view>\n")
-    lines.append("namespace Crabe::EmbeddedApi {\n")
-    lines.append("    namespace Modules {")
+    lines.append("namespace crabe::embedded_api {\n")
+    lines.append("    namespace modules {")
 
     modules_meta = []
 
@@ -60,7 +60,7 @@ def generate_header(api_dir: Path, output_file: Path):
             lines.append(f"            {hex_bytes},")
         lines.append("        };")
 
-    lines.append("\n    } // namespace Modules\n")
+    lines.append("\n    } // namespace modules\n")
     lines.append("    struct Module {")
     lines.append("        std::string_view name;")
     lines.append("        const char* data;")
@@ -69,11 +69,11 @@ def generate_header(api_dir: Path, output_file: Path):
     lines.append("    inline const Module kModules[] = {")
 
     for name, var_name, length in modules_meta:
-        lines.append(f'        {{ "{name}", reinterpret_cast<const char*>(Modules::{var_name}), sizeof(Modules::{var_name}) }},')
+        lines.append(f'        {{ "{name}", reinterpret_cast<const char*>(modules::{var_name}), sizeof(modules::{var_name}) }},')
 
     lines.append("    };\n")
     lines.append(f"    inline constexpr size_t kModuleCount = {len(modules_meta)};\n")
-    lines.append("} // namespace Crabe::EmbeddedApi\n")
+    lines.append("} // namespace crabe::embedded_api\n")
     lines.append("#endif /* !CRABELOADER_APPLICATION_EMBEDDED_API_HPP_ */\n")
 
     output_content = "\n".join(lines)

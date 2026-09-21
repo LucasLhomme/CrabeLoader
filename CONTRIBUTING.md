@@ -38,6 +38,9 @@ cd CrabeLoader
 
 # Generate Visual Studio 2022 solution targeting Win32
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCRABELOADER_AS_SHARED=ON
+
+# Make `git blame` skip the repository-wide mechanical rewrites
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 ### Build
@@ -79,6 +82,69 @@ We follow a structured GitFlow-inspired model:
 ---
 
 ## 💻 Coding Standards
+
+### File headers
+
+Every non-vendored, non-generated file under `src/` and `include/` opens with this
+header, and `python tools/check_headers.py` fails the build if one is missing,
+malformed, or says nothing:
+
+```cpp
+/*
+** CrabeLoader
+** File description:
+** <line 1 - what this file is responsible for>
+** <line 2 - the constraint or mechanism a reader must know>
+** <line 3 - what it deliberately does NOT do, or what it defers to>
+**
+** Authors: @LucasLhomme
+*/
+```
+
+Lua files in `src/api/` carry the same content with `--` comments.
+
+**The brief is exactly three lines and each has to earn its place.** Bad, because
+it restates the filename and a reader learns nothing:
+
+```cpp
+** ModManager implementation
+```
+
+Good, because none of it can be read off the code:
+
+```cpp
+** Discovers mods, filters by profile, assigns ids, resolves order, then runs each chunk.
+** Mod names come from unpacked archives, so both Lua chunks are constants fed values as arguments.
+** Decides no order itself -- the rules are in src/domain/dependency_resolver.cpp.
+```
+
+Line 3 is the one people skip and the one that saves the most time; prefer naming
+the file that owns the adjacent concern. Where a file encodes reverse-engineering
+knowledge, line 2 carries the empirical fact rather than restating the mechanism —
+`src/infrastructure/lua_symbols.cpp` is the model.
+
+Three *physical* lines, each at most 100 characters including the `** ` prefix.
+A wrapping brief cannot be told from a four-line one by a script, so the line is
+the unit and concision is the price.
+
+**The `Authors:` line is append-only.** Comma-separated GitHub handles, in the
+order people first touched the file. Add the handle of the human directing the
+work if it is absent; never remove, reorder or rewrite a name, and never add an
+agent or a model. Git stays the source of truth for authorship — resolve any real
+question with `git log --follow` and `git blame`, not with this line.
+
+Handle mapping for this repository: the history carries both `Crabe` and
+`Lucas Lhomme` as commit-author names, and both are **@LucasLhomme**.
+
+### Comment placement
+
+Comments belong **above** the declaration they describe, and at most three lines.
+Do not put comments inside a function body.
+
+> **Known gap:** the existing tree does not follow this yet — roughly a thousand
+> comment lines sit inside function bodies, many of them added deliberately to
+> record reverse-engineering findings. Bringing them into line is a separate
+> sweep and has not been done.
 
 ### Modern C++ (C++23)
 
@@ -123,6 +189,7 @@ Before submitting your PR, ensure:
 - [ ] Code builds without warnings under MSVC (`/W4` or equivalent).
 - [ ] No raw `new`/`delete` or unmanaged Win32 memory handles.
 - [ ] If `src/api/` was edited, `python tools/embed_api.py` was executed and `embedded_api.hpp` was updated.
+- [ ] `python tools/check_headers.py` passes, and any file you created carries the header.
 - [ ] Commits follow Conventional Commits formatting (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`).
 - [ ] Any new feature is documented in the corresponding [`docs/guides/`](docs/guides/) file.
 

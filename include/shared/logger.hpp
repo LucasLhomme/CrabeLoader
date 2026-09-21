@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** logger
+** Declares the process-wide log: levels, the in-memory history the overlay reads, and the file.
+** A crash is logged through error() behind a CRASH: prefix rather than as a level of its own.
+** Resolves no path: it takes the file it is given, next to the module, from its caller.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LOGGER_HPP
@@ -16,6 +20,8 @@
 #include <format>
 #include <utility>
 #include <vector>
+
+namespace crabe::shared {
 
 enum class LogLevel {
     DEBUG,
@@ -88,5 +94,7 @@ private:
     mutable std::mutex m_mutex;
     std::deque<LogEntry> m_history;
 };
+
+} // namespace crabe::shared
 
 #endif // LOGGER_HPP

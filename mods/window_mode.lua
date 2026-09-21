@@ -1,92 +1,55 @@
-local kConfigPath = "crabe_window_mode.cfg"
+-- Worked example: a mod adding its own option to one of the game's settings
+-- screens. What crabe_heroes is to the character grid, this is to the menus.
+--
+-- The whole mod is the one call below. Everything that used to be here --
+-- finding SettingsVideo, waiting for it to exist, wrapping BuildList, guarding
+-- the insert, not stacking a new wrapper on every hot reload -- is the loader's
+-- job now, in src/api/21_settings.lua.
+--
+-- Timing is the part that is not obvious, and the reason a mod cannot do this
+-- by hand: the screen table does not exist when mods load. Probed in the
+-- running game, SettingsVideo was nil in the front-end state immediately after
+-- injection, so the previous version fell back to polling from Game.onTick and
+-- never installed. Crabe.Settings remembers the option and installs it when
+-- that screen's chunk loads, which is the only moment the table is both present
+-- and still carrying the game's own BuildList.
+--
+-- The toggle itself is a convenience, not the feature: Alt+Enter already
+-- switches modes (src/presentation/render_hook.cpp) and [display].windowMode in
+-- Crabe/crabe.toml decides the mode at startup. Crabe.SetWindowMode persists
+-- the change, so nothing here writes any file -- an earlier version kept its own
+-- crabe_window_mode.cfg and could revert the mode on a later launch.
 
--- Loads saved window mode from configuration file if explicitly saved.
-local function loadSavedMode()
-    local file = io.open(kConfigPath, "r")
-    if not file then
-        return nil
-    end
+Crabe.Settings.addOption("SettingsVideo", {
+    id = "crabeWindowMode",
 
-    local content = file:read("*a")
-    file:close()
+    -- The game's own rows use "@Scn_Options_*" localisation keys, but its
+    -- resolution row passes a plain computed string, so a literal is accepted.
+    text = "Borderless Window",
 
-    if content and content:match("^%s*windowed%s*$") then
-        return "windowed"
-    elseif content and content:match("^%s*borderless%s*$") then
-        return "borderless"
-    end
-    return nil
-end
+    -- The same widget the game's own dynamicResolution, SSAO and motionBlur
+    -- rows use. A Toggle needs both get and set.
+    widgetType = "Toggle",
 
--- Persists user chosen window mode to configuration file.
-local function saveMode(mode)
-    local file = io.open(kConfigPath, "w")
-    if not file then
-        return
-    end
-    file:write(mode)
-    file:close()
-end
+    -- The game calls these as get(self, id) and set(self, id, value); see
+    -- src/api/21_settings.lua. `value` is what the player just chose, so it is
+    -- what gets applied -- flipping from the current state instead would do
+    -- the wrong thing whenever the menu and the loader disagree about what the
+    -- current state is.
+    get = function()
+        return Crabe.GetWindowMode() == "borderless"
+    end,
 
-local installed = false
-
--- Injects borderless window toggle into video settings menu list.
-local function installOption(cls)
-    if installed or not cls or not cls.BuildList then
-        return
-    end
-    installed = true
-
-    local originalBuildList = cls.BuildList
-
-    function cls:BuildList(...)
-        local result = originalBuildList(self, ...)
-
-        table.insert(self.listData, {
-            id = "crabeWindowMode",
-            text = "Borderless Window",
-            widgetType = "Toggle",
-            get = function() return Crabe.GetWindowMode() == "borderless" end,
-            set = function()
-                local newMode = Crabe.GetWindowMode() == "borderless" and "windowed" or "borderless"
-                Crabe.SetWindowMode(newMode)
-                saveMode(newMode)
-            end,
-        })
-
-        return result
-    end
-end
-
--- Watches for BuildList method assignment to hook options menu generation.
-local function watchForBuildList(cls)
-    local mt = getmetatable(cls)
-    if not mt then
-        mt = {}
-        setmetatable(cls, mt)
-    end
-
-    mt.__newindex = function(t, k, v)
-        rawset(t, k, v)
-        if k ~= "BuildList" then
-            return
+    set = function(self, id, value)
+        local borderless
+        if value == 1 or value == true or value == "1" then
+            borderless = true
+        elseif value == 0 or value == false or value == "0" then
+            borderless = false
+        else
+            -- No explicit value or unsupported shape: toggle current mode
+            borderless = (Crabe.GetWindowMode() ~= "borderless")
         end
-        mt.__newindex = nil
-        installOption(t)
-    end
-end
-
-local savedMode = loadSavedMode()
-if savedMode then
-    Crabe.SetWindowMode(savedMode)
-end
-
-if SettingsVideo then
-    installOption(SettingsVideo)
-elseif Game and Game.onTick then
-    Game.onTick(function()
-        if not installed and SettingsVideo then
-            installOption(SettingsVideo)
-        end
-    end)
-end
+        Crabe.SetWindowMode(borderless and "borderless" or "windowed")
+    end,
+})

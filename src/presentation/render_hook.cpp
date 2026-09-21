@@ -1,14 +1,33 @@
+/*
+** CrabeLoader
+** File description:
+** Hooks Present and ResizeBuffers, owns the ImGui device objects and applies the window mode.
+** A window mode change is applied here because only this thread may touch the swap chain.
+** Persists nothing itself; the stored mode is read and written through domain::Config.
+**
+** Authors: @LucasLhomme
+*/
+
+#include <atomic>
+#include <chrono>
 #include <dxgi.h>
-#include <fstream>
+#include <filesystem>
 #include <string>
+#include <thread>
 
 #include "presentation/render_hook.hpp"
+
+#include <algorithm>
 #include "presentation/draw_buffer.hpp"
 #include "application/loader.hpp"
+#include "domain/config.hpp"
 #include "infrastructure/crash_handler.hpp"
+#include "infrastructure/crash_reporter.hpp"
 #include "shared/logger.hpp"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+namespace crabe::presentation {
 
 namespace {
     constexpr int kPresentVtableIndex = 8;
@@ -24,28 +43,25 @@ RenderHook& RenderHook::get()
     return instance;
 }
 
-// Reads window mode configuration file or defaults to borderless.
+// Reads the window mode crabe::domain::Config::active() already loaded
+// (migrating crabe_window_mode.cfg on first run is Config::load()'s job,
+// not this one's -- see src/domain/config.cpp).
 WindowMode RenderHook::loadWindowModeConfig()
 {
-    std::ifstream file("crabe_window_mode.cfg");
-    if (!file.is_open()) {
-        return WindowMode::BorderlessWindowed;
-    }
-    std::string mode;
-    file >> mode;
-    if (mode == "windowed") {
-        return WindowMode::Windowed;
-    }
-    return WindowMode::BorderlessWindowed;
+    return crabe::domain::Config::active().windowMode() == crabe::domain::ConfigWindowMode::Windowed
+        ? WindowMode::Windowed
+        : WindowMode::BorderlessWindowed;
 }
 
-// Writes active window mode to the configuration file.
+// Persists the active window mode into crabe.toml's [display] section.
+// crabe_window_mode.cfg is legacy: Config::load() migrates it once and this
+// loader never writes to it again.
 void RenderHook::saveWindowModeConfig(WindowMode mode)
 {
-    std::ofstream file("crabe_window_mode.cfg", std::ios::trunc);
-    if (file.is_open()) {
-        file << (mode == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
-    }
+    const crabe::domain::ConfigWindowMode configMode = (mode == WindowMode::BorderlessWindowed)
+        ? crabe::domain::ConfigWindowMode::Borderless
+        : crabe::domain::ConfigWindowMode::Windowed;
+    crabe::domain::Config::active().setWindowMode(std::filesystem::current_path(), configMode);
 }
 
 // Resolves swapchain vtable function pointers using a temporary dummy device.
@@ -68,7 +84,7 @@ bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
                                     0, 0, 100, 100, nullptr, nullptr, wc.hInstance, nullptr);
     if (!dummyHwnd) {
         UnregisterClassW(kDummyClassName, wc.hInstance);
-        Logger::getInstance().error("RenderHook: failed to create dummy window.");
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to create dummy window.");
         return false;
     }
 
@@ -100,7 +116,7 @@ bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
         outResizeBuffers = reinterpret_cast<uintptr_t>(vtable[kResizeBuffersVtableIndex]);
         ok = true;
     } else {
-        Logger::getInstance().error("RenderHook: D3D11CreateDeviceAndSwapChain failed (0x{:X}).",
+        crabe::shared::Logger::getInstance().error("RenderHook: D3D11CreateDeviceAndSwapChain failed (0x{:X}).",
                                     static_cast<uint32_t>(hr));
     }
 
@@ -121,7 +137,7 @@ bool RenderHook::initialize()
     uintptr_t setFullscreenStateAddr = 0;
 
     if (!resolveSwapChainFunctions(presentAddr, resizeBuffersAddr, setFullscreenStateAddr)) {
-        Logger::getInstance().error("RenderHook: failed to resolve swapchain vtable.");
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to resolve swapchain vtable.");
         return false;
     }
 
@@ -140,6 +156,12 @@ bool RenderHook::initialize()
             _hookSetCursorPos.installLogged(reinterpret_cast<uintptr_t>(targetSetCursorPos),
                                            reinterpret_cast<void*>(&RenderHook::hkSetCursorPos),
                                            "RenderHook", "SetCursorPos");
+        }
+        auto targetShowWindow = reinterpret_cast<void*>(GetProcAddress(user32, "ShowWindow"));
+        if (targetShowWindow) {
+            _hookShowWindow.installLogged(reinterpret_cast<uintptr_t>(targetShowWindow),
+                                          reinterpret_cast<void*>(&RenderHook::hkShowWindow),
+                                          "RenderHook", "ShowWindow");
         }
     }
 
@@ -163,6 +185,7 @@ void RenderHook::uninitialize()
     _hookSetFullscreenState.remove();
     _hookResizeBuffers.remove();
     _hookSetCursorPos.remove();
+    _hookShowWindow.remove();
 
     if (_backendInitialized) {
         ImGui_ImplDX11_Shutdown();
@@ -198,7 +221,7 @@ void RenderHook::toggleMenu()
 {
     _menuOpen = !_menuOpen;
     updateCursorVisibility();
-    Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
+    crabe::shared::Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
 }
 
 // Returns whether the debug console overlay is currently visible.
@@ -214,8 +237,63 @@ void RenderHook::requestWindowMode(WindowMode mode)
     _windowModeDirty = true;
 }
 
+// A windowed rect for this monitor, sized from the swap chain's back buffer and
+// centred on the work area.
+//
+// Computed rather than restored. _originalRect is whatever the window happened
+// to be at the first Present, and by then hkSetFullscreenState may already have
+// forced the game out of exclusive fullscreen and into a borderless popup
+// covering the monitor -- so "restore the original" restored the borderless
+// geometry and changed nothing on screen, while the log below still claimed the
+// mode had been set.
+static RECT windowedRectFor(HWND hwnd, IDXGISwapChain* swapChain, LONG style)
+{
+    UINT clientWidth = 1280;
+    UINT clientHeight = 720;
+
+    DXGI_SWAP_CHAIN_DESC desc{};
+    if (swapChain && SUCCEEDED(swapChain->GetDesc(&desc)) && desc.BufferDesc.Width > 100
+        && desc.BufferDesc.Height > 100) {
+        clientWidth = desc.BufferDesc.Width;
+        clientHeight = desc.BufferDesc.Height;
+    }
+
+    MONITORINFO monitorInfo{};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    RECT work{ 0, 0, 1920, 1080 };
+    if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo))
+        work = monitorInfo.rcWork;
+
+    const LONG workWidth = work.right - work.left;
+    const LONG workHeight = work.bottom - work.top;
+
+    // The back buffer is usually the whole monitor, because that is what a
+    // borderless window asked for. A window that size plus a title bar does not
+    // fit on the screen it came from, so it is scaled down to leave the taskbar
+    // and the frame visible -- otherwise "windowed" looks identical to
+    // borderless and the toggle appears to do nothing.
+    RECT frame{ 0, 0, static_cast<LONG>(clientWidth), static_cast<LONG>(clientHeight) };
+    AdjustWindowRect(&frame, static_cast<DWORD>(style & ~WS_VISIBLE), FALSE);
+    LONG outerWidth = frame.right - frame.left;
+    LONG outerHeight = frame.bottom - frame.top;
+
+    if (outerWidth > workWidth || outerHeight > workHeight) {
+        const double scale = 0.85 * (std::min)(static_cast<double>(workWidth) / outerWidth,
+                                               static_cast<double>(workHeight) / outerHeight);
+        outerWidth = static_cast<LONG>(outerWidth * scale);
+        outerHeight = static_cast<LONG>(outerHeight * scale);
+    }
+
+    RECT out{};
+    out.left = work.left + (workWidth - outerWidth) / 2;
+    out.top = work.top + (workHeight - outerHeight) / 2;
+    out.right = out.left + outerWidth;
+    out.bottom = out.top + outerHeight;
+    return out;
+}
+
 // Changes window style and dimensions and updates swapchain buffers if needed.
-void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapChain)
+void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
 {
     if (!_windowModeDirty.exchange(false) || !_hwnd) {
         return;
@@ -234,30 +312,39 @@ void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapCha
 
         targetRect = monitorInfo.rcMonitor;
 
-        // Force WS_EX_APPWINDOW so the game always remains visible on the Windows taskbar
+        // Force WS_EX_APPWINDOW and ensure WS_EX_TOPMOST is removed so other windows can appear in front on Alt+Tab
         LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
         exStyle |= WS_EX_APPWINDOW;
         exStyle &= ~WS_EX_TOOLWINDOW;
+        exStyle &= ~WS_EX_TOPMOST;
         SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
 
         SetWindowLongPtrW(_hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
-        SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top,
+        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
                     targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
                     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     } else {
-        targetRect = _originalRect;
-        int w = targetRect.right - targetRect.left;
-        int h = targetRect.bottom - targetRect.top;
-        if (w > 100 && h > 100) {
-            LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
-            exStyle |= WS_EX_APPWINDOW;
-            exStyle &= ~WS_EX_TOOLWINDOW;
-            SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
+        // The style the window had before anything touched it, when that is a
+        // real decorated window; a plain overlapped window otherwise, since
+        // _originalStyle may have been captured while the game was already
+        // borderless and WS_POPUP would leave it borderless.
+        LONG style = static_cast<LONG>(_originalStyle);
+        if ((style & WS_CAPTION) != WS_CAPTION)
+            style = WS_OVERLAPPEDWINDOW;
+        style |= WS_VISIBLE;
 
-            SetWindowLongPtrW(_hwnd, GWL_STYLE, _originalStyle | WS_VISIBLE);
-            SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top, w, h,
-                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-        }
+        targetRect = windowedRectFor(_hwnd, swapChain, style);
+
+        LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
+        exStyle |= WS_EX_APPWINDOW;
+        exStyle &= ~WS_EX_TOOLWINDOW;
+        exStyle &= ~WS_EX_TOPMOST;
+        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
+
+        SetWindowLongPtrW(_hwnd, GWL_STYLE, style);
+        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
+                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
+                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     }
 
     ShowWindow(_hwnd, SW_SHOW);
@@ -265,8 +352,16 @@ void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapCha
     SetForegroundWindow(_hwnd);
     saveWindowModeConfig(currentMode);
 
-    Logger::getInstance().info("RenderHook: window mode set to {}.",
-                               currentMode == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
+    // The rect the window actually ended up with, not the one that was asked
+    // for. The previous version logged success unconditionally, including when
+    // a guard above had skipped every call that changes anything -- which is
+    // how a toggle that did nothing on screen still read as working.
+    RECT applied{};
+    GetWindowRect(_hwnd, &applied);
+    crabe::shared::Logger::getInstance().info(
+        "RenderHook: window mode set to {} ({}x{} at {},{}).",
+        currentMode == WindowMode::BorderlessWindowed ? "borderless" : "windowed",
+        applied.right - applied.left, applied.bottom - applied.top, applied.left, applied.top);
 }
 
 // Returns the trampoline to the original Present method.
@@ -293,9 +388,20 @@ RenderHook::t_SetCursorPos RenderHook::originalSetCursorPos() const
     return reinterpret_cast<t_SetCursorPos>(_hookSetCursorPos.getOriginal());
 }
 
+// Returns the trampoline to the original ShowWindow function.
+RenderHook::t_ShowWindow RenderHook::originalShowWindow() const
+{
+    return reinterpret_cast<t_ShowWindow>(_hookShowWindow.getOriginal());
+}
+
 // Releases the active backbuffer render target view.
 void RenderHook::releaseRenderTarget()
 {
+    if (_context) {
+        ID3D11RenderTargetView* nullViews[1] = { nullptr };
+        _context->OMSetRenderTargets(1, nullViews, nullptr);
+        _context->Flush();
+    }
     if (_renderTargetView) {
         _renderTargetView->Release();
         _renderTargetView = nullptr;
@@ -332,6 +438,21 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     _originalStyle = GetWindowLongPtrW(_hwnd, GWL_STYLE);
     GetWindowRect(_hwnd, &_originalRect);
 
+    // Prevent DXGI from altering window styles or intercepting Alt+Enter/Alt+Tab
+    IDXGIFactory* factory = nullptr;
+    if (SUCCEEDED(swapChain->GetParent(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&factory)))) {
+        factory->MakeWindowAssociation(_hwnd, DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER);
+        factory->Release();
+    }
+
+    // Ensure WS_EX_TOPMOST is removed from the window so other apps can take foreground on Alt+Tab
+    LONG_PTR initialExStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
+    if (initialExStyle & WS_EX_TOPMOST) {
+        initialExStyle &= ~WS_EX_TOPMOST;
+        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, initialExStyle);
+    }
+    SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
     ImGui_ImplWin32_Init(_hwnd);
     ImGui_ImplDX11_Init(_device, _context);
 
@@ -343,7 +464,7 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     createRenderTarget(swapChain);
 
     _backendInitialized = true;
-    Logger::getInstance().debug("RenderHook: ImGui DX11/Win32 initialized (hwnd 0x{:X}).",
+    crabe::shared::Logger::getInstance().debug("RenderHook: ImGui DX11/Win32 initialized (hwnd 0x{:X}).",
                                 reinterpret_cast<uintptr_t>(_hwnd));
 }
 
@@ -372,10 +493,37 @@ BOOL WINAPI RenderHook::hkSetCursorPos(int X, int Y)
     return self.originalSetCursorPos()(X, Y);
 }
 
+// Intercepts ShowWindow calls from the game to suppress window minimization in borderless mode.
+BOOL WINAPI RenderHook::hkShowWindow(HWND hWnd, int nCmdShow)
+{
+    RenderHook& self = RenderHook::get();
+    if (self._hwnd && hWnd == self._hwnd && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+        if (nCmdShow == SW_MINIMIZE || nCmdShow == SW_FORCEMINIMIZE || nCmdShow == SW_SHOWMINIMIZED) {
+            // Block minimization and keep window displayed without stealing focus
+            return self.originalShowWindow()(hWnd, SW_SHOWNA);
+        }
+    }
+    return self.originalShowWindow()(hWnd, nCmdShow);
+}
+
 // Drives frame rendering, pending mode application, and UI overlay rendering.
 HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
 {
     RenderHook& self = RenderHook::get();
+
+    // This is where the render thread is identified, because it is the only
+    // place the loader is certain it is on it -- Present *is* the render
+    // thread, by definition (invariant I3). Declared unconditionally rather
+    // than behind a thread_local flag: declareThreadRole is idempotent (a
+    // sixteen-slot scan and a compare-exchange that fails after the first),
+    // and doing it every frame means a second thread that ever calls Present
+    // is recorded too, without this file depending on dynamic TLS in a DLL
+    // that has DisableThreadLibraryCalls set.
+    crabe::infrastructure::CrashReporter::declareThreadRole(
+        crabe::infrastructure::ThreadRole::Render);
+    static std::atomic<bool> presentAnnounced{false};
+    if (!presentAnnounced.exchange(true))
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("RenderHook: first Present");
 
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
@@ -395,17 +543,30 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             if (self._menuOpen)
                 self._overlay.renderOverlay();
 
-            CrashHandler::runGuarded([]() {
-                Crabe::Presentation::DrawBuffer::get().replay();
+            crabe::infrastructure::CrashHandler::runGuarded([]() {
+                crabe::presentation::DrawBuffer::get().replay();
             }, "RenderHook::replayDrawBuffer");
 
             ImGui::Render();
             self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+            ID3D11RenderTargetView* nullViews[1] = { nullptr };
+            self._context->OMSetRenderTargets(1, nullViews, nullptr);
         }
     }
 
-    return self.originalPresent()(swapChain, syncInterval, flags);
+    HRESULT hr = self.originalPresent()(swapChain, syncInterval, flags);
+    if (hr == DXGI_STATUS_OCCLUDED) {
+        return S_OK;
+    }
+    if (FAILED(hr)) {
+        crabe::shared::Logger::getInstance().error("RenderHook: Present returned 0x{:X}.", static_cast<uint32_t>(hr));
+        if (hr == DXGI_ERROR_DEVICE_RESET || hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_INVALID_CALL) {
+            return S_OK;
+        }
+    }
+    return hr;
 }
 
 // Releases and recreates render target view across swapchain resizing.
@@ -415,9 +576,16 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
 {
     RenderHook& self = RenderHook::get();
 
+    crabe::shared::Logger::getInstance().info("RenderHook: ResizeBuffers requested ({}x{}, format {}).",
+                                              width, height, static_cast<uint32_t>(newFormat));
+
     self.releaseRenderTarget();
 
     HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);
+    if (FAILED(hr)) {
+        crabe::shared::Logger::getInstance().error("RenderHook: ResizeBuffers failed (0x{:X}).", static_cast<uint32_t>(hr));
+    }
+
     if (SUCCEEDED(hr) && self._backendInitialized && self._device) {
         self.createRenderTarget(swapChain);
     }
@@ -429,21 +597,84 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 {
     RenderHook& self = RenderHook::get();
 
+    // Same reasoning as hkPresent: a WndProc runs on the thread that owns the
+    // window, so this is where the window thread names itself. If that turns
+    // out to be the same thread Present runs on, the slot keeps whichever role
+    // was declared first (see declareThreadRole) rather than flip-flopping
+    // between the two from launch to launch.
+    crabe::infrastructure::CrashReporter::declareThreadRole(
+        crabe::infrastructure::ThreadRole::Window);
+    static std::atomic<bool> messageAnnounced{false};
+    if (!messageAnnounced.exchange(true))
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("RenderHook: first window message");
+
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
-        Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+        crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+    }
+
+    if (msg == WM_WINDOWPOSCHANGING) {
+        auto* pos = reinterpret_cast<WINDOWPOS*>(lParam);
+        if (pos && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            if (pos->hwndInsertAfter == HWND_TOPMOST) {
+                pos->hwndInsertAfter = HWND_NOTOPMOST;
+            }
+        }
     }
 
     if (msg == WM_ACTIVATE) {
-        if (LOWORD(wParam) == WA_INACTIVE) {
+        const bool active = (LOWORD(wParam) != WA_INACTIVE);
+        self._isFocused.store(active);
+        if (!active) {
             ClipCursor(nullptr);
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
         } else {
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                BringWindowToTop(hwnd);
+            }
             self.updateCursorVisibility();
         }
+        // Spoof to the game: always pretend active
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            wParam = MAKEWPARAM(WA_ACTIVE, HIWORD(wParam));
+        }
+    } else if (msg == WM_ACTIVATEAPP) {
+        const bool active = (wParam != FALSE);
+        self._isFocused.store(active);
+        if (!active) {
+            ClipCursor(nullptr);
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        } else {
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                BringWindowToTop(hwnd);
+            }
+        }
+        // Spoof to the game: pretend app is always active
+        wParam = TRUE;
+    } else if (msg == WM_NCACTIVATE) {
+        // Keep active title bar look and avoid game reacting to inactive border
+        return CallWindowProcW(self._originalWndProc, hwnd, msg, TRUE, lParam);
+    } else if (msg == WM_SIZE) {
+        if (wParam == SIZE_MINIMIZED) {
+            // Block internal minimization logic
+            return 0;
+        }
     } else if (msg == WM_KILLFOCUS) {
+        self._isFocused.store(false);
         ClipCursor(nullptr);
     } else if (msg == WM_SETFOCUS) {
+        self._isFocused.store(true);
+        if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            BringWindowToTop(hwnd);
+        }
         self.updateCursorVisibility();
     }
 
@@ -464,10 +695,6 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             self.requestWindowMode(next);
             return 0;
         }
-        if (wParam == VK_TAB && (lParam & (1 << 29))) {
-            ClipCursor(nullptr);
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        }
         if (wParam == VK_F4 && (lParam & (1 << 29))) {
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
@@ -475,6 +702,14 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     if (msg == WM_SYSCOMMAND) {
         WPARAM cmd = wParam & 0xFFF0;
+        if (cmd == SC_MINIMIZE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            ClipCursor(nullptr);
+            return 0; // Prevent window minimization on focus loss in borderless mode
+        }
+        if (cmd == SC_RESTORE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            BringWindowToTop(hwnd);
+        }
         if (cmd == SC_KEYMENU && lParam != VK_SPACE) {
             return 0;
         }
@@ -502,9 +737,12 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     // Case 2: a mod asked for these keys, so the game must not also act on them.
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
-        if (Loader::get().isKeyCaptured(static_cast<int>(wParam)))
+        if (crabe::application::Loader::get().isKeyCaptured(static_cast<int>(wParam)))
             return 0;
     }
 
     return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);
 }
+
+} // namespace crabe::presentation
+

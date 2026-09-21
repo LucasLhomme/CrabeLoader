@@ -38,19 +38,36 @@ For multi-file projects, create a `mod.json` file in your mod folder:
 
 ```json
 {
+  "manifestVersion": 1,
+  "id": "com.yourname.my-custom-mod",
   "name": "My Custom Mod",
-  "id": "my_custom_mod",
   "version": "1.0.0",
   "minLoaderVersion": "0.2.0",
   "entry": "main.lua",
-  "author": "YourName",
+  "authors": [ "YourName" ],
   "description": "Custom gameplay features and ImGui overlay for Disney Infinity 3.0"
 }
 ```
 
-* `id`: Unique identifier for your mod (alphanumeric and underscores).
+* `manifestVersion`: `1` selects the current schema. A manifest without it is
+  read as version 0, the shape CrabeLoader shipped before there was a schema,
+  where only `name`, `version`, `minLoaderVersion` and `entry` are read and `id`
+  is **ignored** — the loader then synthesises `local.<your-folder-name>` so the
+  dependency resolver still has a key for your mod.
+* `id`: Your identity, and what other mods write in their `dependencies`.
+  Reverse-DNS and lowercase: dot-separated segments matching
+  `^[a-z0-9]+(\.[a-z0-9-]+)+$`. Hyphens are allowed after the first segment,
+  but **underscores, capitals and an id with no dot are refused**.
+  `com.yourname.my-custom-mod` is valid; `my_custom_mod` is not. Check yours
+  with `crabe-cli validate <folder>`.
 * `minLoaderVersion`: Enforces the minimum CrabeLoader version required to run your mod.
 * `entry`: The entry Lua script to execute on startup (defaults to `main.lua`).
+* Keys the schema does not define — `description` above, for instance — are kept
+  rather than refused, so extra metadata of your own never stops a mod loading;
+  the loader lists them at debug level. `crabe-cli validate` does mention them
+  and exits `2`, its warnings-only code, so the manifest above validates as a
+  warning rather than as the clean `0`. An id it refuses is a different matter:
+  that is an error and exit `1`.
 
 ---
 
@@ -60,7 +77,6 @@ Every modern mod registers its lifecycle callbacks with `Crabe.Mod.register`:
 
 ```lua
 Crabe.Mod.register({
-    id = "my_custom_mod",
     name = "My Custom Mod",
 
     -- 1. Called once when the game's Lua VM is ready
@@ -84,6 +100,16 @@ Crabe.Mod.register({
     end
 })
 ```
+
+### Subscribing from `onInit`
+
+`onInit` is the right place to subscribe to anything: `Game.onTick`,
+`Game.onDeath`, `Crabe.Events.on`, `Crabe.Mod.onReload`. Every subscription a
+mod makes is recorded against that mod and revoked for it on the next hot
+reload (F4), whether the mod subscribed from its top-level chunk or from one of
+its lifecycle callbacks. A reload therefore cannot leave a previous generation
+of callbacks running, and `onInit` itself runs exactly once per generation
+however the mod was loaded.
 
 ---
 
@@ -131,7 +157,6 @@ local isMenuOpen = true
 local customSpeed = 1.0
 
 Crabe.Mod.register({
-    id = "ui_demo",
     name = "UI Demo",
 
     onDraw = function()

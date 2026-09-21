@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Live state of the played avatar: alive or dead, respawn, revive, and controller locking.
+-- Split from 11_avatar.lua because this half is polled every frame while identity rarely changes.
+-- Watches no death itself; the transition watcher is Game.onDeath in src/api/20_hooks.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Live state of the played avatar: alive/dead, respawn, and input locking.
 --
 -- Split out of 11_avatar.lua only to stay under the 500-line cap; it loads

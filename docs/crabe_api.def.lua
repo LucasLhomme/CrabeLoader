@@ -317,6 +317,36 @@ function Crabe.Menu.addSlider(categoryName, label, getFn, setFn, min, max, step)
 function Crabe.Menu.setStatus(message) end
 
 --------------------------------------------------------------------------------
+-- Crabe.Settings: Adding Options to the Game's Own Settings Screens
+--------------------------------------------------------------------------------
+
+---@class SettingsOption
+---@field public id string Unique identifier for the row; also what stops it being added twice.
+---@field public text string Label, or a "@Scn_..." localisation key.
+---@field public widgetType "Toggle"|"Slider"|"LR_Toggle" Widget the game renders.
+---@field public get? fun(): any Current value. Required by Toggle and Slider.
+---@field public set? fun(value?: any): any Called when the player changes it.
+---@field public tickMarks? number Slider steps, for widgetType "Slider".
+
+---@class CrabeSettings
+Crabe.Settings = {}
+
+--- Adds an option to one of the game's settings screens, e.g. "SettingsVideo".
+--- Safe to call at any time and from any Lua state: the screen table does not
+--- exist when mods load, so the option is remembered and installed when that
+--- screen's chunk runs. Revoked on hot reload with the rest of the mod's
+--- registrations. Returns false, having logged why, instead of raising.
+---@param screenName string Global name of the screen table (a Lua identifier).
+---@param entry SettingsOption
+---@return boolean accepted
+function Crabe.Settings.addOption(screenName, entry) end
+
+--- Options currently registered for a screen, in load order.
+---@param screenName string
+---@return SettingsOption[]
+function Crabe.Settings.listOptions(screenName) end
+
+--------------------------------------------------------------------------------
 -- Crabe.VirtualReader: Character & Figurine Roster Injection
 --------------------------------------------------------------------------------
 

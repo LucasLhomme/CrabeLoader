@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** memory
+** Implements the read-only scans: byte patterns, strings, pointer hunts and call resolution.
+** Every scan walks only committed readable regions, which is what stops it faulting mid-sweep.
+** Writes nothing; changing bytes is src/infrastructure/multiplayer/memory_patcher.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/memory.hpp"
@@ -59,35 +63,57 @@ namespace {
         }
     }
 
-    struct PatternByte {
-        uint8_t value;
-        bool wildcard;
-    };
-
-    std::vector<PatternByte> parsePattern(const char* pattern)
-    {
-        std::vector<PatternByte> bytes;
-        const char* p = pattern;
-
-        while (*p) {
-            while (*p == ' ') ++p;
-            if (!*p) break;
-
-            if (p[0] == '?') {
-                bytes.push_back({0, true});
-                p += (p[1] == '?') ? 2 : 1;
-            } else {
-                bytes.push_back({static_cast<uint8_t>(std::strtoul(p, nullptr, 16)), false});
-                p += 2;
-            }
-        }
-        return bytes;
-    }
-
     // Size of the ModRM byte plus its optional SIB and displacement.
 } // namespace
 
-uintptr_t Memory::patternScan(const char* pattern, HMODULE module, uintptr_t after)
+std::vector<crabe::memory::PatternByte> crabe::memory::parsePattern(const char* pattern)
+{
+    std::vector<PatternByte> bytes;
+    if (!pattern) return bytes;
+
+    const char* p = pattern;
+
+    while (*p) {
+        while (*p == ' ') ++p;
+        if (!*p) break;
+
+        if (p[0] == '?') {
+            bytes.push_back({0, true});
+            p += (p[1] == '?') ? 2 : 1;
+        } else {
+            bytes.push_back({static_cast<uint8_t>(std::strtoul(p, nullptr, 16)), false});
+            p += 2;
+        }
+    }
+    return bytes;
+}
+
+size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, std::span<const PatternByte> needle)
+{
+    if (needle.empty() || haystack.size() < needle.size()) return kNoMatch;
+
+    size_t limit = haystack.size() - needle.size();
+
+    for (size_t i = 0; i <= limit; ++i) {
+        bool matched = true;
+
+        for (size_t j = 0; j < needle.size(); ++j) {
+            if (!needle[j].wildcard && haystack[i + j] != needle[j].value) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) return i;
+    }
+    return kNoMatch;
+}
+
+size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, const char* pattern)
+{
+    return findPattern(haystack, parsePattern(pattern));
+}
+
+uintptr_t crabe::memory::patternScan(const char* pattern, HMODULE module, uintptr_t after)
 {
     ModuleRange mod = mainModule();
     if (module) mod.base = reinterpret_cast<uintptr_t>(module);
@@ -105,30 +131,17 @@ uintptr_t Memory::patternScan(const char* pattern, HMODULE module, uintptr_t aft
         if (after >= start) start = after + 1;
         if (end - start < needle.size()) return false;
 
-        auto* bytes = reinterpret_cast<const uint8_t*>(start);
-        size_t limit = (end - start) - needle.size();
+        size_t at = findPattern({reinterpret_cast<const uint8_t*>(start), end - start}, needle);
+        if (at == kNoMatch) return false;
 
-        for (size_t i = 0; i <= limit; ++i) {
-            bool matched = true;
-
-            for (size_t j = 0; j < needle.size(); ++j) {
-                if (!needle[j].wildcard && bytes[i + j] != needle[j].value) {
-                    matched = false;
-                    break;
-                }
-            }
-            if (matched) {
-                found = start + i;
-                return true;
-            }
-        }
-        return false;
+        found = start + at;
+        return true;
     });
 
     return found;
 }
 
-bool Memory::isReadable(uintptr_t addr, size_t size)
+bool crabe::memory::isReadable(uintptr_t addr, size_t size)
 {
     MEMORY_BASIC_INFORMATION mbi;
 
@@ -139,7 +152,7 @@ bool Memory::isReadable(uintptr_t addr, size_t size)
     return addr + size <= end;
 }
 
-std::vector<uintptr_t> Memory::findPointers(uintptr_t value, size_t limit)
+std::vector<uintptr_t> crabe::memory::findPointers(uintptr_t value, size_t limit)
 {
     std::vector<uintptr_t> found;
     if (!value) return found;
@@ -172,7 +185,7 @@ std::vector<uintptr_t> Memory::findPointers(uintptr_t value, size_t limit)
     return found;
 }
 
-uintptr_t Memory::findString(const char* text, uintptr_t after)
+uintptr_t crabe::memory::findString(const char* text, uintptr_t after)
 {
     ModuleRange mod = mainModule();
     if (!mod.base) return 0;
@@ -200,7 +213,7 @@ uintptr_t Memory::findString(const char* text, uintptr_t after)
 // A short name can be registered by more than one library ("type" by both
 // base and io); collects every binding, since which comes first is not
 // stable between runs.
-std::vector<uintptr_t> Memory::findRegisteredFunctions(const char* funcName)
+std::vector<uintptr_t> crabe::memory::findRegisteredFunctions(const char* funcName)
 {
     std::vector<uintptr_t> found;
 
@@ -227,13 +240,13 @@ std::vector<uintptr_t> Memory::findRegisteredFunctions(const char* funcName)
     return found;
 }
 
-uintptr_t Memory::findRegisteredFunction(const char* funcName)
+uintptr_t crabe::memory::findRegisteredFunction(const char* funcName)
 {
     std::vector<uintptr_t> candidates = findRegisteredFunctions(funcName);
     return candidates.empty() ? 0 : candidates.front();
 }
 
-uintptr_t Memory::resolveCall(uintptr_t addr)
+uintptr_t crabe::memory::resolveCall(uintptr_t addr)
 {
     if (!isReadable(addr, 5)) return 0;
     if (*reinterpret_cast<const uint8_t*>(addr) != 0xE8) return 0;
@@ -242,7 +255,7 @@ uintptr_t Memory::resolveCall(uintptr_t addr)
     return addr + 5 + static_cast<uintptr_t>(rel);
 }
 
-std::vector<uintptr_t> Memory::findCallSites(uintptr_t target, size_t limit)
+std::vector<uintptr_t> crabe::memory::findCallSites(uintptr_t target, size_t limit)
 {
     std::vector<uintptr_t> sites;
 
@@ -275,7 +288,7 @@ std::vector<uintptr_t> Memory::findCallSites(uintptr_t target, size_t limit)
 // Plain byte walk, not a full decoder: an E8 byte also occurs inside other
 // instructions, so a candidate only counts when its target lands inside the
 // image -- merely readable isn't enough, that shifts every later index.
-std::vector<uintptr_t> Memory::findCalls(uintptr_t functionStart, size_t maxScan)
+std::vector<uintptr_t> crabe::memory::findCalls(uintptr_t functionStart, size_t maxScan)
 {
     std::vector<uintptr_t> targets;
 

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** draw_buffer
+** Declares the queue the script thread records ImGui calls into for the render thread to replay.
+** This is the only legal path from Lua to Direct3D: recording a call draws nothing.
+** Widget results lag one frame, because a measurement only exists once the replay has run.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef DRAW_BUFFER_HPP_
@@ -13,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Crabe::Presentation {
+namespace crabe::presentation {
 
     enum class DrawOp : std::uint8_t {
         Begin,
@@ -117,6 +121,6 @@ namespace Crabe::Presentation {
         mutable std::mutex _resultsMutex;
     };
 
-} // namespace Crabe::Presentation
+} // namespace crabe::presentation
 
 #endif /* !DRAW_BUFFER_HPP_ */

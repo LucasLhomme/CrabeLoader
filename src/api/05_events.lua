@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- A publish and subscribe bus so mods and engine hooks can talk without knowing each other.
+-- A listener is removed by identity, never by index, because indices shift as others unsubscribe.
+-- Emits no engine event itself; the loader and src/api/20_hooks.lua raise them.
+--
+-- Authors: @LucasLhomme
+
 -- `Crabe.Events` - Unified Event Bus for Disney Infinity 3.0 Modding
 -- Enables decoupled pub/sub event communication across mods and engine hooks.
 
@@ -21,6 +29,17 @@ function Crabe.Events.on(eventName, handler)
         Crabe.Events._listeners[eventName] = list
     end
     list[#list + 1] = handler
+    -- Owned by the calling mod and revoked on hot reload. Removal is by
+    -- identity: indices shift, and a `once` handler may already have removed
+    -- itself, in which case the search finds nothing and does nothing.
+    Crabe.Registry.track(function()
+        for i = #list, 1, -1 do
+            if list[i] == handler then
+                table.remove(list, i)
+                break
+            end
+        end
+    end)
     return handler
 end
 

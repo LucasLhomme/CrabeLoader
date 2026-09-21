@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** message_hook
+** Declares a trace of the engine named-message dispatcher, filtered by watch prefix.
+** Observer only: it records a matching name and always forwards to the real dispatcher.
+** Finds the dispatcher by byte pattern, because the game exports nothing useful here.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MESSAGE_HOOK_HPP_
@@ -14,6 +18,8 @@
 #include <vector>
 
 #include "infrastructure/hook.hpp"
+
+namespace crabe::infrastructure {
 
 // Traces the engine's named-message dispatcher (the bus System_StartButtonPushed
 // posts to, alongside "DropInBlocked"). Observer only: nothing is recorded
@@ -57,5 +63,7 @@ class MessageHook {
         std::atomic<size_t> _watchCount{0};
         std::vector<std::string> _recorded;
 };
+
+} // namespace crabe::infrastructure
 
 #endif /* !MESSAGE_HOOK_HPP_ */

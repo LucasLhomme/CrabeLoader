@@ -1,42 +1,29 @@
 /*
 ** CrabeLoader
 ** File description:
-** hook
+** Adapts the old RAII Hook onto the ownership registry, keeping its install and remove shape.
+** A call site with no name yet falls back to the address, which still attributes a fault correctly.
+** Patches nothing; the memory work is src/infrastructure/minhook_backend.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/hook.hpp"
 
-#include <cstdint>
-#include <mutex>
-#include "minhook/MinHook.h"
+#include <format>
+
 #include "shared/logger.hpp"
 
+namespace crabe::infrastructure {
+
 namespace {
-    int g_refCount = 0;
-    std::mutex g_refMutex;
-
-    // MH_Initialize/MH_Uninitialize are process-global; Hook instances are
-    // created/destroyed independently, so reference-count them.
-    bool acquireMinHook()
+    // The registry wants a name for every hook, and a few call sites have none
+    // to give yet. The address is the honest fallback: it still puts the hook in
+    // the inventory and still attributes a fault to the right owner, which is
+    // more than the previous behaviour managed.
+    std::string fallbackName(uintptr_t target)
     {
-        std::lock_guard<std::mutex> lock(g_refMutex);
-        if (g_refCount == 0) {
-            MH_STATUS status = MH_Initialize();
-            if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {
-                Logger::getInstance().error("Hook: MH_Initialize failed: {}", MH_StatusToString(status));
-                return false;
-            }
-        }
-        ++g_refCount;
-        return true;
-    }
-
-    void releaseMinHook()
-    {
-        std::lock_guard<std::mutex> lock(g_refMutex);
-        if (--g_refCount == 0) {
-            MH_Uninitialize();
-        }
+        return std::format("hook@0x{:X}", target);
     }
 }
 
@@ -45,61 +32,50 @@ Hook::~Hook()
     remove();
 }
 
-// Redirects `src` to `dst` via MinHook; getOriginal() then returns the
-// trampoline for calling through to the real function.
-bool Hook::install(void* src, void* dst)
+bool Hook::install(void* src, void* dst, const char* name)
 {
-    if (_installed || !src || !dst) return false;
-    if (!acquireMinHook()) return false;
+    if (isInstalled())
+        return false;
 
-    Logger& logger = Logger::getInstance();
+    const uintptr_t target = reinterpret_cast<uintptr_t>(src);
+    const std::string hookName = name != nullptr ? std::string(name) : fallbackName(target);
 
-    void* original = nullptr;
-    MH_STATUS status = MH_CreateHook(src, dst, &original);
-    if (status != MH_OK) {
-        logger.error("Hook: MH_CreateHook failed at 0x{:X}: {}",
-                    reinterpret_cast<uintptr_t>(src), MH_StatusToString(status));
-        releaseMinHook();
+    // The registry does the refusing now -- a null target, a null detour and a
+    // collision all come back as a named HookError, already logged with both
+    // owners' names where that applies.
+    auto installed = coreRegistry().install(kCoreOwner, hookName, target, dst, &_trampoline);
+    if (!installed) {
+        _trampoline = nullptr;
         return false;
     }
 
-    status = MH_EnableHook(src);
-    if (status != MH_OK) {
-        logger.error("Hook: MH_EnableHook failed at 0x{:X}: {}",
-                    reinterpret_cast<uintptr_t>(src), MH_StatusToString(status));
-        MH_RemoveHook(src);
-        releaseMinHook();
-        return false;
-    }
-
-    _src = src;
-    _trampoline = original;
-    _installed = true;
+    _handle = *installed;
     return true;
 }
 
 void Hook::remove()
 {
-    if (!_installed) return;
+    if (!_handle.valid())
+        return;
 
-    MH_DisableHook(_src);
-    MH_RemoveHook(_src);
-    releaseMinHook();
-
-    _src = nullptr;
+    coreRegistry().remove(_handle);
+    _handle = HookHandle{};
     _trampoline = nullptr;
-    _installed = false;
 }
 
 bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const char* name)
 {
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
     if (addr == 0) {
         logger.warning("{}: {} skipped (address not resolved).", owner, name);
         return false;
     }
-    if (!install(reinterpret_cast<void*>(addr), detour)) {
+
+    // "<component>::<function>", so the registry's inventory and a crash report
+    // read the same way the log line always has.
+    const std::string registryName = std::format("{}::{}", owner, name);
+    if (!install(reinterpret_cast<void*>(addr), detour, registryName.c_str())) {
         logger.error("{}: failed to hook {} at 0x{:X}.", owner, name, addr);
         return false;
     }
@@ -109,10 +85,12 @@ bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const 
 
 bool Hook::isInstalled() const
 {
-    return _installed;
+    return _handle.valid();
 }
 
 void* Hook::getOriginal() const
 {
     return _trampoline;
 }
+
+} // namespace crabe::infrastructure

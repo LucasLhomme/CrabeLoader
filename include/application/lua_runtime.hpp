@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_runtime
+** Declares the injection of src/api/*.lua into a Lua state and the state test that gates it.
+** The game creates several Lua states; only the gameplay one may receive the API.
+** Contains none of that API -- it lives in src/api/, embedded by tools/embed_api.py.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LUA_RUNTIME_HPP_
@@ -10,7 +14,7 @@
 #include <filesystem>
 
 // The modding API CrabeLoader exposes to mods: the `Crabe` namespace
-namespace LuaRuntime {
+namespace crabe::lua_runtime {
     // How usable a given lua_State is. The process runs more than one: the
     // first the loader sees belongs to the Slang shader compiler, and the
     // earliest states of any kind are seen before luaopen_base has filled _G.

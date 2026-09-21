@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Themes and skydomes: setting the environment theme and listing the ones the build carries.
+-- A theme applies to the loaded world, so it has to be re-set after a level load.
+-- Loads no level -- that is src/api/14_world.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Themes, Skydomes & Environment API for Disney Infinity 3.0
 --
 -- Exposes Toy Box skydome / skybox theme customizers and world customization.
