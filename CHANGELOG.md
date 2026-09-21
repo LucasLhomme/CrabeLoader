@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The loader identifies which build of the game it is running against, instead of
+  applying 33 hardcoded addresses to whatever happens to be loaded. Every measured
+  address now lives in a `GameProfile` rather than scattered through
+  `lua_symbols.cpp` and `memory_patcher.cpp`, and a PE-header check (TimeDateStamp,
+  SizeOfImage, CheckSum) decides between three outcomes: load normally on a matched
+  profile; run degraded with multiplayer disabled and Lua mods still loading when no
+  profile matches but every signature scan resolves; or refuse to patch, leaving the
+  game unmodded, when no profile matches and a scan fails. The refusal never kills
+  the process — the player loses mods, not their session.
+
+  **The profile's three PE constants ship unmeasured**, so until a human fills them
+  in from the shipped executable the loader runs degraded on every machine and
+  multiplayer is disabled. See `docs/testing/manual_checklist.md`.
+
+### Added
+
+- Mod load order is resolved from declared dependencies instead of being whatever
+  `directory_iterator` happened to yield. `crabe::domain::resolve` is a pure
+  function — no I/O, no logging, no Lua, no Win32 — that turns manifests plus the
+  loader version into a load order and a typed rejection list, handling required
+  and optional dependencies, `provides` capabilities, `loadAfter` / `loadBefore`,
+  declared conflicts, duplicate ids (highest version wins), loader-version bounds,
+  and cycles, rejecting transitively to a fixed point. Ties break on id, so the
+  result is reproducible: a test shuffles 17 mods 100 times and gets the same
+  answer every round. The loader now emits a load report, one line per mod.
+
+  **Behaviour change:** load order is now deterministic rather than
+  filesystem-dependent, so mods may load in a different order than before. Mods
+  that declare no dependencies are ordered by id.
+- A manifest that declares no `id` — every v0 manifest — is given
+  `local.<sanitised-folder-name>` by the loader, so existing mods take part in
+  resolution without needing a manifest rewrite. Collisions are numbered, and a
+  declared id always wins over a synthesised one.
+
+### Added
+
+- `mod.json` is parsed as real JSON, with a `SemVer` type supporting comparison
+  and the `>=1.2.0`, `~1.2`, `1.x` and `*` range forms. Manifests now distinguish
+  three states — valid, malformed, absent — and a malformed one reports the file,
+  the line, the column and the byte offset instead of being silently misread.
+  The v1 schema adds `id`, `authors`, `license`, `maxLoaderVersion`,
+  `dependencies`, `optionalDependencies`, `loadAfter`, `loadBefore`, `conflicts`
+  and `provides`; a manifest with no `manifestVersion` is read as v0 and still
+  yields only `name`, `version`, `minLoaderVersion` and `entry`, so existing mods
+  load unchanged. Unknown keys are recorded rather than rejected.
+- A test suite, behind `-DCRABELOADER_BUILD_TESTS=ON` (off by default, so the
+  shipped DLL builds exactly as before). Two CTest targets: `crabe_cpp`, a
+  doctest binary covering the pure cores of `crabe::memory::patternScan` and
+  `CodeCave`'s instruction-boundary measurement; and `crabe_lua_api`, which runs
+  `src/api/*.lua` under a real Lua 5.1.5 interpreter, built from the upstream
+  tarball — the game's own Lua is a 5.1 build, though the exact patch release is
+  not established — in the order `tools/embed_api.py`
+  embeds them, and exercises `Crabe.Registry`, `Crabe.Events`,
+  `Crabe.Scheduler`, hot reload, and the mod-loading chunks lifted out of
+  `src/domain/mod_manager.cpp` at test time. CI runs both.
+- `docs/testing/manual_checklist.md`, for the behaviour that can only be
+  observed with the game running.
+
+### Fixed
+
+- Manifest values are no longer misread. The previous `mod.json` reader searched
+  for `"key"`, then the next colon, then the next two quotes, so a nested object,
+  an array, an escaped quote, or the key name appearing inside a value produced a
+  **wrong value rather than an error** — and `_valid` accepted input that was not
+  JSON at all. Measured against the new fixtures, the old reader answered
+  `entry` with the manifest's description sentence when `"entry"` appeared inside
+  a `tags` array, truncated a name at its first escaped quote, and returned a
+  nested object's `decoy.lua` in preference to the real entry script. That last
+  one means it could run a different file than the manifest declared.
+
 ### Security
 
 - Mod directory and file names are no longer interpolated into Lua source. A mod

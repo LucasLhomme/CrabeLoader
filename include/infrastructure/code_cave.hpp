@@ -13,6 +13,36 @@
 
 namespace crabe::infrastructure {
 
+// A relative jmp is 5 bytes, so a site has to give up at least that much.
+inline constexpr size_t kJmpLength = 5;
+
+// Nothing here needs a big cave; refuse anything that looks like a mistake
+// rather than allocating it.
+inline constexpr size_t kMaxStolen = 32;
+
+// How many bytes must be stolen at `code` to make room for a 5-byte relative
+// jmp without splitting an instruction: decodes forward with HDE32 until at
+// least kJmpLength bytes are covered, and returns that whole-instruction
+// total. 0 means HDE32 could not decode an instruction, and `failedAtOffset`
+// (when given) receives the offset it gave up at.
+//
+// The pure measurement half of CodeCave::install: no executable allocation,
+// no live process, so it can be exercised against a plain byte array. It
+// reads past `code + kJmpLength` by design -- the instruction straddling that
+// boundary has to be decoded in full -- so callers must keep up to 15 bytes
+// beyond the fifth readable.
+//
+// The result is not validated against kMaxStolen; that is the caller's call,
+// see isStolenLengthAcceptable.
+size_t measureStolenLength(const uint8_t* code, size_t* failedAtOffset = nullptr);
+
+// Whether install() will accept `stolenLength`: enough room for the jmp, and
+// not so much that the length looks like a mistake.
+constexpr bool isStolenLengthAcceptable(size_t stolenLength)
+{
+    return stolenLength >= kJmpLength && stolenLength <= kMaxStolen;
+}
+
 // A manual x86 code cave: `body` is executed, then the bytes stolen from the
 // site, then control jumps back just past them.
 //

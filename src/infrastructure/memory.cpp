@@ -59,33 +59,55 @@ namespace {
         }
     }
 
-    struct PatternByte {
-        uint8_t value;
-        bool wildcard;
-    };
-
-    std::vector<PatternByte> parsePattern(const char* pattern)
-    {
-        std::vector<PatternByte> bytes;
-        const char* p = pattern;
-
-        while (*p) {
-            while (*p == ' ') ++p;
-            if (!*p) break;
-
-            if (p[0] == '?') {
-                bytes.push_back({0, true});
-                p += (p[1] == '?') ? 2 : 1;
-            } else {
-                bytes.push_back({static_cast<uint8_t>(std::strtoul(p, nullptr, 16)), false});
-                p += 2;
-            }
-        }
-        return bytes;
-    }
-
     // Size of the ModRM byte plus its optional SIB and displacement.
 } // namespace
+
+std::vector<crabe::memory::PatternByte> crabe::memory::parsePattern(const char* pattern)
+{
+    std::vector<PatternByte> bytes;
+    if (!pattern) return bytes;
+
+    const char* p = pattern;
+
+    while (*p) {
+        while (*p == ' ') ++p;
+        if (!*p) break;
+
+        if (p[0] == '?') {
+            bytes.push_back({0, true});
+            p += (p[1] == '?') ? 2 : 1;
+        } else {
+            bytes.push_back({static_cast<uint8_t>(std::strtoul(p, nullptr, 16)), false});
+            p += 2;
+        }
+    }
+    return bytes;
+}
+
+size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, std::span<const PatternByte> needle)
+{
+    if (needle.empty() || haystack.size() < needle.size()) return kNoMatch;
+
+    size_t limit = haystack.size() - needle.size();
+
+    for (size_t i = 0; i <= limit; ++i) {
+        bool matched = true;
+
+        for (size_t j = 0; j < needle.size(); ++j) {
+            if (!needle[j].wildcard && haystack[i + j] != needle[j].value) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) return i;
+    }
+    return kNoMatch;
+}
+
+size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, const char* pattern)
+{
+    return findPattern(haystack, parsePattern(pattern));
+}
 
 uintptr_t crabe::memory::patternScan(const char* pattern, HMODULE module, uintptr_t after)
 {
@@ -105,24 +127,11 @@ uintptr_t crabe::memory::patternScan(const char* pattern, HMODULE module, uintpt
         if (after >= start) start = after + 1;
         if (end - start < needle.size()) return false;
 
-        auto* bytes = reinterpret_cast<const uint8_t*>(start);
-        size_t limit = (end - start) - needle.size();
+        size_t at = findPattern({reinterpret_cast<const uint8_t*>(start), end - start}, needle);
+        if (at == kNoMatch) return false;
 
-        for (size_t i = 0; i <= limit; ++i) {
-            bool matched = true;
-
-            for (size_t j = 0; j < needle.size(); ++j) {
-                if (!needle[j].wildcard && bytes[i + j] != needle[j].value) {
-                    matched = false;
-                    break;
-                }
-            }
-            if (matched) {
-                found = start + i;
-                return true;
-            }
-        }
-        return false;
+        found = start + at;
+        return true;
     });
 
     return found;

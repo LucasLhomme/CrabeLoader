@@ -25,6 +25,7 @@
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/multiplayer_manager.hpp"
 #include "presentation/render_hook.hpp"
+#include "domain/game_profile.hpp"
 #include "domain/mod_manager.hpp"
 #include "shared/logger.hpp"
 
@@ -398,26 +399,79 @@ void Loader::onKeyEvent(int virtualKey, bool isDown)
 
 bool Loader::initialize()
 {
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
-    loadOverridesFromDisk();
-    crabe::infrastructure::LuaApiAddresses addresses = crabe::lua_symbols::resolveAll(base);
+    // Which build is this? Everything below turns on the answer. The
+    // detection itself is cached, so MemoryPatcher -- which runs from
+    // DllMain, before this thread exists -- and this call see one answer.
+    const crabe::domain::GameProfile* profile = crabe::domain::activeProfile();
 
-    if (!crabe::infrastructure::LuaCall::get().initialize(addresses)) {
-        crabe::shared::Logger::getInstance().error("Loader: failed to initialize LuaCall.");
+    loadOverridesFromDisk();
+    const crabe::lua_symbols::Resolution resolution = crabe::lua_symbols::resolveAll(base, profile);
+
+    // Three outcomes, and only three: the build is one we measured, or it is
+    // not but every address was found anyway, or it is not and one was missed.
+    const crabe::domain::LoadDecision decision =
+        crabe::domain::decideLoad(profile != nullptr, resolution.allResolved());
+
+    if (decision == crabe::domain::LoadDecision::Refuse) {
+        const crabe::domain::PeIdentity identity = crabe::domain::runningGameIdentity();
+
+        logger.error("========================================================================");
+        logger.error("Loader: REFUSING TO MODIFY THIS GAME.");
+        logger.error("Loader: no profile matches this executable "
+                     "(TimeDateStamp 0x{:08X}, SizeOfImage 0x{:X}, CheckSum 0x{:08X}),",
+                     identity.timeDateStamp, identity.sizeOfImage, identity.checkSum);
+        logger.error("Loader: and {}/{} Lua symbols could not be found by scanning either.",
+                     resolution.total - resolution.resolved, resolution.total);
+        logger.error("Loader: nothing has been hooked and no byte has been patched. The game "
+                     "will start, unmodded.");
+        logger.error("Loader: add a profile for TimeDateStamp 0x{:08X} to "
+                     "src/domain/game_profile.cpp to support this build.",
+                     identity.timeDateStamp);
+        logger.error("========================================================================");
         return false;
     }
 
-    crabe::shared::Logger::getInstance().info("Loader: initialized.");
+    if (decision == crabe::domain::LoadDecision::Degraded) {
+        const crabe::domain::PeIdentity identity = crabe::domain::runningGameIdentity();
+
+        logger.warning("========================================================================");
+        logger.warning("Loader: DEGRADED MODE -- unrecognised game build.");
+        logger.warning("Loader: no profile matches this executable "
+                       "(TimeDateStamp 0x{:08X}, SizeOfImage 0x{:X}).",
+                       identity.timeDateStamp, identity.sizeOfImage);
+        logger.warning("Loader: all {} Lua symbols were found by scanning, so mods will load, "
+                       "but no address was confirmed against a measured RVA.", resolution.total);
+        logger.warning("Loader: multiplayer is DISABLED -- its patches are known by address "
+                       "only, and an address from the wrong build corrupts code.");
+        logger.warning("========================================================================");
+    }
+
+    if (!crabe::infrastructure::LuaCall::get().initialize(resolution.addresses)) {
+        logger.error("Loader: failed to initialize LuaCall.");
+        return false;
+    }
+
+    if (profile)
+        logger.info("Loader: initialized against profile '{}'.", profile->id);
+    else
+        logger.info("Loader: initialized (degraded, no profile).");
     registerDefaultKeybinds();
 
     if (!crabe::presentation::RenderHook::get().initialize()) {
-        crabe::shared::Logger::getInstance().warning("Loader: failed to initialize the render hook (overlay disabled).");
+        logger.warning("Loader: failed to initialize the render hook (overlay disabled).");
     }
 
     crabe::presentation::InputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
-    crabe::multiplayer::application::MultiplayerManager::getInstance().initialize();
+
+    if (decision == crabe::domain::LoadDecision::Supported)
+        crabe::multiplayer::application::MultiplayerManager::getInstance().initialize();
+    else
+        logger.warning("Loader: multiplayer left uninitialised ({}).",
+                       crabe::domain::describe(decision));
 
     return true;
 }
