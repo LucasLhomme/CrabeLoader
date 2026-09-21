@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Parses semantic versions and ranges, and compares them the way the specification requires.
+** A leading zero is a violation, not a formatting quirk: accepting 01 would break round-tripping.
+** Reads no manifest; who is compared against what is src/domain/dependency_resolver.cpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "domain/semver.hpp"
 
 #include <algorithm>

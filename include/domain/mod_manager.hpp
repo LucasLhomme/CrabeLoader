@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares mod discovery and drives their load, hot reload and shutdown.
+** Mod chunks run sandboxed with the registry owner set, so a reload can revoke what they took.
+** Resolves no load order itself -- it calls domain/dependency_resolver.hpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef CRABELOADER_DOMAIN_MOD_MANAGER_HPP_
 #define CRABELOADER_DOMAIN_MOD_MANAGER_HPP_
 
@@ -51,18 +61,14 @@ namespace crabe::domain {
         // in _mods and neither decides whether the mod should run at all: by
         // the time either is called the dependency resolver has already said
         // so, and discoverAndLoadMods owns the load report.
+        // Both take the manifest the caller already parsed rather than reading
+        // mod.json a second time: parsing it twice would also report any defect
+        // in it twice. Which script a directory runs is domain/mod_entry.hpp's
+        // answer, not one this class works out for itself.
         bool loadModDirectory(void* L, const std::filesystem::path& modPath,
                               const std::string& modName, const ModManifest& manifest);
         bool loadStandaloneScript(void* L, const std::filesystem::path& scriptPath,
                                   const std::string& modName);
-
-        // Takes the manifest the caller already parsed rather than reading
-        // mod.json a second time: parsing it twice would also report any
-        // defect in it twice.
-        std::filesystem::path resolveEntryScript(
-            const std::filesystem::path& modPath,
-            const std::string& modName,
-            const ModManifest& manifest) const;
 
         std::vector<Mod> _mods;
         std::filesystem::path _modsFolder;

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** IEnginePatcher - Domain interface for engine binary memory gates & patches
+** The domain port for gating and patching the engine offline flags in process memory.
+** Declaration only: no address and no byte sequence may appear in this header.
+** Implemented by infrastructure/multiplayer/memory_patcher.hpp against a GameProfile.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef IENGINE_PATCHER_HPP_

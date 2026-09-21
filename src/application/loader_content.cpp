@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** loader_content -- load overrides, chunk patches, and the folders they load from
+** Implements load overrides and chunk patches: changing a chunk before the game compiles it.
+** Both are keyed on something recognisable inside the chunk, because the game names few of them.
+** Compiles nothing itself; the detours that see each chunk are src/infrastructure/lua_call.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <filesystem>

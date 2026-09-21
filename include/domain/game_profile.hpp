@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the supported game builds and every RVA the loader hooks or patches.
+** An address applied to the wrong build is silently wrong, so each one belongs to a profile.
+** Reads no process memory; detection is src/infrastructure/game_profile_detect.cpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef CRABELOADER_DOMAIN_GAME_PROFILE_HPP_
 #define CRABELOADER_DOMAIN_GAME_PROFILE_HPP_
 

@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the Present and ResizeBuffers detours, and the window mode the loader can request.
+** The only place allowed to touch Direct3D; a window-mode change must happen on this thread.
+** Persists nothing itself; the stored window mode lives in domain/config.hpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef RENDER_HOOK_HPP_
 #define RENDER_HOOK_HPP_
 
@@ -48,10 +58,14 @@ class RenderHook {
         RenderHook(const RenderHook&) = delete;
         RenderHook& operator=(const RenderHook&) = delete;
 
-        // Reads window mode configuration file or defaults to borderless.
+        // Reads the window mode from crabe.toml (domain::Config::active()),
+        // which has already migrated the legacy crabe_window_mode.cfg (if
+        // any) by the time this runs.
         static WindowMode loadWindowModeConfig();
 
-        // Writes active window mode to the configuration file.
+        // Persists the active window mode into crabe.toml's [display]
+        // section (domain::Config::active()). The legacy
+        // crabe_window_mode.cfg is never written to again.
         static void saveWindowModeConfig(WindowMode mode);
 
         // Resolves Present, ResizeBuffers, and SetFullscreenState vtable pointers.

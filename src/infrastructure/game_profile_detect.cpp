@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** game_profile_detect -- reading the running image's identity
+** The impure half of game profiling: reads the running image headers and picks the profile once.
+** Read once behind call_once, because the answer cannot change while the process lives.
+** Interprets no PE field itself -- readPeIdentity and matchProfile are in the domain layer.
+**
+** Authors: @LucasLhomme
 */
 
 // The impure half of domain/game_profile.hpp.

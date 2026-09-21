@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** WinHttpRedirector - MinHook redirection of WinHttp API for Disney Infinity
+** Declares the WinHTTP detours that send the game backend traffic somewhere reachable.
+** Per-request context is kept so a redirected request can still answer with a synthetic body.
+** Produces no response body itself -- that is fallback_response_provider.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef WINHTTP_REDIRECTOR_HPP_

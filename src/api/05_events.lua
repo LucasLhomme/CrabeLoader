@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- A publish and subscribe bus so mods and engine hooks can talk without knowing each other.
+-- A listener is removed by identity, never by index, because indices shift as others unsubscribe.
+-- Emits no engine event itself; the loader and src/api/20_hooks.lua raise them.
+--
+-- Authors: @LucasLhomme
+
 -- `Crabe.Events` - Unified Event Bus for Disney Infinity 3.0 Modding
 -- Enables decoupled pub/sub event communication across mods and engine hooks.
 

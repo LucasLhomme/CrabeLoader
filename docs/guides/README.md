@@ -13,6 +13,7 @@ This directory contains in-depth, structured guides in plain English covering ev
 | **[Mod Development Guide](mods.md)** | Learn how to build standalone and folder-based Lua mods, hook lifecycle events (`onInit`, `onUpdate`, `onDraw`, `onShutdown`), design Dear ImGui interfaces, apply memory patches, and leverage live hot-reloading (`F4`). | Beginner to Advanced Modders |
 | **[Skill Tree Modding Guide](skilltrees.md)** | Comprehensive breakdown of how character abilities and progression trees are loaded. Learn how to write chunk patches (`.patch`) and full source overrides (`.lua`) to customize combat stats, reduce costs, or build brand-new skill branches. | Intermediate Modders |
 | **[Character & Figurine Guide](characters.md)** | Master the game's figurine resolution pipeline (`SKU -> AvatarData -> Name -> ActorList -> DNA`). Learn how to expose unreleased figures (Mace Windu, Thanos) and register custom character variants using `Crabe.VirtualReader`. | All Modders & Roster Creators |
+| **[crabe-cli Reference](cli.md)** | Scaffold a new mod, validate a manifest, run the real dependency resolver, and catch Lua API typos -- all offline, without launching the game. | All Modders & CI Pipelines |
 
 ---
 

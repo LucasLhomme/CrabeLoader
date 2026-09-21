@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** codecave
+** Installs a code cave: measures the stolen bytes, relocates them, then writes the relative jmp.
+** The length limits live in the header because the measurement is a free function the tests assert.
+** Registers nothing in the hook inventory; a cave is not a detour and has no trampoline.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/code_cave.hpp"

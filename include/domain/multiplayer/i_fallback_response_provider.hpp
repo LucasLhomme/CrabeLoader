@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** IFallbackResponseProvider - Interface for generating synthetic backend HTTP responses
+** The domain port for the backend HTTP responses the retired Disney servers used to send.
+** Declares shape only: what a response must contain, never how it is produced or carried.
+** Implemented by infrastructure/multiplayer/fallback_response_provider.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef IFALLBACK_RESPONSE_PROVIDER_HPP_

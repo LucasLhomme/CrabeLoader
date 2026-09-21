@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares semantic versions and the version ranges a manifest is allowed to write.
+** Deliberately pure, which is what makes every rule below a unit test instead of a session.
+** A second, simpler SemVer lives in src/shared/version.cpp; shared must not depend on domain.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef CRABELOADER_DOMAIN_SEMVER_HPP_
 #define CRABELOADER_DOMAIN_SEMVER_HPP_
 

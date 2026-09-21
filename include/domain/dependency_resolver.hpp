@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the pure decision of which mods load and in what order they run.
+** No I/O, clock, Windows or Lua reaches this translation unit, and a guard bank proves it.
+** Invents no id for a manifest that declares none -- that policy is domain/mod_id.hpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef CRABELOADER_DOMAIN_DEPENDENCY_RESOLVER_HPP_
 #define CRABELOADER_DOMAIN_DEPENDENCY_RESOLVER_HPP_
 

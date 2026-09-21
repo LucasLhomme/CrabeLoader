@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** The domain port for opening a path through the player router and reporting whether it took.
+** NatStatus is what the overlay and Lua read; a refusal here is reportable, never fatal.
+** Implemented by infrastructure/multiplayer/upnp_nat_service.hpp, over UPnP plus STUN.
+**
+** Authors: @LucasLhomme
+*/
+
 #pragma once
 
 #include <cstdint>

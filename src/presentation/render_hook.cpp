@@ -1,11 +1,24 @@
+/*
+** CrabeLoader
+** File description:
+** Hooks Present and ResizeBuffers, owns the ImGui device objects and applies the window mode.
+** A window mode change is applied here because only this thread may touch the swap chain.
+** Persists nothing itself; the stored mode is read and written through domain::Config.
+**
+** Authors: @LucasLhomme
+*/
+
+#include <atomic>
 #include <dxgi.h>
-#include <fstream>
+#include <filesystem>
 #include <string>
 
 #include "presentation/render_hook.hpp"
 #include "presentation/draw_buffer.hpp"
 #include "application/loader.hpp"
+#include "domain/config.hpp"
 #include "infrastructure/crash_handler.hpp"
+#include "infrastructure/crash_reporter.hpp"
 #include "shared/logger.hpp"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -26,28 +39,25 @@ RenderHook& RenderHook::get()
     return instance;
 }
 
-// Reads window mode configuration file or defaults to borderless.
+// Reads the window mode crabe::domain::Config::active() already loaded
+// (migrating crabe_window_mode.cfg on first run is Config::load()'s job,
+// not this one's -- see src/domain/config.cpp).
 WindowMode RenderHook::loadWindowModeConfig()
 {
-    std::ifstream file("crabe_window_mode.cfg");
-    if (!file.is_open()) {
-        return WindowMode::BorderlessWindowed;
-    }
-    std::string mode;
-    file >> mode;
-    if (mode == "windowed") {
-        return WindowMode::Windowed;
-    }
-    return WindowMode::BorderlessWindowed;
+    return crabe::domain::Config::active().windowMode() == crabe::domain::ConfigWindowMode::Windowed
+        ? WindowMode::Windowed
+        : WindowMode::BorderlessWindowed;
 }
 
-// Writes active window mode to the configuration file.
+// Persists the active window mode into crabe.toml's [display] section.
+// crabe_window_mode.cfg is legacy: Config::load() migrates it once and this
+// loader never writes to it again.
 void RenderHook::saveWindowModeConfig(WindowMode mode)
 {
-    std::ofstream file("crabe_window_mode.cfg", std::ios::trunc);
-    if (file.is_open()) {
-        file << (mode == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
-    }
+    const crabe::domain::ConfigWindowMode configMode = (mode == WindowMode::BorderlessWindowed)
+        ? crabe::domain::ConfigWindowMode::Borderless
+        : crabe::domain::ConfigWindowMode::Windowed;
+    crabe::domain::Config::active().setWindowMode(std::filesystem::current_path(), configMode);
 }
 
 // Resolves swapchain vtable function pointers using a temporary dummy device.
@@ -379,6 +389,20 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 {
     RenderHook& self = RenderHook::get();
 
+    // This is where the render thread is identified, because it is the only
+    // place the loader is certain it is on it -- Present *is* the render
+    // thread, by definition (invariant I3). Declared unconditionally rather
+    // than behind a thread_local flag: declareThreadRole is idempotent (a
+    // sixteen-slot scan and a compare-exchange that fails after the first),
+    // and doing it every frame means a second thread that ever calls Present
+    // is recorded too, without this file depending on dynamic TLS in a DLL
+    // that has DisableThreadLibraryCalls set.
+    crabe::infrastructure::CrashReporter::declareThreadRole(
+        crabe::infrastructure::ThreadRole::Render);
+    static std::atomic<bool> presentAnnounced{false};
+    if (!presentAnnounced.exchange(true))
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("RenderHook: first Present");
+
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
 
@@ -430,6 +454,17 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
 LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     RenderHook& self = RenderHook::get();
+
+    // Same reasoning as hkPresent: a WndProc runs on the thread that owns the
+    // window, so this is where the window thread names itself. If that turns
+    // out to be the same thread Present runs on, the slot keeps whichever role
+    // was declared first (see declareThreadRole) rather than flip-flopping
+    // between the two from launch to launch.
+    crabe::infrastructure::CrashReporter::declareThreadRole(
+        crabe::infrastructure::ThreadRole::Window);
+    static std::atomic<bool> messageAnnounced{false};
+    if (!messageAnnounced.exchange(true))
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("RenderHook: first window message");
 
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 

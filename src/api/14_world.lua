@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Worlds and zones: reading where the player is, listing levels, and moving them elsewhere.
+-- A level load tears down the Lua-visible world, so anything held across one must be re-resolved.
+-- Spawns nothing on arrival -- that is src/api/13_spawn.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Worlds: reading where the player is, and moving them somewhere else.
 --
 -- Level names and world files nearly line up -- "RumpusRoom_TBI_Home" is

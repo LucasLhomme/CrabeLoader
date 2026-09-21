@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Registers the ImGui and Crabe.ImGui tables, every entry recording into the draw buffer.
+** A widget result is whatever the render thread measured last frame, so a new widget reads false.
+** Calls no ImGui function here -- the replay happens inside Present.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/draw_buffer.hpp"
 #include "infrastructure/lua_call.hpp"

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** ISteamworksService - Domain interface for Steamworks P2P matchmaking & friend integration
+** The domain port for Steam presence, friend listing and lobby matchmaking.
+** Every call must remain survivable when Steam is absent or its state is unexpected.
+** Implemented by infrastructure/multiplayer/steamworks_service.hpp over steam_api.dll.
+**
+** Authors: @LucasLhomme
 */
 
 #pragma once

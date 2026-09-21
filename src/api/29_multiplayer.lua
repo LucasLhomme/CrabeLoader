@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The Crabe.Multiplayer surface: server target, reachability, session locking and player counts.
+-- The Gold Edition ships with multiplayer disabled by engine flags, which the loader patches first.
+-- Patches nothing from Lua; every patch is applied in src/application/multiplayer/.
+--
+-- Authors: @LucasLhomme
+
 -- CrabeLoader API - Multiplayer Module
 -- Overrides the PC Gold Edition offline engine flags and exposes Crabe.Multiplayer
 

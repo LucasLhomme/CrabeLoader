@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** game_profile -- the supported builds, and the pure half of identifying one
+** Holds every supported build profile, its measured RVAs, and the pure half of identifying one.
+** PE field offsets come from the PE/COFF specification; the identity is read from a byte span.
+** Reads no process; the running image is fetched by src/infrastructure/game_profile_detect.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include "domain/game_profile.hpp"
@@ -314,6 +318,8 @@ namespace crabe::domain {
 #if defined(lua_h) || defined(LUA_VERSION) || defined(LUA_REGISTRYINDEX) || defined(lauxlib_h)
 #error "game_profile.cpp is not pure: a Lua header reached it transitively"
 #endif
-#if defined(IMGUI_VERSION) || defined(MINHOOK_H)
+// MinHook.h opens with `#pragma once`, so there is no MINHOOK_H to test; the
+// one macro it defines, MH_ALL_HOOKS, is the only preprocessor evidence of it.
+#if defined(IMGUI_VERSION) || defined(MH_ALL_HOOKS)
 #error "game_profile.cpp is not pure: the renderer or the hook engine reached it"
 #endif

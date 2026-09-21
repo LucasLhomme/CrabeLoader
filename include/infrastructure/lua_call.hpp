@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** luacall
+** Declares the resolved Lua C API addresses and every call the loader makes through them.
+** loadfile, loadbuffer and pcall are detoured to observe the game; the rest are only called.
+** Finds none of those addresses -- that is infrastructure/lua_symbols.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LUACALL_HPP_

@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Splitscreen and controllers: viewport count, split direction, drop-in and player locking.
+-- Drop-in blocking is an engine flag, so it takes effect only on the next join attempt.
+-- Detects no controller; which pads the game polls is observed in src/presentation/input_hook.cpp.
+--
+-- Authors: @LucasLhomme
+
 -- Splitscreen & Multi-Controller API for Disney Infinity 3.0
 --
 -- Exposes viewports, screen splitting (horizontal, vertical, combined),

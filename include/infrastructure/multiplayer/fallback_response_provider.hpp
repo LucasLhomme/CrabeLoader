@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** FallbackResponseProvider - Synthetic HTTP response generator for Disney Infinity
+** Declares the synthetic HTTP responses standing in for the retired Disney backend.
+** Each body is the least the game parser accepts: a stand-in, never an emulation of the server.
+** Chooses no host and installs no hook -- redirection is winhttp_redirector.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef FALLBACK_RESPONSE_PROVIDER_HPP_

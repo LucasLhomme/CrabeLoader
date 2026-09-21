@@ -1,32 +1,14 @@
-local kConfigPath = "crabe_window_mode.cfg"
-
--- Loads saved window mode from configuration file if explicitly saved.
-local function loadSavedMode()
-    local file = io.open(kConfigPath, "r")
-    if not file then
-        return nil
-    end
-
-    local content = file:read("*a")
-    file:close()
-
-    if content and content:match("^%s*windowed%s*$") then
-        return "windowed"
-    elseif content and content:match("^%s*borderless%s*$") then
-        return "borderless"
-    end
-    return nil
-end
-
--- Persists user chosen window mode to configuration file.
-local function saveMode(mode)
-    local file = io.open(kConfigPath, "w")
-    if not file then
-        return
-    end
-    file:write(mode)
-    file:close()
-end
+-- Persistence used to live here too (a hand-rolled copy of
+-- crabe_window_mode.cfg, read on load and written on every toggle), before
+-- CrabeLoader had its own configuration file. As of crabe.toml (see
+-- src/domain/config.hpp) that file is migrated once and never written again
+-- -- by the loader or by this mod, which kept doing so would keep the
+-- legacy file alive and, worse, could revert the mode on the next launch if
+-- it ever went stale relative to crabe.toml. Crabe.SetWindowMode already
+-- reaches RenderHook::requestWindowMode, which persists to crabe.toml
+-- itself (src/presentation/render_hook.cpp), and the engine is already in
+-- the configured mode by the time any mod loads -- so this mod's only job
+-- now is exposing the toggle in the video settings menu.
 
 local installed = false
 
@@ -50,7 +32,6 @@ local function installOption(cls)
             set = function()
                 local newMode = Crabe.GetWindowMode() == "borderless" and "windowed" or "borderless"
                 Crabe.SetWindowMode(newMode)
-                saveMode(newMode)
             end,
         })
 
@@ -74,11 +55,6 @@ local function watchForBuildList(cls)
         mt.__newindex = nil
         installOption(t)
     end
-end
-
-local savedMode = loadSavedMode()
-if savedMode then
-    Crabe.SetWindowMode(savedMode)
 end
 
 if SettingsVideo then

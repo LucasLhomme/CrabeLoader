@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** INetworkRedirector - Interface for rerouting game HTTP/HTTPS traffic
+** The domain port for rerouting the game HTTP and HTTPS traffic to a reachable host.
+** Declares intent only; which API is detoured, and how, is deliberately not visible here.
+** Implemented by infrastructure/multiplayer/winhttp_redirector.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef INETWORK_REDIRECTOR_HPP_

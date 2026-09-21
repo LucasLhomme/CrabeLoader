@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** SteamworksService implementation
+** Binds steam_api.dll at runtime and drives presence, friends and lobby matchmaking through it.
+** Every call is SEH-isolated in a C-style helper, because MSVC forbids unwinding across __try.
+** Refuses nothing when Steam is missing; absence is reported as a state and multiplayer goes on.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/multiplayer/steamworks_service.hpp"

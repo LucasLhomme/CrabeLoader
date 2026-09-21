@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** Overlay
+** Declares the loader ImGui overlay: console log filtering and commands.
+** Runs on the render thread inside Present, so nothing here may call into Lua.
+** Draws no mod UI directly; a mod frame arrives through presentation/draw_buffer.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef OVERLAY_HPP_

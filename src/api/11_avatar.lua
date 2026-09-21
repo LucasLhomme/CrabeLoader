@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Avatar identity and progression: handle, sku, level, entitlements, abilities and character swap.
+-- A player id and a sku both arrive in several shapes from the engine, hence the coercion helpers.
+-- Reports no live state such as alive or dead; that is src/api/11b_avatar_state.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Avatar identity and progression for the character currently being played --
 -- its handle, sku, level and the routes that swap it.
 --

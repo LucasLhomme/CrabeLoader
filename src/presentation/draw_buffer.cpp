@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** draw_buffer
+** Records a frame of mod ImGui calls on the script thread and replays it on the render thread.
+** A scope is closed only if its Begin was accepted, which is why needsEnd is tracked per command.
+** Registers no Lua binding; that is src/presentation/imgui_bindings.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include "presentation/draw_buffer.hpp"

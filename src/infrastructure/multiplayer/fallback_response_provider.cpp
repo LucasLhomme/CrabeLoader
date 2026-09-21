@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** FallbackResponseProvider implementation
+** Builds the synthetic config, auth, friends and default HTTP bodies the game will accept.
+** Each body is the least the game parser tolerates, which is why it is short and not faithful.
+** Sends nothing; delivery is src/infrastructure/multiplayer/winhttp_redirector.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/multiplayer/fallback_response_provider.hpp"

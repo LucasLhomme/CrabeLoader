@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_natives -- the raw C functions exposed to the game's Lua
+** Implements the raw C functions the game Lua can call: logging, storage, window and input.
+** No native touches window state directly; a window change is posted to the render thread.
+** Exposes no ImGui here -- the widget bindings are src/presentation/imgui_bindings.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <cstring>

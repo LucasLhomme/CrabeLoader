@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Per-mod logger objects with levels, so a line is attributable without each call naming the mod.
+-- Each instance keeps its own buffer as well as writing out, which is what a mod UI can render.
+-- Writes nothing directly -- everything goes through Crabe.write in src/api/00_core.lua.
+--
+-- Authors: @LucasLhomme
+
 Crabe = Crabe or {}
 Crabe.Logger = Crabe.Logger or {
     _loggers = {}

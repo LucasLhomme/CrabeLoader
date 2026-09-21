@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** codecave
+** Declares a code cave: stolen bytes relocated so a detour can sit where MinHook cannot.
+** A relative jmp costs 5 bytes, so a site must yield at least that much to be usable.
+** Not a MinHook detour and not in the inventory -- see infrastructure/hook_registry.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef CODECAVE_HPP_

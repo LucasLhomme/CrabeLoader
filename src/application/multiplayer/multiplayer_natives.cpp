@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** multiplayer_natives implementation
+** Implements the multiplayer natives, each returning plain Lua values rather than a table.
+** Every one is callable before multiplayer is up and must answer with a state, never an error.
+** Performs no network or memory work itself; it delegates to MultiplayerManager.
+**
+** Authors: @LucasLhomme
 */
 
 #include "application/multiplayer/multiplayer_natives.hpp"

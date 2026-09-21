@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** draw_buffer
+** Declares the queue the script thread records ImGui calls into for the render thread to replay.
+** This is the only legal path from Lua to Direct3D: recording a call draws nothing.
+** Widget results lag one frame, because a measurement only exists once the replay has run.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef DRAW_BUFFER_HPP_

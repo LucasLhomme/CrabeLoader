@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Skill-tree and ability overrides, declared by a mod for the loader to apply.
+-- Progression data loads as anonymous bytecode before mods run, so overrides are authored in files.
+-- Applies nothing here: the skilltrees/ folder is read by the loader C++, before mods run.
+--
+-- Authors: @LucasLhomme
+
 -- Skill-tree / ability overrides. See skilltrees/README.md for the full
 -- picture -- short version: the per-character gamedb/progression data loads
 -- as anonymous (name=NULL) bytecode, and before mods run, so it must be

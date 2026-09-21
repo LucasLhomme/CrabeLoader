@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** multiplayer_natives - Lua C function bindings for Multiplayer subsystem
+** The Lua-facing surface of multiplayer: status, target server, patch arming, NAT and Steam.
+** Every entry is a raw lua_CFunction on the script thread, never called from the overlay.
+** Implements no networking; it forwards to multiplayer_manager.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MULTIPLAYER_NATIVES_HPP_

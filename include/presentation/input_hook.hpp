@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** input_hook
+** Declares the XInput observer: which controller slots the game polls, and which answer.
+** Observer only: it always forwards to the real function and never fabricates a result.
+** Hooks XINPUT9_1_0.dll specifically, the module this image actually imports.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef INPUT_HOOK_HPP_

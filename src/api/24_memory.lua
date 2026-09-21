@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The low-level tables: Memory for scans and patches, Hooks for chunk patching, Input for keys.
+-- Everything here writes to the running process, so a wrong address corrupts the game silently.
+-- Resolves no address for you; a pattern that matches nothing returns nil rather than guessing.
+--
+-- Authors: @LucasLhomme
+
 Crabe = Crabe or {}
 Crabe.Memory = Crabe.Memory or {}
 Crabe.Hooks = Crabe.Hooks or {}

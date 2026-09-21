@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the parsed mod.json: three states, positional diagnostics, and both schema versions.
+** An absent manifest is normal for a bare folder of .lua files and must stay silent.
+** Chooses no id for a v0 manifest; that policy belongs to domain/mod_id.hpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef CRABELOADER_DOMAIN_MOD_MANIFEST_HPP_
 #define CRABELOADER_DOMAIN_MOD_MANIFEST_HPP_
 

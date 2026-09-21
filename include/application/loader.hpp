@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** loader
+** Owns the loader lifecycle: Lua state adoption, keybind registration, and the mod work queue.
+** Everything here runs on the game script thread; the render thread never enters this header.
+** Discovers no mod and orders none -- that is domain/mod_manager.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LOADER_HPP_
@@ -51,6 +55,12 @@ class Loader {
         // Polls crabe_remote_cmd.txt for a new command and queues it as if
         // typed into the overlay console -- lets an external process drive it.
         void drainRemoteCommandFile(void* L);
+
+        // Polls Crabe.Quarantine.report() (src/api/02c_quarantine.lua) the
+        // same way drainLuaOutput polls Crabe.flush(), and folds any change
+        // into domain::Config::active()'s [quarantine] section -- the
+        // overlay reads that same snapshot. Script thread only.
+        void drainQuarantineReport(void* L);
         void ensureRuntimeReady(void* L);
         void runTicks(void* L);
         bool isGameState(void* L) const;
@@ -124,6 +134,7 @@ class Loader {
         std::chrono::steady_clock::time_point _lastReadyProbe{};
         std::chrono::steady_clock::time_point _lastTick{};
         std::chrono::steady_clock::time_point _lastRemoteCommandProbe{};
+        std::chrono::steady_clock::time_point _lastQuarantinePoll{};
         std::atomic<bool> _runtimeReady{false};
         bool _sawForeignState = false;
         std::unordered_set<void*> _initializedStates;

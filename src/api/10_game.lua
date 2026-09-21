@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The core Game surface: items, inventory, sparks, the host player and on-screen messages.
+-- Every function here is a thin wrapper over an engine native; see docs/nativedb.md for the raws.
+-- Spawns nothing into the world -- that is src/api/13_spawn.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Game API. See docs/nativedb.md for the natives it is built on.
 
 Game = Game or {}

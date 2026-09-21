@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** input_hook
+** Hooks XInputGetState to count which controller slots the game polls and which answer.
+** The image imports XINPUT9_1_0.dll specifically, so that is the module hooked, not any other.
+** Fakes no result: every call forwards to the real function and returns its answer unchanged.
+**
+** Authors: @LucasLhomme
 */
 
 #include <format>
@@ -39,7 +43,8 @@ bool InputHook::initialize()
         return false;
     }
 
-    if (!_hookGetState.install(target, reinterpret_cast<void*>(&InputHook::hkXInputGetState))) {
+    if (!_hookGetState.install(target, reinterpret_cast<void*>(&InputHook::hkXInputGetState),
+                               "InputHook::XInputGetState")) {
         logger.error("InputHook: failed to hook XInputGetState.");
         return false;
     }

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_symbols -- locating the game's Lua C API
+** Locates the game Lua C API by scanning the image for the wrappers that delegate to it.
+** The game exports no Lua symbol, so each real address is the n-th call inside a stdlib wrapper.
+** Calls none of them; the calls and the detours are src/infrastructure/lua_call.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <cstdint>

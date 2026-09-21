@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Parses mod.json against both schema versions, reporting every defect by line and column.
+** The id pattern is quoted verbatim in each message, so an author can compare it with theirs.
+** Synthesises no id for a v0 manifest; that policy belongs to src/domain/mod_id.cpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "domain/mod_manifest.hpp"
 
 #include <algorithm>

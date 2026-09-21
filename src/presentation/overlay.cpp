@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** overlay
+** Draws the loader overlay: console log filtering, commands and diagnostics.
+** Runs on the render thread inside Present, so it reads snapshots and never calls into Lua.
+** Draws no mod window itself; those arrive already recorded in the draw buffer.
+**
+** Authors: @LucasLhomme
 */
 
 #include <format>
@@ -10,6 +14,7 @@
 
 #include "presentation/overlay.hpp"
 #include "application/loader.hpp"
+#include "domain/config.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 

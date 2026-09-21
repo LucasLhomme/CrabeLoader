@@ -1,5 +1,14 @@
+-- CrabeLoader
+-- File description:
+-- Game.onTick and Game.onDeath, plus the per-frame dispatcher the loader calls at about 60 Hz.
+-- Each callback is removed by identity and charged to its owner, so quarantine blames the mod.
+-- Installs no detour; a Lua-visible hook API over MinHook does not exist yet.
+--
+-- Authors: @LucasLhomme
+
 Game = Game or {}
 Game._tickCallbacks = Game._tickCallbacks or {}
+Game._tickOwners = Game._tickOwners or {}
 Game._deathWatchers = Game._deathWatchers or {}
 
 --- Registers a callback function to be executed on each game engine tick.
@@ -11,6 +20,10 @@ function Game.onTick(fn)
     end
     local cbs = Game._tickCallbacks
     cbs[#cbs + 1] = fn
+    -- Recorded for Crabe.Quarantine.guard (T11), which needs to know whose
+    -- callback this is; captured now because by the time _runTicks calls it,
+    -- Crabe.Registry._current has moved on to whatever loaded after it.
+    Game._tickOwners[fn] = Crabe.Registry._current or "core"
     -- Remove by identity, never by the index recorded here: other callbacks
     -- registered or revoked in between shift every index after this one.
     Crabe.Registry.track(function()
@@ -20,6 +33,7 @@ function Game.onTick(fn)
                 break
             end
         end
+        Game._tickOwners[fn] = nil
     end)
 end
 
@@ -31,9 +45,19 @@ function Game._runTicks(dt)
     end
     local callbacks = Game._tickCallbacks
     for i = 1, #callbacks do
-        local ok, err = pcall(callbacks[i], dt)
-        if not ok and Crabe.write then
-            Crabe.write("! onTick handler #" .. i .. ": " .. tostring(err))
+        local fn = callbacks[i]
+        if Crabe.Quarantine and Crabe.Quarantine.guard then
+            -- Keyed by the function's own identity, not its index: indices
+            -- shift as callbacks are added or revoked, but this one Lua
+            -- object is the same callback for as long as it stays
+            -- registered, which is exactly the granularity quarantine needs.
+            local owner = Game._tickOwners[fn] or "core"
+            Crabe.Quarantine.guard(owner, "onTick:" .. tostring(fn), fn, dt)
+        else
+            local ok, err = pcall(fn, dt)
+            if not ok and Crabe.write then
+                Crabe.write("! onTick handler #" .. i .. ": " .. tostring(err))
+            end
         end
     end
     if Crabe.Events and Crabe.Events.emit then

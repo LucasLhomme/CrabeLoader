@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Weapons, lightsabers and the toolset: equipping a tool and listing what exists by category.
+-- A tool must be owned before it can be set active, which the engine reports rather than refuses.
+-- Grants nothing -- awarding a weapon goes through src/api/17_unlock.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Weapons, Lightsabers & Toolset API for Disney Infinity 3.0
 --
 -- Exposes direct tool and weapon equips via engine native _G.SetActiveTool.

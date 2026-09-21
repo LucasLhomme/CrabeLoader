@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares port forwarding over UPnP, with STUN used only to learn the external address.
+** The STUN magic cookie in the implementation is an RFC 5389 constant, not a game address.
+** Reports rather than enforces: a router that refuses leaves direct connection as the path.
+**
+** Authors: @LucasLhomme
+*/
+
 #pragma once
 
 #include "domain/multiplayer/i_nat_service.hpp"

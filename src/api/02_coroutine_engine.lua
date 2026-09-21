@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Implements Crabe.spawn and Crabe.wait: cooperative fibers resumed once their delay has elapsed.
+-- A fiber that runs to completion never enters the scheduler, so only waiting fibers are tracked.
+-- Drives no frame itself; Crabe.Scheduler.update is called from the tick dispatcher.
+--
+-- Authors: @LucasLhomme
+
 Crabe = Crabe or {}
 Crabe.Scheduler = Crabe.Scheduler or {
     _fibers = {},

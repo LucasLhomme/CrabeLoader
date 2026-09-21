@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_runtime
+** Declares the injection of src/api/*.lua into a Lua state and the state test that gates it.
+** The game creates several Lua states; only the gameplay one may receive the API.
+** Contains none of that API -- it lives in src/api/, embedded by tools/embed_api.py.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LUA_RUNTIME_HPP_

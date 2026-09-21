@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Implements the load decision: validity, ranges, conflicts, then a stable topological sort.
+** A rejected mod stays addressable, so a mod depending on it can be told exactly what went wrong.
+** A guard bank at the foot of this file fails the build if Windows, Lua or MinHook reaches it.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "domain/dependency_resolver.hpp"
 
 #include <algorithm>
@@ -700,6 +710,8 @@ namespace crabe::domain {
 #if defined(lua_h) || defined(LUA_VERSION) || defined(LUA_REGISTRYINDEX) || defined(lauxlib_h)
 #error "dependency_resolver.cpp is not pure: a Lua header reached it transitively"
 #endif
-#if defined(IMGUI_VERSION) || defined(MINHOOK_H)
+// MinHook.h opens with `#pragma once`, so there is no MINHOOK_H to test; the
+// one macro it defines, MH_ALL_HOOKS, is the only preprocessor evidence of it.
+#if defined(IMGUI_VERSION) || defined(MH_ALL_HOOKS)
 #error "dependency_resolver.cpp is not pure: the renderer or the hook engine reached it"
 #endif

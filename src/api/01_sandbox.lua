@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Builds the per-mod environment: private globals behind a read-only proxy over the shared tables.
+-- A write to a protected table raises and is logged with the offending mod, rather than passing.
+-- Decides no mod identity -- the loader sets the owner around each chunk before calling create.
+--
+-- Authors: @LucasLhomme
+
 Crabe = Crabe or {}
 Crabe.Sandbox = Crabe.Sandbox or {}
 Crabe.Exports = Crabe.Exports or {}

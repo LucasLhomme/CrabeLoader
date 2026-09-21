@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Records each revocable subscription against the mod that made it, with the closure undoing it.
+-- Anything registered while no mod is executing belongs to core and is never revoked by a reload.
+-- Revokes nothing on its own; Crabe.Mod.reload decides when, in src/api/03_lifecycle.lua.
+--
+-- Authors: @LucasLhomme
+
 -- `Crabe.Registry` - Ownership registry for revocable subscriptions.
 --
 -- Every registration a mod makes (onTick, onDeath, event listeners, reload
@@ -17,6 +25,13 @@ Crabe.Registry = Crabe.Registry or { _byOwner = {}, _current = nil }
 --- before running a mod chunk and clears it after.
 function Crabe.Registry.setCurrentOwner(name)
     Crabe.Registry._current = name
+end
+
+--- The mod whose code is currently executing, or nil when none is. Read by
+--- the lifecycle dispatcher, which brackets each callback with its owner and
+--- has to put back whatever it displaced.
+function Crabe.Registry.currentOwner()
+    return Crabe.Registry._current
 end
 
 --- Records a revocable subscription against the current owner.

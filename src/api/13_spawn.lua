@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Spawning: putting objects, vehicles and enemies into the world, by file or by inventory entry.
+-- A spawn needs the item in the inventory catalogue first, so the listing calls live here too.
+-- Unlocks nothing; making content available is src/api/17_unlock.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Spawning: putting objects, vehicles and enemies into the world.
 --
 -- Built on top of the placer recipe already proven in 10_game.lua

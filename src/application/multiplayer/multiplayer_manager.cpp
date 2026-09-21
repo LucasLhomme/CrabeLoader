@@ -1,13 +1,18 @@
 /*
 ** CrabeLoader
 ** File description:
-** MultiplayerManager implementation
+** Brings multiplayer up in order: redirector, engine patches, Steam, then NAT port forwarding.
+** Patches are applied on the calling thread first; the worker thread exists only to retry.
+** Contains no address and no byte sequence; those come from the profile and the patcher.
+**
+** Authors: @LucasLhomme
 */
 
 #include "application/multiplayer/multiplayer_manager.hpp"
 
 #include <chrono>
 #include <ws2tcpip.h>
+#include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/multiplayer/memory_patcher.hpp"
 #include "infrastructure/multiplayer/winhttp_redirector.hpp"
 #include "infrastructure/multiplayer/upnp_nat_service.hpp"
@@ -112,6 +117,10 @@ namespace crabe::multiplayer::application {
     }
 
     void MultiplayerManager::patchWorkerThread() {
+        crabe::infrastructure::CrashReporter::declareThreadRole(
+            crabe::infrastructure::ThreadRole::Worker);
+        crabe::infrastructure::CrashReporter::pushBreadcrumb(
+            "MultiplayerManager: patch worker started");
         crabe::shared::Logger::getInstance().debug("MultiplayerManager: patch worker thread started");
 
         // Try applying patches over a 30-second window

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** WinHttpRedirector implementation
+** Detours the WinHTTP call chain and rewrites the host, keeping context per request handle.
+** A request whose host is redirected can still be answered synthetically instead of sent at all.
+** Builds no body -- fallback_response_provider.cpp does.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/multiplayer/winhttp_redirector.hpp"

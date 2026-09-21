@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Content unlocking and the Power Disc currencies: locks, awards, playsets and coin balances.
+-- Unlocking is asynchronous, so the bulk call reports progress rather than completing at once.
+-- Spawns nothing once unlocked; that is src/api/13_spawn.lua.
+--
+-- Authors: @LucasLhomme
+
 -- Content unlocking and the Power Disc currencies.
 --
 -- Not to be confused with the online session lock (UI_LockGame /

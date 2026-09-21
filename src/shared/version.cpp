@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** Version helpers implementation
+** Implements the loader compatibility test a mod minLoaderVersion is checked against.
+** It carries its own small version parser on purpose: shared sits below domain and cannot use it.
+** Not the full range grammar -- that is src/domain/semver.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <charconv>

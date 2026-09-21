@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** MultiplayerManager - Application orchestrator for multiplayer subsystem
+** Orchestrates multiplayer: engine patches, WinHTTP redirection, Steam presence and NAT.
+** Patches apply synchronously on the calling thread; the worker only retries what failed.
+** Owns no address; every one comes from the active domain/game_profile.hpp profile.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MULTIPLAYER_MANAGER_HPP_

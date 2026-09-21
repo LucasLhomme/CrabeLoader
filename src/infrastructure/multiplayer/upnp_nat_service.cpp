@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Forwards a port over UPnP and learns the external address with a single STUN binding request.
+** The constant 0x2112A442 here is the RFC 5389 magic cookie, not an address measured in the game.
+** Redirects no traffic; that is src/infrastructure/multiplayer/winhttp_redirector.cpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "infrastructure/multiplayer/upnp_nat_service.hpp"
 #include "shared/logger.hpp"
 

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** luacall
+** Calls into the game Lua C API, and hosts the loadfile, loadbuffer and pcall detours.
+** Every call saves and restores the stack top, so a failure never leaves the VM stack skewed.
+** Resolves no address -- that pass is src/infrastructure/lua_symbols.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <cstring>

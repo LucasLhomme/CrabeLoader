@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** memory
+** Implements the read-only scans: byte patterns, strings, pointer hunts and call resolution.
+** Every scan walks only committed readable regions, which is what stops it faulting mid-sweep.
+** Writes nothing; changing bytes is src/infrastructure/multiplayer/memory_patcher.cpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/memory.hpp"

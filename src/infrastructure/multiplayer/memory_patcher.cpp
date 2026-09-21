@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** MemoryPatcher implementation
+** Applies and restores the engine patches, verifying the site bytes before writing over them.
+** What stays here is true of the patch: the bytes written, and the pattern identifying the site.
+** Holds no address; every one comes from include/domain/game_profile.hpp for the running build.
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/multiplayer/memory_patcher.hpp"

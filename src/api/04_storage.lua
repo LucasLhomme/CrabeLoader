@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Persists mod state as text: an encoder, a decoder, and a per-mod namespace over them.
+-- It carries its own serialiser because the game Lua 5.1 ships no JSON and no string.pack.
+-- Chooses no path; the file the loader writes to comes from the storage native in C++.
+--
+-- Authors: @LucasLhomme
+
 Crabe = Crabe or {}
 Crabe.Storage = Crabe.Storage or {}
 

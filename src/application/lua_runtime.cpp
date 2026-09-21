@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_runtime
+** Injects the embedded API into a Lua state, in the order tools/embed_api.py emitted the modules.
+** classifyState must answer inside a state where no global it tests exists, such as the shader VM.
+** Holds none of the API text; that is generated into include/application/embedded_api.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #include <algorithm>

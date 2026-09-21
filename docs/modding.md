@@ -6,6 +6,7 @@ For dedicated, comprehensive topic guides:
 * [Mod Development Guide (Lifecycle, Sandbox, UI, Memory)](guides/mods.md)
 * [Skill Tree Modding (Overrides & Patches)](guides/skilltrees.md)
 * [Custom Characters & Figurines (Roster Expansion)](guides/characters.md)
+* [crabe-cli (Offline Scaffolding, Validation & Typo Checking)](guides/cli.md)
 * [Guides Index Overview](guides/README.md)
 * [Engine Native Database](nativedb.md)
 
@@ -41,7 +42,6 @@ No manual injector or archive repacking is needed: CrabeLoader scans `mods/` aut
 ```lua
 -- mods/hello.lua
 Crabe.Mod.register({
-    id = "hello_world",
     name = "Hello World",
     onInit = function()
         Crabe.write("Hello from CrabeLoader V2!")

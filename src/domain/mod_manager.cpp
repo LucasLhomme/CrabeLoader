@@ -1,20 +1,33 @@
+/*
+** CrabeLoader
+** File description:
+** Discovers mods, filters by profile, assigns ids, resolves order, then runs each chunk sandboxed.
+** Mod names come from unpacked archives, so both Lua chunks are constants fed values as arguments.
+** Decides no order itself -- the rules are in src/domain/dependency_resolver.cpp.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "domain/mod_manager.hpp"
+#include "domain/config.hpp"
 #include "domain/dependency_resolver.hpp"
+#include "domain/mod_entry.hpp"
+#include "domain/mod_id.hpp"
 #include "domain/mod_manifest.hpp"
 #include "application/loader.hpp"
+#include "infrastructure/crash_reporter.hpp"
+#include "infrastructure/hook_registry.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "presentation/draw_buffer.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 
-#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <fstream>
 #include <map>
 #include <mutex>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -63,61 +76,15 @@ namespace {
         return manifest.getVersion().empty() ? std::string("(no version)") : manifest.getVersion();
     }
 
-    // -----------------------------------------------------------------------
-    // The v0 id gap, and the one place this loader decides what to do about it.
-    //
-    // manifestVersion 0 has no "id" key -- it predates the schema -- so
-    // ModManifest::getId() is empty for every mod that shipped before T8, and
-    // for every mod that has no mod.json at all. The dependency resolver is
-    // keyed on id from end to end, so refusing those mods would undo the
-    // backward compatibility T8 was written to guarantee.
-    //
-    // ModManager therefore names them itself: "local." followed by the folder
-    // (or script) name lowercased, with every character outside [a-z0-9] folded
-    // to '-', runs of '-' collapsed, and the ends trimmed. The result satisfies
-    // ^[a-z0-9]+(\.[a-z0-9-]+)+$ -- what validateModId() asks for -- and the
-    // "local." prefix cannot collide with the reverse-DNS id a real manifest
-    // would declare.
-    //
-    // This is policy, and it lives here rather than in the resolver (which is
-    // handed ids and stays deliberately ignorant of where they came from) or in
-    // ModManifest, whose getId() says at its own declaration that it does not
-    // decide this.
-    //
-    // Three awkward cases, all handled by the caller or by the last line here:
-    //
-    //  * a name that sanitises to nothing ("!!!", or a script in a non-Latin
-    //    alphabet this byte-wise fold cannot transliterate) becomes
-    //    "local.unnamed";
-    //  * two folders that sanitise to the same id ("My Mod" and "My-Mod") are
-    //    numbered apart by discoverAndLoadMods, which also warns, because the
-    //    author needs to know the name they would write in a dependency list is
-    //    not the one this mod answers to;
-    //  * a synthesised id that lands on an id some manifest actually declares
-    //    loses -- declared ids are assigned first and are never renamed.
-    // -----------------------------------------------------------------------
-    [[nodiscard]] std::string synthesiseModId(std::string_view folderName)
-    {
-        std::string suffix;
-        suffix.reserve(folderName.size() + 1);
-
-        for (const char character : folderName) {
-            if ((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9')) {
-                suffix += character;
-            } else if (character >= 'A' && character <= 'Z') {
-                suffix += static_cast<char>(character - 'A' + 'a');
-            } else if (!suffix.empty() && suffix.back() != '-') {
-                suffix += '-';
-            }
-        }
-        while (!suffix.empty() && suffix.back() == '-')
-            suffix.pop_back();
-
-        if (suffix.empty())
-            suffix = "unnamed";
-
-        return "local." + suffix;
-    }
+    // The v0 id gap, and the one place this loader decides what to do about
+    // it -- manifestVersion 0 has no "id" key, so ModManifest::getId() is
+    // empty for every mod that shipped before T8 and for every mod with no
+    // mod.json at all, and the dependency resolver is keyed on id throughout.
+    // Naming them ("local.<sanitised-folder-name>", numbered apart on
+    // collision) is policy, not something the resolver or ModManifest decide
+    // -- see domain/mod_id.hpp, which T16 pulled this out into so that
+    // crabe-cli's `resolve` command computes exactly the id ModManager would,
+    // rather than a guess that can drift out of step with it.
 
     // One mod as it was found on disk, before anything has been run.
     struct Candidate {
@@ -161,22 +128,6 @@ const std::filesystem::path& ModManager::getModsFolder() const noexcept
     return _modsFolder;
 }
 
-// Resolves the primary Lua entry script for a given mod directory.
-std::filesystem::path ModManager::resolveEntryScript(
-    const std::filesystem::path& modPath,
-    const std::string& modName,
-    const ModManifest& manifest) const
-{
-    if (manifest.isValid() && !manifest.getEntry().empty())
-        return modPath / manifest.getEntry();
-
-    auto mainScript = modPath / "main.lua";
-    if (std::filesystem::exists(mainScript))
-        return mainScript;
-
-    return modPath / (modName + ".lua");
-}
-
 // Loads a modular directory into an isolated sandbox environment.
 //
 // Whether this mod should load at all was settled before the call: the manifest
@@ -194,14 +145,28 @@ bool ModManager::loadModDirectory(void* L, const std::filesystem::path& modPath,
                      modName, pathError);
     }
 
-    auto entryScript = resolveEntryScript(modPath, modName, manifest);
-    bool loaded = false;
+    const ModEntryPlan plan = planModEntry(modPath, modName, manifest);
 
-    if (std::filesystem::exists(entryScript)) {
-        const std::array<std::string, 2> loadArgs{ entryScript.generic_string(), modName };
+    // A folder with nothing to run used to return true and be reported as
+    // `loaded in 0.1 ms`, which is how mods/crabe_heroes -- whose only Lua sat
+    // in a characters/ subdirectory -- went a whole play session looking green
+    // while never executing a line. Nothing downstream can detect that: the
+    // sandbox is never entered, so there is no error to propagate. It has to be
+    // refused here or not at all.
+    if (plan.runsNothing()) {
+        logger.error("ModManager: mod '{}' ran nothing -- no entry script, and no .lua file at "
+                     "the top level of '{}'. Looked for {}. Lua in a subdirectory is a module "
+                     "tree, not an entry point: add a main.lua that requires it, or name the "
+                     "entry script with \"entry\" in mod.json.",
+                     modName, modPath.generic_string(), plan.describeTriedEntryNames());
+        return false;
+    }
+
+    if (plan.entryScriptExists) {
+        const std::array<std::string, 2> loadArgs{ plan.entryScript.generic_string(), modName };
 
         std::string outError;
-        loaded = crabe::infrastructure::LuaCall::get().runChunkWithArgs(
+        const bool loaded = crabe::infrastructure::LuaCall::get().runChunkWithArgs(
             L, kLoadModChunk, loadArgs, outError);
         if (!loaded) {
             logger.error("ModManager: mod '{}' failed to run: {}", modName, outError);
@@ -209,21 +174,20 @@ bool ModManager::loadModDirectory(void* L, const std::filesystem::path& modPath,
             // The load report is the one INFO line per mod; this names the file
             // that ran, which only matters when something went wrong.
             logger.debug("ModManager: mod '{}' ran entry '{}'.",
-                         modName, entryScript.filename().string());
+                         modName, plan.entryScript.filename().string());
         }
-    } else {
-        bool anyFailed = false;
-        for (const auto& file : std::filesystem::directory_iterator(modPath)) {
-            if (file.is_regular_file() && file.path().extension() == ".lua") {
-                if (!crabe::infrastructure::LuaCall::get().runFile(L, file.path().string().c_str()))
-                    anyFailed = true;
-            }
-        }
-        loaded = !anyFailed;
-        logger.debug("ModManager: mod directory '{}' ran every .lua file it holds.", modName);
+        return loaded;
     }
 
-    return loaded;
+    bool anyFailed = false;
+    for (const std::filesystem::path& file : plan.looseScripts) {
+        if (!crabe::infrastructure::LuaCall::get().runFile(L, file.string().c_str()))
+            anyFailed = true;
+    }
+    logger.debug("ModManager: mod directory '{}' ran the {} .lua file(s) at its top level.",
+                 modName, plan.looseScripts.size());
+
+    return !anyFailed;
 }
 
 // Executes a standalone Lua mod script in an isolated sandbox.
@@ -320,43 +284,56 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         }
     }
 
-    // ---- 3. Name every mod. Declared ids go first and are never renamed, so a
-    //         synthesised one can never take a name a manifest actually claims.
-    std::set<std::string> takenIds;
-    for (Candidate& candidate : candidates) {
-        if (candidate.manifest.isValid() && !candidate.manifest.getId().empty()) {
-            candidate.id = candidate.manifest.getId();
-            takenIds.insert(candidate.id);
+    // ---- 2b. Filter by the active profile (T11). A provisional id only --
+    //          the declared one, or the same unnumbered synthesiseModId()
+    //          step 3 would assign for real -- because a collision between
+    //          two mods a profile drops on the floor never needs
+    //          disambiguating. Filtering happens here, before naming and
+    //          before resolution: a disabled mod is simply not a candidate
+    //          from this point on, never a rejection the resolver reports.
+    {
+        crabe::domain::Config& activeConfig = crabe::domain::Config::active();
+        std::vector<Candidate> enabledCandidates;
+        enabledCandidates.reserve(candidates.size());
+        for (Candidate& candidate : candidates) {
+            const std::string provisionalId =
+                (candidate.manifest.isValid() && !candidate.manifest.getId().empty())
+                    ? candidate.manifest.getId()
+                    : synthesiseModId(candidate.name);
+            if (activeConfig.isModEnabled(provisionalId)) {
+                enabledCandidates.push_back(std::move(candidate));
+            } else {
+                logger.debug("ModManager: mod '{}' ({}) skipped: disabled by profile '{}'.",
+                             candidate.name, provisionalId, activeConfig.activeProfileName());
+            }
         }
+        candidates = std::move(enabledCandidates);
     }
 
-    // Synthesised in path order rather than in directory_iterator order: when
-    // two folders sanitise to the same id the numbering below has to land on the
-    // same folder every time, and the filesystem promises nothing about the
-    // order it hands them over in.
-    std::vector<std::size_t> unnamed;
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].id.empty())
-            unnamed.push_back(index);
+    // ---- 3. Name every mod, via the same pure rule crabe-cli's `resolve`
+    //         command applies to the same folder (domain/mod_id.hpp).
+    std::vector<ModIdCandidate> idCandidates;
+    idCandidates.reserve(candidates.size());
+    for (const Candidate& candidate : candidates) {
+        idCandidates.push_back(ModIdCandidate{
+            .declaredId = (candidate.manifest.isValid() && !candidate.manifest.getId().empty())
+                              ? candidate.manifest.getId()
+                              : std::string{},
+            .folderName = candidate.name,
+            .sortKey = candidate.path.generic_string(),
+        });
     }
-    std::sort(unnamed.begin(), unnamed.end(), [&candidates](std::size_t lhs, std::size_t rhs) {
-        return candidates[lhs].path.generic_string() < candidates[rhs].path.generic_string();
-    });
 
-    for (std::size_t index : unnamed) {
-        const std::string wanted = synthesiseModId(candidates[index].name);
-        std::string chosen = wanted;
-        for (unsigned int attempt = 2; takenIds.count(chosen) != 0; ++attempt)
-            chosen = std::format("{}-{}", wanted, attempt);
+    std::vector<ModIdRenumbering> renumbered;
+    const std::vector<std::string> assignedIds = assignModIds(idCandidates, &renumbered);
+    for (std::size_t index = 0; index < candidates.size(); ++index)
+        candidates[index].id = assignedIds[index];
 
-        if (chosen != wanted) {
-            logger.warning("ModManager: mod '{}' would be called '{}', which is already taken; "
-                           "calling it '{}' instead. Rename the folder, or give it a mod.json with "
-                           "an \"id\", if anything needs to depend on it by name.",
-                           candidates[index].name, wanted, chosen);
-        }
-        takenIds.insert(chosen);
-        candidates[index].id = std::move(chosen);
+    for (const ModIdRenumbering& collision : renumbered) {
+        logger.warning("ModManager: mod '{}' would be called '{}', which is already taken; "
+                       "calling it '{}' instead. Rename the folder, or give it a mod.json with "
+                       "an \"id\", if anything needs to depend on it by name.",
+                       candidates[collision.index].name, collision.wantedId, collision.chosenId);
     }
 
     // ---- 4. Resolve. Pure, so everything above this line is what decides the
@@ -378,10 +355,23 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
     std::vector<bool> ran(candidates.size(), false);
     _mods.reserve(resolution.loadOrder.size());
 
+    // The reporter's own mod list is rebuilt here rather than read from _mods
+    // at crash time: a handler must not walk a std::vector of std::string that
+    // another thread may be resizing, and domain::Mod carries no version to
+    // report in the first place.
+    crabe::infrastructure::CrashReporter::forgetMods();
+
     for (std::size_t position = 0; position < resolution.loadOrder.size(); ++position) {
         const std::size_t index = resolution.sourceIndex[position];
         Candidate& candidate = candidates[index];
         ran[index] = true;
+
+        // This is the one place in C++ where the running mod is actually
+        // known. Once control is inside Lua, Crabe.Mod.dispatchDraw() picks
+        // the mod and the loader cannot see which -- so a fault during a draw
+        // is attributed to the hook, not to a mod, and that is honest.
+        const crabe::infrastructure::ScopedMod scopedMod(candidate.id);
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("ModManager: running ", candidate.id);
 
         const auto startedAt = std::chrono::steady_clock::now();
         const bool loaded = candidate.isDirectory
@@ -390,6 +380,9 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         const double elapsedMs = std::chrono::duration<double, std::milli>(
                                      std::chrono::steady_clock::now() - startedAt)
                                      .count();
+
+        crabe::infrastructure::CrashReporter::registerMod(
+            candidate.id, candidate.manifest.getVersion(), loaded);
 
         logger.info("ModManager: [{}/{}] {} {} in '{}' -- {} in {:.1f} ms",
                     position + 1, resolution.loadOrder.size(), candidate.id,
@@ -452,6 +445,38 @@ void ModManager::reloadAllMods(void* L)
         "if Crabe and Crabe.Mod and Crabe.Mod.reload then "
         "    Crabe.Mod.reload() "
         "end");
+
+    // Lua-side subscriptions are revoked by the chunk above; native hooks are
+    // not, because nothing in Lua knows about them. A hook left installed
+    // across a reload points its detour at a closure the new Lua state does not
+    // contain, which is a crash on the next call rather than a stale callback.
+    //
+    // Nothing owns a hook yet -- mods reach the registry only once T17 lands --
+    // so today every call below returns 0. The wiring is here rather than
+    // waiting for the first owner precisely so that it cannot be forgotten
+    // then: a mod that installs a hook must not be the change that also has to
+    // remember to tear it down.
+    //
+    // The ids are copied out under the lock and the registry is called without
+    // it: discoverAndLoadMods below takes _mutex for its whole body, and
+    // holding it across a call into another subsystem's lock is how an ordering
+    // problem gets built for a later thread to find.
+    std::vector<std::string> owners;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        owners.reserve(_mods.size());
+        for (const Mod& mod : _mods)
+            owners.push_back(mod.id);
+    }
+
+    std::size_t revokedHooks = 0;
+    for (const std::string& owner : owners)
+        revokedHooks += crabe::infrastructure::coreRegistry().removeAllOwnedBy(owner);
+    if (revokedHooks != 0) {
+        crabe::shared::Logger::getInstance().info(
+            "ModManager: revoked {} mod-owned hook(s) across {} mod(s) before reloading.",
+            revokedHooks, owners.size());
+    }
 
     auto targetFolder = _modsFolder.empty()
         ? (std::filesystem::current_path() / "mods")

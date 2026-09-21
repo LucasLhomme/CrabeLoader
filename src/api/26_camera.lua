@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- Camera control: the editor camera, free camera, movement and speed.
+-- Free camera is the engine editor state, so it suspends whatever was driving the camera.
+-- Moves no player -- position is read through src/api/14_world.lua and owned by the engine.
+--
+-- Authors: @LucasLhomme
+
 -- Camera control.
 --
 -- Read this before adding anything here: Disney Infinity 3.0 exposes NO free

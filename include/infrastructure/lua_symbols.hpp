@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** lua_symbols -- locating the game's Lua C API
+** Declares one pass of locating the game Lua C API inside the running image.
+** The count matters as much as the addresses: it separates degraded mode from refusing to load.
+** Makes neither decision itself; decideLoad in domain/game_profile.hpp does.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LUA_SYMBOLS_HPP_

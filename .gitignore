@@ -3,6 +3,7 @@ Release/
 tools/*
 !tools/di3_gateway/
 !tools/embed_api.py
+!tools/embed_api_def.py
 herald-report.txt
 mods/*
 !mods/_template/
@@ -10,5 +11,6 @@ __pycache__/
 backups/
 decypted/*
 include/application/embedded_api.hpp
+include/cli/embedded_api_def.hpp
 AUDIT_*.md
 DEVLOG_*.md

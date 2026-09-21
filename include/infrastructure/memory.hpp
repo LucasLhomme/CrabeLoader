@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** memory
+** Declares read-only introspection of the host process: pattern scans, strings, call resolution.
+** The game ships no debug info, so every address is measured at runtime over readable regions.
+** Writes nothing. Patching bytes is infrastructure/multiplayer/memory_patcher.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MEMORY_HPP_

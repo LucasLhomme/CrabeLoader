@@ -1,9 +1,15 @@
 /*
 ** CrabeLoader
 ** File description:
-** Loader
+** Brings the loader up: adopts the game Lua state, gates multiplayer, arms the keybinds.
+** Multiplayer needs two gates open at once, the game profile and the config; both are reported.
+** Loads no mod file -- discovery and ordering live in src/domain/mod_manager.cpp.
+**
+** Authors: @LucasLhomme
 */
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -18,6 +24,7 @@
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
 #include "infrastructure/crash_handler.hpp"
+#include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
@@ -25,8 +32,10 @@
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/multiplayer_manager.hpp"
 #include "presentation/render_hook.hpp"
+#include "domain/config.hpp"
 #include "domain/game_profile.hpp"
 #include "domain/mod_manager.hpp"
+#include "shared/keybind_names.hpp"
 #include "shared/logger.hpp"
 
 namespace crabe::application {
@@ -58,6 +67,45 @@ namespace {
         if (len <= 0)
             return std::format("VK 0x{:X}", virtualKey);
         return std::string(buffer, len);
+    }
+
+    // Resolves a config-file key name to a virtual key, falling back to
+    // `fallback` (the current hardcoded default) both when [keybinds]
+    // carries no override at all and when it carries one this loader does
+    // not recognise -- either way the user sees the behaviour they had
+    // before crabe.toml existed, not an unbound key.
+    int resolveKeybind(const std::string& configuredName, int fallback, const char* which)
+    {
+        if (configuredName.empty())
+            return fallback;
+
+        if (const auto virtualKey = crabe::shared::parseVirtualKeyName(configuredName))
+            return *virtualKey;
+
+        crabe::shared::Logger::getInstance().warning(
+            "Loader: crabe.toml [keybinds].{} = \"{}\" is not a recognised key name; keeping the default.",
+            which, configuredName);
+        return fallback;
+    }
+
+    // debug/info/warning/error, case-insensitive; anything else is reported
+    // and the level is left unchanged rather than guessed at.
+    void applyConfiguredLogLevel(const std::string& configuredLevel)
+    {
+        std::string lower = configuredLevel;
+        std::ranges::transform(lower, lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+
+        crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
+        if (lower == "debug") logger.setLogLevel(crabe::shared::LogLevel::DEBUG);
+        else if (lower == "info") logger.setLogLevel(crabe::shared::LogLevel::INFO);
+        else if (lower == "warning" || lower == "warn") logger.setLogLevel(crabe::shared::LogLevel::WARNING);
+        else if (lower == "error") logger.setLogLevel(crabe::shared::LogLevel::ERR);
+        else
+            logger.warning("Loader: crabe.toml [general].logLevel = \"{}\" is not recognised "
+                           "(expected debug, info, warning or error); leaving the level unchanged.",
+                           configuredLevel);
     }
 
 } // namespace
@@ -182,6 +230,8 @@ void Loader::queueConsoleSnippet(const std::string& rawInput)
     if (input.front() == '=')
         input = "return tostring(" + input.substr(1) + ")";
 
+    crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: console snippet queued");
+
     std::lock_guard<std::mutex> lock(_snippetQueueMutex);
     _pendingSnippets.push_back(input);
 }
@@ -228,8 +278,10 @@ void Loader::runTicks(void* L)
     if (!_runtimeReady)
         return;
 
-    if (crabe::domain::ModManager::get().isHotReloadRequested())
+    if (crabe::domain::ModManager::get().isHotReloadRequested()) {
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
         crabe::domain::ModManager::get().reloadAllMods(L);
+    }
 
     constexpr auto kInterval = std::chrono::milliseconds(16);
 
@@ -240,13 +292,23 @@ void Loader::runTicks(void* L)
 
     _lastTick = now;
     double dt = std::chrono::duration<double>(elapsed).count();
-    crabe::infrastructure::LuaCall::get().callTick(L, dt);
+
+    // Named, not breadcrumbed. This runs 60 times a second: a crumb per tick
+    // would fill the 64-slot ring with one second of "tick" and push out the
+    // events that actually say what led to the crash. setActiveHook costs a
+    // bounded memcpy into this thread's slot and is overwritten rather than
+    // accumulated, which is exactly what a hot path wants.
+    {
+        const crabe::infrastructure::ScopedHook scopedHook("Loader::callTick");
+        crabe::infrastructure::LuaCall::get().callTick(L, dt);
+    }
 
     drainPendingKeyEvents(L);
     drainPendingKeybindCalls(L);
     drainRemoteCommandFile(L);
     drainPendingSnippets(L);
     drainLuaOutput(L);
+    drainQuarantineReport(L);
 
     crabe::infrastructure::CrashHandler::runGuarded([L]() {
         crabe::domain::ModManager::get().dispatchDraw(L);
@@ -359,13 +421,50 @@ void Loader::drainLuaOutput(void* L)
     }
 }
 
+// Polls Crabe.Quarantine.report() (src/api/02c_quarantine.lua) at a slow,
+// fixed interval -- this is diagnostic bookkeeping, not per-frame state, so
+// it does not need drainLuaOutput's 100ms cadence. Runs on the script thread
+// inside runTicks, same as every other Lua call here (Invariant I3): the
+// counting itself already happened in Lua, at the actual dispatch sites, the
+// only place with per-callback granularity (see 02c_quarantine.lua's own
+// header comment for why that split is where it is). This is purely readout.
+void Loader::drainQuarantineReport(void* L)
+{
+    constexpr auto kInterval = std::chrono::milliseconds(1000);
+
+    auto now = std::chrono::steady_clock::now();
+    if (now - _lastQuarantinePoll < kInterval)
+        return;
+    _lastQuarantinePoll = now;
+
+    std::string report;
+    if (!crabe::infrastructure::LuaCall::get().runSnippet(
+            L, "return Crabe.Quarantine and Crabe.Quarantine.report() or ''", report))
+        return;
+
+    // Derived once, not on every poll: current_path() is a syscall (see
+    // drainRemoteCommandFile above for the same reasoning at a faster cadence).
+    static const std::filesystem::path kGameRoot = std::filesystem::current_path();
+
+    crabe::domain::QuarantineSnapshot snapshot = crabe::domain::QuarantineSnapshot::parseReport(report);
+    crabe::domain::Config::active().updateQuarantineSnapshot(kGameRoot, snapshot);
+}
+
+// Binds the two keys the loader has always had, reading their virtual-key
+// codes from crabe.toml's [keybinds] (Config::active()) with VK_F4 / VK_INSERT
+// as the defaults -- so a user with no config, or one that predates T11,
+// sees no change at all.
 void Loader::registerDefaultKeybinds()
 {
-    registerKeybind(VK_F4, []() {
+    const crabe::domain::Config& config = crabe::domain::Config::active();
+
+    const int hotReloadKey = resolveKeybind(config.hotReloadKeybind(), VK_F4, "hotReload");
+    registerKeybind(hotReloadKey, []() {
         crabe::domain::ModManager::get().requestHotReload();
     });
 
-    registerKeybind(VK_INSERT, []() {
+    const int devOverlayKey = resolveKeybind(config.devOverlayKeybind(), VK_INSERT, "devOverlay");
+    registerKeybind(devOverlayKey, []() {
         crabe::presentation::RenderHook::get().toggleMenu();
     });
 }
@@ -400,6 +499,28 @@ void Loader::onKeyEvent(int virtualKey, bool isDown)
 bool Loader::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
+
+    // Loaded first: registerDefaultKeybinds (below) reads [keybinds] from
+    // it, and everything else in this function that can be config-driven
+    // (log level, multiplayer) reads it too. current_path() is the game
+    // root -- the same base discoverAndLoadMods() resolves "mods" against.
+    crabe::domain::Config::initializeActive(std::filesystem::current_path());
+    const crabe::domain::Config& config = crabe::domain::Config::active();
+
+    if (const auto& diagnostic = config.diagnostic()) {
+        logger.error("Loader: {}; using defaults. The file on disk was left untouched.",
+                     diagnostic->what());
+    }
+    if (!config.getIgnoredKeys().empty()) {
+        for (const std::string& key : config.getIgnoredKeys())
+            logger.debug("Loader: crabe.toml: key '{}' is not recognised and was ignored.", key);
+    }
+    if (!config.activeProfileFound()) {
+        logger.warning("Loader: crabe.toml: [general].profile = \"{}\" names no [profiles.{}] table; "
+                       "loading every mod.", config.activeProfileName(), config.activeProfileName());
+    }
+    applyConfiguredLogLevel(config.logLevel());
+
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
     // Which build is this? Everything below turns on the answer. The
@@ -467,11 +588,20 @@ bool Loader::initialize()
     crabe::presentation::InputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
 
-    if (decision == crabe::domain::LoadDecision::Supported)
-        crabe::multiplayer::application::MultiplayerManager::getInstance().initialize();
-    else
-        logger.warning("Loader: multiplayer left uninitialised ({}).",
+    // Two independent gates, and both must open. The config gate is the
+    // player's stated preference; the profile gate is a safety property --
+    // the multiplayer patches are known by address only, so applying them to
+    // a build we did not measure corrupts code. Report whichever one closed,
+    // so the log says something actionable rather than just "disabled".
+    if (!config.multiplayerEnabled()) {
+        logger.info("Loader: multiplayer disabled by crabe.toml ([multiplayer].enabled = false).");
+    } else if (decision != crabe::domain::LoadDecision::Supported) {
+        logger.warning("Loader: multiplayer left uninitialised ({}); its patches are known by "
+                       "address only and this build is not a measured one.",
                        crabe::domain::describe(decision));
+    } else {
+        crabe::multiplayer::application::MultiplayerManager::getInstance().initialize();
+    }
 
     return true;
 }

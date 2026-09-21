@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** SteamworksService header
+** Declares the Steamworks binding: presence, friends and lobby matchmaking via steam_api.dll.
+** Every entry point is reached through pointers bound at runtime and called SEH-isolated.
+** Does nothing when Steam is absent; absence is a reportable state, not a failure to load.
+**
+** Authors: @LucasLhomme
 */
 
 #pragma once

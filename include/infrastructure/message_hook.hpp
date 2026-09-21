@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** message_hook
+** Declares a trace of the engine named-message dispatcher, filtered by watch prefix.
+** Observer only: it records a matching name and always forwards to the real dispatcher.
+** Finds the dispatcher by byte pattern, because the game exports nothing useful here.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MESSAGE_HOOK_HPP_

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** message_hook
+** Traces the engine named-message dispatcher and reports the names matching a watch prefix.
+** A native is registered by emitted code, so its address sits six bytes before the push naming it.
+** Handles no message; it observes and always forwards to the real dispatcher.
+**
+** Authors: @LucasLhomme
 */
 
 #include <cstring>
@@ -64,7 +68,8 @@ bool MessageHook::initialize()
         return false;
     }
 
-    if (!_hook.install(reinterpret_cast<void*>(dispatcher), reinterpret_cast<void*>(&MessageHook::hkDispatch))) {
+    if (!_hook.install(reinterpret_cast<void*>(dispatcher), reinterpret_cast<void*>(&MessageHook::hkDispatch),
+                       "MessageHook::dispatch")) {
         logger.error("MessageHook: failed to hook the dispatcher at 0x{:X}.", dispatcher);
         return false;
     }

@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** MemoryPatcher - Implementation of IEnginePatcher for Disney Infinity 3.0
+** Declares the engine patches that turn the Gold Edition offline flags back on.
+** What lives here is true of the patch, not the build: the bytes, and the site byte pattern.
+** Holds no address; every one arrives from the active domain/game_profile.hpp profile.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef MEMORY_PATCHER_HPP_

@@ -1,3 +1,11 @@
+-- CrabeLoader
+-- File description:
+-- The VirtualReader roster: the character select grid, and adding or editing an entry in it.
+-- A character is keyed by sku, and a name lookup exists only because skus are unreadable by hand.
+-- Does not swap the played character -- Game.SetCharacter in src/api/11_avatar.lua does.
+--
+-- Authors: @LucasLhomme
+
 -- VirtualReader roster -- the character-select grid.
 --
 -- VirtualReaderPC_Data.AvatarData is a plain global table the engine reads to

@@ -95,6 +95,107 @@ can show that.
       names `di3-gold-steam-1.0`, multiplayer is no longer skipped, and Lua hooks
       still install.
 
+## T11 — configuration and quarantine
+
+- [ ] **F4 and Insert still work with no `crabe.toml` present.** The defaults are
+      the values that used to be hardcoded, so a first launch must behave exactly
+      as before.
+- [ ] **Rebinding takes effect.** Set `[keybinds] hotReload` to another key in
+      `Crabe/crabe.toml`, relaunch, and confirm the new key reloads and the old
+      one does not.
+- [ ] **The window-mode toggle still persists.** Toggle it, restart, and confirm
+      the mode survives — it now lives in `crabe.toml`, not
+      `crabe_window_mode.cfg`, which is migrated once and then left alone.
+- [ ] **A profile disables a mod.** Put a mod's id in a `[profiles.<name>]`
+      `enabled` list, set `[general] profile`, and confirm the others do not load.
+- [ ] **Quarantine fires on a deliberately broken mod.** A mod whose `onTick`
+      always errors should have that callback disabled after ten ticks, and the
+      log should say `repeated N times` rather than one line per frame.
+
+## T12 — crash reporter
+
+- [ ] **A broken mod produces a crash report naming it.** Write a mod that
+      dereferences nil or otherwise faults, and confirm
+      `Crabe/crash-<stamp>.txt` appears next to the DLL with a `.dmp` beside it.
+- [ ] **Read the mod attribution carefully — there is a known limit.** A mod that
+      faults while *loading* is named in `Active mod`. A mod that faults inside its
+      `draw` callback is **not**: Lua picks the mod there, so C++ never learns
+      which, and the report shows `Active hook : Loader::dispatchDraw` with
+      `Active mod : (none)`. Confirm which case you are looking at before
+      concluding the report is wrong.
+- [ ] **Thread role is correct for a render-thread fault.** A fault inside
+      `Present` should read `Thread role : Render`, not `Script`.
+- [ ] **The reporter does not fire on exceptions the game handles itself.** Play
+      for a few minutes and confirm no crash report appears and frame time is
+      unaffected. The filter is unit-tested, but which codes this game raises per
+      frame is something only a play session can measure.
+
+## T13 — hook registry with ownership
+
+Covered automatically: the whole ownership policy, in `tests/cpp/
+test_hook_registry.cpp` against `FakeHookBackend` — collision refusal, reverse
+order removal, `findCovering` at every boundary, and 100 install/remove cycles
+returning the table to its exact prior state. The crash report's attribution is
+proved end to end by `ctest -R crabe_crash_report`, which faults for real and
+checks the report names the hook covering the faulting address.
+
+What none of that can reach: whether the loader's own hooks still *work*. Every
+one of them now goes through the registry, so a mistake there does not fail a
+test — it silently stops hooking, and the only symptom is a feature not
+happening. Check all four.
+
+- [ ] **The overlay still opens and draws.** Press Insert for the console and F5
+      for the mod menu. If `RenderHook::IDXGISwapChain::Present` failed to
+      install, the game runs normally and nothing appears at all — no error
+      dialog, no visible fault. `Crabe/crabe.log` is where to look: a refusal now
+      logs as `HookRegistry: '<name>' ... refused` or `... failed`, with the
+      reason spelled out.
+- [ ] **Alt-Tab and a resolution change do not crash.** That exercises
+      `ResizeBuffers`, whose hook is installed the same way. A black or stretched
+      overlay after resizing means the hook went in but the render target was not
+      recreated; nothing appearing at all means the hook did not go in.
+- [ ] **A controller is still detected.** Plug in a pad and confirm the game
+      responds to it, then check `InputHook::XInputGetState` is in the log's hook
+      list. The pad working proves nothing on its own — the hook is an observer
+      and the game works without it — so this one has to be read from the log.
+- [ ] **Mods still load and F4 still reloads them.** Mod loading runs through the
+      three `LuaCall::*` hooks; if they failed, no mod runs at all. Press F4 and
+      confirm the log says `ModManager: reloading all mods...` followed by the
+      mods loading again.
+- [ ] **The log lists every hook exactly once, with no collision.** Search
+      `Crabe/crabe.log` for `HookRegistry:`. Expect one `installed at 0x...` line
+      per hook and **no** `refused` line. A refusal at startup means two of the
+      loader's own hooks now overlap — a real defect this registry has just made
+      visible for the first time, not a false alarm to be silenced.
+- [ ] **A crash report names the hook it died in.** Using the same deliberately
+      broken mod as the T12 items, confirm `Crabe/crash-<stamp>.txt` carries an
+      `--- Installed hooks ---` section listing each hook with its owner. If the
+      fault happened inside the few bytes a hook patched, an `In hook` line
+      names it; if it happened in the detour body instead, that line is absent
+      and `Active hook` is what identifies it. Both are correct — see the known
+      limitation in `CHANGELOG.md` before reporting the absent line as a bug.
+- [ ] **Multiplayer, if you use it, still redirects.** The WinHTTP detours go
+      through the same registry now, under names like `hook@0x77001234` because
+      that subsystem was deliberately not edited by this work order. They should
+      appear in the log's hook list and behave exactly as before.
+
+---
+## Hot-reload ownership — the onInit leak
+
+- [ ] **A mod that subscribes from `onInit` survives repeated reloads without
+      doubling.** Write a mod whose `onInit` calls `Game.onTick(...)` and logs a
+      line from that tick callback. Press F4 ten times, then read the log: the
+      line must still appear once per frame, not eleven times. Before the fix it
+      gained one copy per reload.
+- [ ] **`onInit` runs once per reload, not twice.** Log a line from `onInit`
+      itself and press F4. Exactly one line per press. Any side effect a mod puts
+      in `onInit` — a spawn, a memory patch, a file write — was previously
+      applied twice on every reload, so check anything of yours that does.
+- [ ] **A tick callback registered in `onInit` that keeps throwing disables its
+      own mod, not the API.** Make that callback error every frame. After ten
+      frames the quarantine message must name your mod. If it names `core`, the
+      ownership bracket is not taking effect in the shipped DLL.
+
 ## Adding to this file
 
 New work orders append a section of their own, in the same shape:

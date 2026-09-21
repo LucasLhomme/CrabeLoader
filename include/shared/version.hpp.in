@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** Version definitions for CrabeLoader (Generated automatically by CMake)
+** Version constants CMake stamps in from include/shared/version.hpp.in; never edit the output.
+** Carries the stamped build version and the compatibility test a manifest is checked against.
+** Holds no range parser beyond that test; the full one is domain/semver.hpp.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef CRABELOADER_VERSION_HPP_
