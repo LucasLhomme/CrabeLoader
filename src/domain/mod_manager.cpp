@@ -25,6 +25,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <map>
 #include <mutex>
@@ -104,16 +105,18 @@ ModManager& ModManager::get()
     return instance;
 }
 
-// Queries whether a hot reload cycle has been requested.
-bool ModManager::isHotReloadRequested() const noexcept
+// Whether this state is behind the latest hot-reload request. Asked from
+// inside the state's own pcall, which is the only thread allowed to touch it.
+bool ModManager::needsReload(void* L) const
 {
-    return _hotReloadRequested.load();
+    return _reloads.needsReload(L);
 }
 
-// Flags a hot reload request to be processed on the next available cycle.
-void ModManager::requestHotReload() noexcept
+// Flags a hot reload. Every live state catches up the next time it runs; none
+// is reloaded from here, because "here" is whichever thread pressed the key.
+void ModManager::requestHotReload()
 {
-    _hotReloadRequested.store(true);
+    _reloads.requestReload();
 }
 
 // Returns the collection of discovered and tracked mods.
@@ -147,17 +150,26 @@ bool ModManager::loadModDirectory(void* L, const std::filesystem::path& modPath,
 
     const ModEntryPlan plan = planModEntry(modPath, modName, manifest);
 
-    // A folder with nothing to run used to return true and be reported as
-    // `loaded in 0.1 ms`, which is how mods/crabe_heroes -- whose only Lua sat
-    // in a characters/ subdirectory -- went a whole play session looking green
-    // while never executing a line. Nothing downstream can detect that: the
-    // sandbox is never entered, so there is no error to propagate. It has to be
-    // refused here or not at all.
-    if (plan.runsNothing()) {
-        logger.error("ModManager: mod '{}' ran nothing -- no entry script, and no .lua file at "
-                     "the top level of '{}'. Looked for {}. Lua in a subdirectory is a module "
-                     "tree, not an entry point: add a main.lua that requires it, or name the "
-                     "entry script with \"entry\" in mod.json.",
+    // A content mod runs no Lua by design: its characters/ or skilltrees/ were
+    // read at boot by Loader, before this Lua state existed. mods/crabe_heroes
+    // is exactly that -- one exposeCharacter declaration and no script -- so
+    // reporting it as failed would be as wrong as the silent success below was.
+    if (plan.isContentOnly()) {
+        logger.debug("ModManager: mod '{}' ships no Lua; its {} were read at startup.",
+                     modName, plan.describeContentDirectories());
+        return true;
+    }
+
+    // A folder with nothing at all used to return true and be reported as
+    // `loaded in 0.1 ms`. Nothing downstream can detect that: the sandbox is
+    // never entered, so there is no error to propagate. It has to be refused
+    // here or not at all.
+    if (plan.isEmpty()) {
+        logger.error("ModManager: mod '{}' ran nothing -- no entry script, no .lua file at the "
+                     "top level of '{}', and no characters/ or skilltrees/ folder either. "
+                     "Looked for {}. Lua in any other subdirectory is a module tree, not an "
+                     "entry point: add a main.lua that requires it, or name the entry script "
+                     "with \"entry\" in mod.json.",
                      modName, modPath.generic_string(), plan.describeTriedEntryNames());
         return false;
     }
@@ -219,6 +231,11 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
 {
     if (!L)
         return;
+
+    // A state that has just loaded every mod is current by definition. Recorded
+    // outside _mutex: _reloads has its own lock, and taking one inside the
+    // other is how a lock-ordering problem gets built for a later thread.
+    _reloads.markReloaded(L);
 
     std::lock_guard<std::mutex> lock(_mutex);
     _modsFolder = modsFolder;
@@ -438,8 +455,13 @@ void ModManager::reloadAllMods(void* L)
     if (!L)
         return;
 
-    _hotReloadRequested.store(false);
-    crabe::shared::Logger::getInstance().info("ModManager: reloading all mods...");
+    // Recorded before anything runs, so that a reload which faults partway
+    // through does not leave this state asking for the same generation forever.
+    const bool firstOfGeneration = _reloads.markReloaded(L);
+
+    crabe::shared::Logger::getInstance().info(
+        "ModManager: reloading all mods in Lua state 0x{:X} (generation {}).",
+        reinterpret_cast<uintptr_t>(L), _reloads.generation());
 
     crabe::infrastructure::LuaCall::get().runSnippet(L,
         "if Crabe and Crabe.Mod and Crabe.Mod.reload then "
@@ -461,8 +483,11 @@ void ModManager::reloadAllMods(void* L)
     // it: discoverAndLoadMods below takes _mutex for its whole body, and
     // holding it across a call into another subsystem's lock is how an ordering
     // problem gets built for a later thread to find.
+    // Once per generation, not once per state: native hooks are global, so
+    // revoking them again after the second state has reinstalled them would
+    // tear down what the reload had just put back.
     std::vector<std::string> owners;
-    {
+    if (firstOfGeneration) {
         std::lock_guard<std::mutex> lock(_mutex);
         owners.reserve(_mods.size());
         for (const Mod& mod : _mods)
@@ -483,6 +508,19 @@ void ModManager::reloadAllMods(void* L)
         : _modsFolder;
 
     discoverAndLoadMods(L, targetFolder);
+
+    // How many live states have yet to catch up. A dormant state -- the
+    // front-end while a world is running, say -- reloads only when it next
+    // executes Lua, which can be much later. Without this line that is
+    // indistinguishable from the state having been missed entirely, which is
+    // exactly the confusion the single-bool version created.
+    const std::size_t behind = _reloads.statesBehind();
+    if (behind != 0) {
+        crabe::shared::Logger::getInstance().info(
+            "ModManager: {} other tracked state(s) still behind generation {}; each reloads "
+            "itself the next time it runs.",
+            behind, _reloads.generation());
+    }
 }
 
 // Records one frame of mod ImGui calls on the script thread. Nothing is drawn

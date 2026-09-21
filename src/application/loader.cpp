@@ -278,7 +278,10 @@ void Loader::runTicks(void* L)
     if (!_runtimeReady)
         return;
 
-    if (crabe::domain::ModManager::get().isHotReloadRequested()) {
+    // Per state, not once globally: this runs inside L's own pcall, so L is the
+    // one state it is safe to reload from here -- and every other live state
+    // asks the same question on its own thread. See domain/reload_generation.hpp.
+    if (crabe::domain::ModManager::get().needsReload(L)) {
         crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
         crabe::domain::ModManager::get().reloadAllMods(L);
     }
@@ -529,6 +532,7 @@ bool Loader::initialize()
     const crabe::domain::GameProfile* profile = crabe::domain::activeProfile();
 
     loadOverridesFromDisk();
+    loadCharactersFromDisk();
     const crabe::lua_symbols::Resolution resolution = crabe::lua_symbols::resolveAll(base, profile);
 
     // Three outcomes, and only three: the build is one we measured, or it is

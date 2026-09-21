@@ -9,11 +9,15 @@
 */
 
 #include <atomic>
+#include <chrono>
 #include <dxgi.h>
 #include <filesystem>
 #include <string>
+#include <thread>
 
 #include "presentation/render_hook.hpp"
+
+#include <algorithm>
 #include "presentation/draw_buffer.hpp"
 #include "application/loader.hpp"
 #include "domain/config.hpp"
@@ -153,6 +157,12 @@ bool RenderHook::initialize()
                                            reinterpret_cast<void*>(&RenderHook::hkSetCursorPos),
                                            "RenderHook", "SetCursorPos");
         }
+        auto targetShowWindow = reinterpret_cast<void*>(GetProcAddress(user32, "ShowWindow"));
+        if (targetShowWindow) {
+            _hookShowWindow.installLogged(reinterpret_cast<uintptr_t>(targetShowWindow),
+                                          reinterpret_cast<void*>(&RenderHook::hkShowWindow),
+                                          "RenderHook", "ShowWindow");
+        }
     }
 
     _requestedWindowMode = loadWindowModeConfig();
@@ -175,6 +185,7 @@ void RenderHook::uninitialize()
     _hookSetFullscreenState.remove();
     _hookResizeBuffers.remove();
     _hookSetCursorPos.remove();
+    _hookShowWindow.remove();
 
     if (_backendInitialized) {
         ImGui_ImplDX11_Shutdown();
@@ -226,8 +237,63 @@ void RenderHook::requestWindowMode(WindowMode mode)
     _windowModeDirty = true;
 }
 
+// A windowed rect for this monitor, sized from the swap chain's back buffer and
+// centred on the work area.
+//
+// Computed rather than restored. _originalRect is whatever the window happened
+// to be at the first Present, and by then hkSetFullscreenState may already have
+// forced the game out of exclusive fullscreen and into a borderless popup
+// covering the monitor -- so "restore the original" restored the borderless
+// geometry and changed nothing on screen, while the log below still claimed the
+// mode had been set.
+static RECT windowedRectFor(HWND hwnd, IDXGISwapChain* swapChain, LONG style)
+{
+    UINT clientWidth = 1280;
+    UINT clientHeight = 720;
+
+    DXGI_SWAP_CHAIN_DESC desc{};
+    if (swapChain && SUCCEEDED(swapChain->GetDesc(&desc)) && desc.BufferDesc.Width > 100
+        && desc.BufferDesc.Height > 100) {
+        clientWidth = desc.BufferDesc.Width;
+        clientHeight = desc.BufferDesc.Height;
+    }
+
+    MONITORINFO monitorInfo{};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    RECT work{ 0, 0, 1920, 1080 };
+    if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo))
+        work = monitorInfo.rcWork;
+
+    const LONG workWidth = work.right - work.left;
+    const LONG workHeight = work.bottom - work.top;
+
+    // The back buffer is usually the whole monitor, because that is what a
+    // borderless window asked for. A window that size plus a title bar does not
+    // fit on the screen it came from, so it is scaled down to leave the taskbar
+    // and the frame visible -- otherwise "windowed" looks identical to
+    // borderless and the toggle appears to do nothing.
+    RECT frame{ 0, 0, static_cast<LONG>(clientWidth), static_cast<LONG>(clientHeight) };
+    AdjustWindowRect(&frame, static_cast<DWORD>(style & ~WS_VISIBLE), FALSE);
+    LONG outerWidth = frame.right - frame.left;
+    LONG outerHeight = frame.bottom - frame.top;
+
+    if (outerWidth > workWidth || outerHeight > workHeight) {
+        const double scale = 0.85 * (std::min)(static_cast<double>(workWidth) / outerWidth,
+                                               static_cast<double>(workHeight) / outerHeight);
+        outerWidth = static_cast<LONG>(outerWidth * scale);
+        outerHeight = static_cast<LONG>(outerHeight * scale);
+    }
+
+    RECT out{};
+    out.left = work.left + (workWidth - outerWidth) / 2;
+    out.top = work.top + (workHeight - outerHeight) / 2;
+    out.right = out.left + outerWidth;
+    out.bottom = out.top + outerHeight;
+    return out;
+}
+
 // Changes window style and dimensions and updates swapchain buffers if needed.
-void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapChain)
+void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
 {
     if (!_windowModeDirty.exchange(false) || !_hwnd) {
         return;
@@ -246,30 +312,39 @@ void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapCha
 
         targetRect = monitorInfo.rcMonitor;
 
-        // Force WS_EX_APPWINDOW so the game always remains visible on the Windows taskbar
+        // Force WS_EX_APPWINDOW and ensure WS_EX_TOPMOST is removed so other windows can appear in front on Alt+Tab
         LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
         exStyle |= WS_EX_APPWINDOW;
         exStyle &= ~WS_EX_TOOLWINDOW;
+        exStyle &= ~WS_EX_TOPMOST;
         SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
 
         SetWindowLongPtrW(_hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
-        SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top,
+        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
                     targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
                     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     } else {
-        targetRect = _originalRect;
-        int w = targetRect.right - targetRect.left;
-        int h = targetRect.bottom - targetRect.top;
-        if (w > 100 && h > 100) {
-            LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
-            exStyle |= WS_EX_APPWINDOW;
-            exStyle &= ~WS_EX_TOOLWINDOW;
-            SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
+        // The style the window had before anything touched it, when that is a
+        // real decorated window; a plain overlapped window otherwise, since
+        // _originalStyle may have been captured while the game was already
+        // borderless and WS_POPUP would leave it borderless.
+        LONG style = static_cast<LONG>(_originalStyle);
+        if ((style & WS_CAPTION) != WS_CAPTION)
+            style = WS_OVERLAPPEDWINDOW;
+        style |= WS_VISIBLE;
 
-            SetWindowLongPtrW(_hwnd, GWL_STYLE, _originalStyle | WS_VISIBLE);
-            SetWindowPos(_hwnd, HWND_TOP, targetRect.left, targetRect.top, w, h,
-                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-        }
+        targetRect = windowedRectFor(_hwnd, swapChain, style);
+
+        LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
+        exStyle |= WS_EX_APPWINDOW;
+        exStyle &= ~WS_EX_TOOLWINDOW;
+        exStyle &= ~WS_EX_TOPMOST;
+        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
+
+        SetWindowLongPtrW(_hwnd, GWL_STYLE, style);
+        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
+                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
+                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     }
 
     ShowWindow(_hwnd, SW_SHOW);
@@ -277,8 +352,16 @@ void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapCha
     SetForegroundWindow(_hwnd);
     saveWindowModeConfig(currentMode);
 
-    crabe::shared::Logger::getInstance().info("RenderHook: window mode set to {}.",
-                               currentMode == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
+    // The rect the window actually ended up with, not the one that was asked
+    // for. The previous version logged success unconditionally, including when
+    // a guard above had skipped every call that changes anything -- which is
+    // how a toggle that did nothing on screen still read as working.
+    RECT applied{};
+    GetWindowRect(_hwnd, &applied);
+    crabe::shared::Logger::getInstance().info(
+        "RenderHook: window mode set to {} ({}x{} at {},{}).",
+        currentMode == WindowMode::BorderlessWindowed ? "borderless" : "windowed",
+        applied.right - applied.left, applied.bottom - applied.top, applied.left, applied.top);
 }
 
 // Returns the trampoline to the original Present method.
@@ -303,6 +386,12 @@ RenderHook::t_SetFullscreenState RenderHook::originalSetFullscreenState() const
 RenderHook::t_SetCursorPos RenderHook::originalSetCursorPos() const
 {
     return reinterpret_cast<t_SetCursorPos>(_hookSetCursorPos.getOriginal());
+}
+
+// Returns the trampoline to the original ShowWindow function.
+RenderHook::t_ShowWindow RenderHook::originalShowWindow() const
+{
+    return reinterpret_cast<t_ShowWindow>(_hookShowWindow.getOriginal());
 }
 
 // Releases the active backbuffer render target view.
@@ -344,6 +433,21 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     _originalStyle = GetWindowLongPtrW(_hwnd, GWL_STYLE);
     GetWindowRect(_hwnd, &_originalRect);
 
+    // Prevent DXGI from altering window styles or intercepting Alt+Enter/Alt+Tab
+    IDXGIFactory* factory = nullptr;
+    if (SUCCEEDED(swapChain->GetParent(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&factory)))) {
+        factory->MakeWindowAssociation(_hwnd, DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER);
+        factory->Release();
+    }
+
+    // Ensure WS_EX_TOPMOST is removed from the window so other apps can take foreground on Alt+Tab
+    LONG_PTR initialExStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
+    if (initialExStyle & WS_EX_TOPMOST) {
+        initialExStyle &= ~WS_EX_TOPMOST;
+        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, initialExStyle);
+    }
+    SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
     ImGui_ImplWin32_Init(_hwnd);
     ImGui_ImplDX11_Init(_device, _context);
 
@@ -384,6 +488,19 @@ BOOL WINAPI RenderHook::hkSetCursorPos(int X, int Y)
     return self.originalSetCursorPos()(X, Y);
 }
 
+// Intercepts ShowWindow calls from the game to suppress window minimization in borderless mode.
+BOOL WINAPI RenderHook::hkShowWindow(HWND hWnd, int nCmdShow)
+{
+    RenderHook& self = RenderHook::get();
+    if (self._hwnd && hWnd == self._hwnd && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+        if (nCmdShow == SW_MINIMIZE || nCmdShow == SW_FORCEMINIMIZE || nCmdShow == SW_SHOWMINIMIZED) {
+            // Block minimization and keep window displayed without stealing focus
+            return self.originalShowWindow()(hWnd, SW_SHOWNA);
+        }
+    }
+    return self.originalShowWindow()(hWnd, nCmdShow);
+}
+
 // Drives frame rendering, pending mode application, and UI overlay rendering.
 HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
 {
@@ -405,6 +522,19 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
+
+    // Limit to 30 FPS when the game is in the background (lost focus) to preserve user performance
+    if (!self._isFocused.load() && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+        using namespace std::chrono;
+        static auto lastBackgroundFrame = steady_clock::now();
+        auto now = steady_clock::now();
+        auto elapsed = duration_cast<milliseconds>(now - lastBackgroundFrame);
+        constexpr milliseconds kTargetFrameTime(33); // ~30 FPS
+        if (elapsed < kTargetFrameTime) {
+            std::this_thread::sleep_for(kTargetFrameTime - elapsed);
+        }
+        lastBackgroundFrame = steady_clock::now();
+    }
 
     if (self._backendInitialized && self._device && self._context) {
         if (!self._renderTargetView) {
@@ -472,15 +602,42 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
     }
 
+    if (msg == WM_WINDOWPOSCHANGING) {
+        auto* pos = reinterpret_cast<WINDOWPOS*>(lParam);
+        if (pos && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            if (pos->hwndInsertAfter == HWND_TOPMOST) {
+                pos->hwndInsertAfter = HWND_NOTOPMOST;
+            }
+        }
+    }
+
     if (msg == WM_ACTIVATE) {
-        if (LOWORD(wParam) == WA_INACTIVE) {
+        bool active = (LOWORD(wParam) != WA_INACTIVE);
+        self._isFocused.store(active);
+        if (!active) {
             ClipCursor(nullptr);
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                return 0; // Prevent game's internal focus-loss routine from minimizing
+            }
         } else {
             self.updateCursorVisibility();
         }
+    } else if (msg == WM_ACTIVATEAPP) {
+        bool active = (wParam != FALSE);
+        self._isFocused.store(active);
+        if (!active && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            return 0;
+        }
     } else if (msg == WM_KILLFOCUS) {
+        self._isFocused.store(false);
         ClipCursor(nullptr);
+        if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            return 0; // Prevent focus loss from interrupting rendering
+        }
     } else if (msg == WM_SETFOCUS) {
+        self._isFocused.store(true);
         self.updateCursorVisibility();
     }
 
@@ -503,6 +660,7 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         }
         if (wParam == VK_TAB && (lParam & (1 << 29))) {
             ClipCursor(nullptr);
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
         if (wParam == VK_F4 && (lParam & (1 << 29))) {
@@ -512,6 +670,10 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     if (msg == WM_SYSCOMMAND) {
         WPARAM cmd = wParam & 0xFFF0;
+        if (cmd == SC_MINIMIZE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            ClipCursor(nullptr);
+            return 0; // Prevent window minimization on focus loss in borderless mode
+        }
         if (cmd == SC_KEYMENU && lParam != VK_SPACE) {
             return 0;
         }

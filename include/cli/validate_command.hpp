@@ -53,7 +53,18 @@ namespace crabe::cli {
         std::string version;
 
         std::filesystem::path entryScript;
+
+        // "This mod will contribute something", not "the file named above is
+        // there": a mod shipping only characters/ has no entry script and is
+        // perfectly valid, because the loader reads that folder at startup.
         bool entryScriptExists{false};
+
+        // characters/ or skilltrees/ found in the folder, named as on disk.
+        std::vector<std::string> contentDirectories;
+
+        // Contributes content and runs no Lua. Valid, and the shape of the
+        // reference character mod -- so it has no entry script to be missing.
+        bool contentOnly{false};
 
         std::vector<ValidateFinding> findings;
 

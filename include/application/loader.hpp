@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -86,15 +87,31 @@ class Loader {
         // the figure registry is injected this way too. See skilltrees/README.md.
         void registerChunkPatch(std::string matchSubstring, std::string patchSource,
                                 std::string label = {});
-        void armPatchIfMatched(const char* buff, size_t size);
-        bool hasArmedPatch() const;
-        ChunkRule takeArmedPatch();
+        // Arming and consuming both carry the Lua call depth, because chunks
+        // nest and a single armed slot cannot tell whose call just returned.
+        //
+        // Presentation/SettingsVideo.lua loads Presentation/SettingsBase.lua
+        // while it is running. With one slot consumed by the next call to
+        // return, SettingsVideo's patch fired after SettingsBase -- before
+        // SettingsVideo.lua had finished, so before the table it builds was
+        // assigned to its global. Every mod trying to reach that screen found
+        // nothing, silently, and the patch was gone by the time the chunk
+        // really returned.
+        //
+        // A chunk armed at depth D runs under a call that takes the depth to
+        // D+1, so its patch belongs to the return that brings it back to D.
+        void armPatchIfMatched(const char* buff, size_t size, int depth);
+        void armPatchIfNameMatched(const char* name, int depth);
+
+        // The patch owed to a call returning to `depth`, or nothing. Anything
+        // armed deeper can no longer fire -- its chunk never ran -- and is
+        // dropped here rather than left to accumulate.
+        std::optional<ChunkRule> takePatchForDepth(int depth);
 
         // Same as registerChunkPatch/armPatchIfMatched, keyed on the chunk's
         // exact loadbuffer name instead of its content.
         void registerNamedPatch(std::string exactName, std::string patchSource,
                                 std::string label = {});
-        void armPatchIfNameMatched(const char* name);
 
     protected:
     private:
@@ -109,6 +126,12 @@ class Loader {
         // Reads <gameDir>/skilltrees/*.{lua,patch} into overrides/patches,
         // before LuaCall installs the loadbuffer hook. See skilltrees/README.md.
         void loadOverridesFromDisk();
+
+        // Reads <gameDir>/characters/*.lua and mods/<name>/characters/*.lua into
+        // the catalog patch and the figure registry slots the game needs to
+        // accept those characters. Same timing constraint as the above: it must
+        // run before LuaCall installs the loadbuffer hook. See characters/README.md.
+        void loadCharactersFromDisk();
 
         struct Keybind {
             std::function<void()> onPress;
@@ -145,7 +168,14 @@ class Loader {
         std::vector<ChunkRule> _loadOverrides;
         std::vector<ChunkRule> _chunkPatches;
         std::vector<ChunkRule> _namedPatches;
-        ChunkRule _armedPatch;
+
+        // Armed patches that have not fired yet, innermost last. Bounded by
+        // the nesting depth of the game's own chunk loading, which is two.
+        struct ArmedPatch {
+            ChunkRule rule;
+            int depth{0};
+        };
+        std::vector<ArmedPatch> _armedPatches;
 };
 
 

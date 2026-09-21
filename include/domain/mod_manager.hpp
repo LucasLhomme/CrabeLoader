@@ -11,7 +11,8 @@
 #ifndef CRABELOADER_DOMAIN_MOD_MANAGER_HPP_
 #define CRABELOADER_DOMAIN_MOD_MANAGER_HPP_
 
-#include <atomic>
+#include "domain/reload_generation.hpp"
+
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -45,8 +46,12 @@ namespace crabe::domain {
         void reloadAllMods(void* L);
         void dispatchDraw(void* L);
 
-        [[nodiscard]] bool isHotReloadRequested() const noexcept;
-        void requestHotReload() noexcept;
+        // Asked per state, from inside that state's own pcall, rather than
+        // once globally: a hot reload has to reach every live state, and the
+        // only safe thread to reach one from is its own. See
+        // domain/reload_generation.hpp for why this is not a loop.
+        [[nodiscard]] bool needsReload(void* L) const;
+        void requestHotReload();
 
         [[nodiscard]] const std::vector<Mod>& getMods() const noexcept;
         [[nodiscard]] const std::filesystem::path& getModsFolder() const noexcept;
@@ -72,7 +77,7 @@ namespace crabe::domain {
 
         std::vector<Mod> _mods;
         std::filesystem::path _modsFolder;
-        std::atomic<bool> _hotReloadRequested{false};
+        ReloadGenerations _reloads;
         std::mutex _mutex;
     };
 

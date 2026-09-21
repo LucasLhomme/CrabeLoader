@@ -106,6 +106,9 @@ class RenderHook {
         // Hook for SetCursorPos to suppress cursor centering while overlay is open.
         static BOOL WINAPI hkSetCursorPos(int X, int Y);
 
+        // Hook for ShowWindow to suppress SW_MINIMIZE in borderless mode for instant Alt+Tab.
+        static BOOL WINAPI hkShowWindow(HWND hWnd, int nCmdShow);
+
         // Subclassed window procedure handling hotkeys, alt-tab, and input routing.
         static LRESULT CALLBACK hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -113,6 +116,7 @@ class RenderHook {
         typedef HRESULT(__stdcall* t_ResizeBuffers)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
         typedef HRESULT(__stdcall* t_SetFullscreenState)(IDXGISwapChain*, BOOL, IDXGIOutput*);
         typedef BOOL(WINAPI* t_SetCursorPos)(int, int);
+        typedef BOOL(WINAPI* t_ShowWindow)(HWND, int);
 
         // Returns pointer to the original Present method.
         t_Present originalPresent() const;
@@ -126,10 +130,14 @@ class RenderHook {
         // Returns pointer to the original SetCursorPos function.
         t_SetCursorPos originalSetCursorPos() const;
 
+        // Returns pointer to the original ShowWindow function.
+        t_ShowWindow originalShowWindow() const;
+
         crabe::infrastructure::Hook _hookPresent;
         crabe::infrastructure::Hook _hookResizeBuffers;
         crabe::infrastructure::Hook _hookSetFullscreenState;
         crabe::infrastructure::Hook _hookSetCursorPos;
+        crabe::infrastructure::Hook _hookShowWindow;
 
         Overlay _overlay;
 
@@ -147,6 +155,7 @@ class RenderHook {
 
         std::atomic<bool> _windowModeDirty{false};
         std::atomic<WindowMode> _requestedWindowMode{WindowMode::BorderlessWindowed};
+        std::atomic<bool> _isFocused{true};
 };
 
 } // namespace crabe::presentation

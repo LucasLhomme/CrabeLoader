@@ -41,14 +41,26 @@ $modsDir = Join-Path $gameDir "mods"
 if (!(Test-Path $modsDir)) { New-Item -ItemType Directory -Force -Path $modsDir | Out-Null }
 if (Test-Path "mods") {
     Copy-Item -Path "mods\*.lua" -Destination $modsDir -Force -ErrorAction SilentlyContinue
+    # Mod folders, not just loose scripts: crabe_heroes ships characters/ and no
+    # Lua of its own, and the loader reads them from mods/<name>/characters/.
+    # Contents into an explicit destination, not the folder into $modsDir:
+    # Copy-Item -Recurse nests (mods/x/x) when the destination already exists.
+    Get-ChildItem -Path "mods" -Directory |
+        Where-Object { $_.Name -notmatch '^[._]' } |
+        ForEach-Object {
+            $modDest = Join-Path $modsDir $_.Name
+            if (!(Test-Path $modDest)) { New-Item -ItemType Directory -Force -Path $modDest | Out-Null }
+            Copy-Item -Path (Join-Path $_.FullName '*') -Destination $modDest -Recurse -Force
+        }
 }
 $menuMod = "..\CrabeMenu\mods\crabemenu.lua"
 if (Test-Path $menuMod) {
     Copy-Item -Path $menuMod -Destination (Join-Path $modsDir "crabemenu.lua") -Force
 }
 
-# Synchro characters & skilltrees si présents
-foreach ($folder in @("characters", "skilltrees")) {
+# Synchro skilltrees si présent. characters/ n'est plus déployé à la racine du
+# jeu : un personnage appartient au mod qui le fournit (mods/<nom>/characters/).
+foreach ($folder in @("skilltrees")) {
     if (Test-Path $folder) {
         $dest = Join-Path $gameDir $folder
         if (!(Test-Path $dest)) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
@@ -57,5 +69,9 @@ foreach ($folder in @("characters", "skilltrees")) {
 }
 
 Write-Host "=== 4. Lancement du jeu ===" -ForegroundColor Green
-Start-Process -FilePath $gameExe -WorkingDirectory $gameDir
+if (Get-Process -Name "steam" -ErrorAction SilentlyContinue) {
+    Start-Process "steam://rungameid/541670"
+} else {
+    Start-Process -FilePath $gameExe -WorkingDirectory $gameDir
+}
 Write-Host "Jeu lance avec succes !" -ForegroundColor Green

@@ -11,13 +11,28 @@
 #ifndef CRABELOADER_DOMAIN_MOD_ENTRY_HPP_
 #define CRABELOADER_DOMAIN_MOD_ENTRY_HPP_
 
+#include <array>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace crabe::domain {
 
     class ModManifest;
+
+    // Subdirectories of a mod folder the loader consumes outside Lua execution.
+    // Both are read at boot by src/application/loader_content.cpp, before any
+    // Lua state exists -- which is why a mod can carry one and no entry script
+    // and still be doing its job. The spelling variants are historical: both
+    // readers have always accepted them, so they are listed here rather than
+    // re-typed at each site.
+    inline constexpr std::array<std::string_view, 3> kCharacterDirectories = {
+        "characters", "Character", "character"
+    };
+    inline constexpr std::array<std::string_view, 3> kSkillTreeDirectories = {
+        "skilltrees", "Skillstree", "skilltree"
+    };
 
     // What a mod directory will run, and what was looked for to decide it.
     //
@@ -46,9 +61,25 @@ namespace crabe::domain {
         // that turns "nothing ran" into something actionable.
         std::vector<std::string> triedEntryNames;
 
+        // Content subdirectories found, named as they are on disk. A mod that
+        // ships only characters/ is the reference example of what this loader
+        // does -- mods/crabe_heroes exposes Mace Windu with no Lua of its own --
+        // so it must not be mistaken for a folder with nothing in it.
+        std::vector<std::string> contentDirectories;
+
         // No entry script on disk and no loose script either: the folder holds
-        // nothing this loader knows how to run.
+        // no Lua for the mod loader to run. On its own this is not a defect;
+        // ask isContentOnly() before calling it one.
         [[nodiscard]] bool runsNothing() const noexcept;
+
+        // Runs no Lua, but carries content the loader reads elsewhere.
+        [[nodiscard]] bool isContentOnly() const noexcept;
+
+        // Nothing to run and nothing to contribute: the folder is not a mod.
+        [[nodiscard]] bool isEmpty() const noexcept;
+
+        // contentDirectories as one quoted, comma-separated clause.
+        [[nodiscard]] std::string describeContentDirectories() const;
 
         // triedEntryNames as one quoted, comma-separated clause, for the line
         // the author reads.

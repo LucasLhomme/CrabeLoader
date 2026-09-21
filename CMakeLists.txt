@@ -58,6 +58,7 @@ set(CRABELOADER_CORE_SOURCES
     # Application Layer
     src/application/loader.cpp
     src/application/loader_content.cpp
+    src/application/gateway.cpp
     src/application/lua_runtime.cpp
     src/application/lua_natives.cpp
     src/application/multiplayer/multiplayer_manager.cpp
@@ -71,6 +72,7 @@ set(CRABELOADER_CORE_SOURCES
     src/domain/dependency_resolver.cpp
     src/domain/game_profile.cpp
     src/domain/mod_manager.cpp
+    src/domain/reload_generation.cpp
     src/domain/config.cpp
 
     # Infrastructure Layer
@@ -267,4 +269,5 @@ if(CRABELOADER_BUILD_CLI)
         target_compile_options(crabe-cli PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 endif()
+
 

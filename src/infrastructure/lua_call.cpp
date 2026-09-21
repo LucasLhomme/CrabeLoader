@@ -24,6 +24,13 @@ namespace {
 
 thread_local bool g_inLoaderTick = false;
 
+// How many of the game's lua_pcall calls this thread is inside. Chunks nest --
+// Presentation/SettingsVideo.lua loads Presentation/SettingsBase.lua while it
+// runs -- so a patch armed by one loadbuffer must be told apart from the calls
+// its own chunk makes. Thread-local because each Lua state runs on its own
+// thread and depths must not be shared between them.
+thread_local int g_pcallDepth = 0;
+
 class ScopedFlag final {
 public:
     explicit ScopedFlag(bool& flag) : _flag(flag) { _flag = true; }
@@ -138,8 +145,11 @@ int __cdecl LuaCall::hkLoadbuffer(void* L, const char* buff, size_t size, const 
         return LuaCall::get().originalLoadbuffer()(L, replacement->data(), replacement->size(), name);
     }
 
-    crabe::application::Loader::get().armPatchIfMatched(buff, size);
-    crabe::application::Loader::get().armPatchIfNameMatched(name);
+    // Armed at the depth this loadbuffer was reached from: the chunk it just
+    // compiled will run under a call one level deeper, and its patch is owed to
+    // the return that comes back to here.
+    crabe::application::Loader::get().armPatchIfMatched(buff, size, g_pcallDepth);
+    crabe::application::Loader::get().armPatchIfNameMatched(name, g_pcallDepth);
 
     return LuaCall::get().originalLoadbuffer()(L, buff, size, name);
 }
@@ -156,12 +166,12 @@ int __cdecl LuaCall::hkPcall(void* L, int nargs, int nresults, int errfunc)
         loader.runTicks(L);
     }
 
+    ++g_pcallDepth;
     int result = LuaCall::get().originalPcall()(L, nargs, nresults, errfunc);
+    --g_pcallDepth;
 
-    if (loader.hasArmedPatch()) {
-        crabe::application::Loader::ChunkRule armed = loader.takeArmedPatch();
-        LuaCall::get().runPatch(L, armed.source, armed.label);
-    }
+    if (auto armed = loader.takePatchForDepth(g_pcallDepth))
+        LuaCall::get().runPatch(L, armed->source, armed->label);
 
     return result;
 }

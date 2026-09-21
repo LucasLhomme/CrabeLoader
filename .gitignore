@@ -7,6 +7,9 @@ tools/*
 herald-report.txt
 mods/*
 !mods/_template/
+# The reference character mod ships with the loader: the worked example of
+# exposeCharacter, documented by its own README.
+!mods/crabe_heroes/
 __pycache__/
 backups/
 decypted/*

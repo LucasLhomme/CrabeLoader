@@ -99,8 +99,10 @@ namespace crabe::cli {
             const crabe::domain::ModEntryPlan plan =
                 crabe::domain::planModEntry(modDir, modName, manifest);
             report.entryScript = plan.entryScript;
-            report.entryScriptExists = !plan.runsNothing();
-            if (!report.entryScriptExists) {
+            report.entryScriptExists = !plan.isEmpty();
+            report.contentDirectories = plan.contentDirectories;
+            report.contentOnly = plan.isContentOnly();
+            if (plan.isEmpty()) {
                 report.findings.push_back(ValidateFinding{
                     Severity::Error,
                     std::format("entry script '{}' does not exist, and '{}' holds no .lua file "
@@ -131,6 +133,8 @@ namespace crabe::cli {
                 { "version", report.version },
                 { "entryScript", report.entryScript.generic_string() },
                 { "entryScriptExists", report.entryScriptExists },
+                { "contentDirectories", report.contentDirectories },
+                { "contentOnly", report.contentOnly },
                 { "exitCode", report.exitCode() },
                 { "ok", report.exitCode() == 0 },
                 { "findings", findings },
@@ -189,11 +193,14 @@ namespace crabe::cli {
             const crabe::domain::ModEntryPlan plan = crabe::domain::planModEntry(
                 path, path.filename().string(), crabe::domain::ModManifest{});
             report.entryScript = plan.entryScript;
-            report.entryScriptExists = !plan.runsNothing();
-            if (!report.entryScriptExists) {
+            report.entryScriptExists = !plan.isEmpty();
+            report.contentDirectories = plan.contentDirectories;
+            report.contentOnly = plan.isContentOnly();
+            if (plan.isEmpty()) {
                 report.findings.push_back(ValidateFinding{
                     Severity::Warning,
-                    "no mod.json and no .lua files directly inside this folder; nothing will load" });
+                    "no mod.json, no .lua file directly inside this folder, and no characters/ "
+                    "or skilltrees/ either; nothing will load" });
             }
             return report;
         }
@@ -228,8 +235,24 @@ namespace crabe::cli {
         } else {
             out << "  id:      " << report.id << " (no mod.json; the loader synthesises this)\n";
         }
-        out << "  entry:   " << report.entryScript.string() << (report.entryScriptExists ? "" : " (missing)")
-            << "\n";
+        if (!report.contentDirectories.empty()) {
+            std::string joined;
+            for (const std::string& dir : report.contentDirectories) {
+                if (!joined.empty())
+                    joined += ", ";
+                joined += dir;
+            }
+            out << "  content: " << joined << "/ (read by the loader at startup)\n";
+        }
+
+        // A content mod has no entry script, so reporting one as missing would
+        // read as a defect it does not have.
+        if (report.contentOnly) {
+            out << "  entry:   none -- this mod ships content, not Lua\n";
+        } else {
+            out << "  entry:   " << report.entryScript.string()
+                << (report.entryScriptExists ? "" : " (missing)") << "\n";
+        }
 
         if (report.findings.empty()) {
             out << "  OK\n";
