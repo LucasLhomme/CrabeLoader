@@ -14,6 +14,8 @@
 #include "imgui/imgui_impl_win32.h"
 #include "shared/logger.hpp"
 
+namespace crabe::presentation {
+
 class Overlay {
     public:
         Overlay();
@@ -27,7 +29,7 @@ class Overlay {
     private:
         void drawConsoleTab();
         void submitConsoleInput();
-        bool isLevelVisible(LogLevel level) const;
+        bool isLevelVisible(crabe::shared::LogLevel level) const;
 
         char _consoleInputBuffer[1024] = {};
 
@@ -38,5 +40,7 @@ class Overlay {
         bool _showWarning = true;
         bool _showError = true;
 };
+
+} // namespace crabe::presentation
 
 #endif /* !OVERLAY_HPP_ */

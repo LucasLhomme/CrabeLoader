@@ -38,6 +38,9 @@ cd CrabeLoader
 
 # Generate Visual Studio 2022 solution targeting Win32
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCRABELOADER_AS_SHARED=ON
+
+# Make `git blame` skip the repository-wide mechanical rewrites
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 ### Build

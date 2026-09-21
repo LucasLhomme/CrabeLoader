@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+namespace crabe::shared {
+
 enum class LogLevel {
     DEBUG,
     INFO,
@@ -88,5 +90,7 @@ private:
     mutable std::mutex m_mutex;
     std::deque<LogEntry> m_history;
 };
+
+} // namespace crabe::shared
 
 #endif // LOGGER_HPP

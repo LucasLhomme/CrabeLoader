@@ -11,7 +11,7 @@
 #include <cstring>
 #include <utility>
 
-namespace Crabe::Presentation {
+namespace crabe::presentation {
 
 namespace {
 
@@ -352,4 +352,4 @@ void DrawBuffer::replay()
     }
 }
 
-} // namespace Crabe::Presentation
+} // namespace crabe::presentation

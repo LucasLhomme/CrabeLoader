@@ -9,6 +9,8 @@
 #include "presentation/overlay.hpp"
 #include "infrastructure/hook.hpp"
 
+namespace crabe::presentation {
+
 enum class WindowMode {
     Windowed,
     BorderlessWindowed,
@@ -110,10 +112,10 @@ class RenderHook {
         // Returns pointer to the original SetCursorPos function.
         t_SetCursorPos originalSetCursorPos() const;
 
-        Hook _hookPresent;
-        Hook _hookResizeBuffers;
-        Hook _hookSetFullscreenState;
-        Hook _hookSetCursorPos;
+        crabe::infrastructure::Hook _hookPresent;
+        crabe::infrastructure::Hook _hookResizeBuffers;
+        crabe::infrastructure::Hook _hookSetFullscreenState;
+        crabe::infrastructure::Hook _hookSetCursorPos;
 
         Overlay _overlay;
 
@@ -132,5 +134,7 @@ class RenderHook {
         std::atomic<bool> _windowModeDirty{false};
         std::atomic<WindowMode> _requestedWindowMode{WindowMode::BorderlessWindowed};
 };
+
+} // namespace crabe::presentation
 
 #endif /* !RENDER_HOOK_HPP_ */

@@ -11,7 +11,7 @@
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 #include "application/loader.hpp"
-#include "application/multiplayer/MultiplayerManager.hpp"
+#include "application/multiplayer/multiplayer_manager.hpp"
 
 namespace {
     std::string moduleLogPath(HMODULE hModule) {
@@ -25,7 +25,7 @@ namespace {
         return dir + "loader.log";
     }
     long WINAPI crashFilter(EXCEPTION_POINTERS* info) {
-        Logger::getInstance().error(
+        crabe::shared::Logger::getInstance().error(
             "Unhandled exception 0x{:X} at address 0x{:X}",
             static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode),
             reinterpret_cast<uintptr_t>(info->ExceptionRecord->ExceptionAddress)
@@ -35,15 +35,15 @@ namespace {
 }
 
 void initLogger(HMODULE hModule) {
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     logger.setLogFile(moduleLogPath(hModule));
-    logger.setLogLevel(LogLevel::DEBUG);
+    logger.setLogLevel(crabe::shared::LogLevel::DEBUG);
     logger.info("CrabeLoader v{} initialized (built {} {}).",
-                Crabe::Version::String, Crabe::Version::BuildDate, Crabe::Version::BuildTime);
+                crabe::version::String, crabe::version::BuildDate, crabe::version::BuildTime);
 }
 
 void initMain() {
-    Loader::get().initialize();
+    crabe::application::Loader::get().initialize();
 }
 
 bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
@@ -53,12 +53,12 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         DisableThreadLibraryCalls(hModule);
         initLogger(hModule);
         SetUnhandledExceptionFilter(crashFilter);
-        Logger::getInstance().debug("CrabeLoader DLL loaded.");
-        Multiplayer::Application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
+        crabe::shared::Logger::getInstance().debug("CrabeLoader DLL loaded.");
+        crabe::multiplayer::application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
         std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
-        Logger::getInstance().debug("CrabeLoader DLL unloaded.");
+        crabe::shared::Logger::getInstance().debug("CrabeLoader DLL unloaded.");
     }
     return TRUE;
 }
@@ -66,7 +66,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 int main()
 {
     DllMain(GetModuleHandle(NULL), DLL_PROCESS_ATTACH, NULL);
-    Logger::getInstance().info("CrabeLoader started.");
+    crabe::shared::Logger::getInstance().info("CrabeLoader started.");
 
     return 0;
 }

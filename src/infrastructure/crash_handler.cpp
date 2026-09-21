@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+namespace crabe::infrastructure {
+
 namespace {
 
 struct ExceptionDetails {
@@ -11,7 +13,6 @@ struct ExceptionDetails {
 };
 
 /// Safely extracts exception code and instruction address from exception pointers.
-/// Safely extracts exception code and instruction address.
 int exceptionFilter(struct _EXCEPTION_POINTERS* ep, ExceptionDetails* details)
 {
     if (ep && ep->ExceptionRecord && details) {
@@ -22,7 +23,6 @@ int exceptionFilter(struct _EXCEPTION_POINTERS* ep, ExceptionDetails* details)
 }
 
 /// Invokes the callable inside an MSVC SEH block, trapping hardware exceptions.
-/// Invokes callable inside MSVC SEH block, trapping hardware faults.
 bool executeGuardedSeh(void (*callable)(void*), void* context, ExceptionDetails* details)
 {
     __try {
@@ -49,7 +49,7 @@ bool CrashHandler::runGuarded(const std::function<void()>& action, const char* c
     };
     if (!executeGuardedSeh(invoker, const_cast<void*>(static_cast<const void*>(&action)), &details)) {
         const char* label = contextLabel ? contextLabel : "Unknown";
-        Logger::getInstance().error(
+        crabe::shared::Logger::getInstance().error(
             "CrashHandler: [{}] Exception 0x{:08X} at address {}",
             label,
             details.code,
@@ -58,3 +58,6 @@ bool CrashHandler::runGuarded(const std::function<void()>& action, const char* c
     }
     return true;
 }
+
+} // namespace crabe::infrastructure
+

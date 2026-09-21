@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+namespace crabe::application {
+
 class Loader {
     public:
         static Loader& get();
@@ -98,8 +100,6 @@ class Loader {
         // before LuaCall installs the loadbuffer hook. See skilltrees/README.md.
         void loadOverridesFromDisk();
 
-        void loadModDirectory(const std::filesystem::path& modPath);
-
         struct Keybind {
             std::function<void()> onPress;
             bool wasDown = false;
@@ -137,5 +137,7 @@ class Loader {
         ChunkRule _armedPatch;
 };
 
+
+} // namespace crabe::application
 
 #endif /* !LOADER_HPP_ */

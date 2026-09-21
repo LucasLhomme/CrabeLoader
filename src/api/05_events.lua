@@ -21,6 +21,17 @@ function Crabe.Events.on(eventName, handler)
         Crabe.Events._listeners[eventName] = list
     end
     list[#list + 1] = handler
+    -- Owned by the calling mod and revoked on hot reload. Removal is by
+    -- identity: indices shift, and a `once` handler may already have removed
+    -- itself, in which case the search finds nothing and does nothing.
+    Crabe.Registry.track(function()
+        for i = #list, 1, -1 do
+            if list[i] == handler then
+                table.remove(list, i)
+                break
+            end
+        end
+    end)
     return handler
 end
 

@@ -10,6 +10,8 @@
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+namespace crabe::presentation {
+
 namespace {
     constexpr int kPresentVtableIndex = 8;
     constexpr int kSetFullscreenStateVtableIndex = 10;
@@ -68,7 +70,7 @@ bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
                                     0, 0, 100, 100, nullptr, nullptr, wc.hInstance, nullptr);
     if (!dummyHwnd) {
         UnregisterClassW(kDummyClassName, wc.hInstance);
-        Logger::getInstance().error("RenderHook: failed to create dummy window.");
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to create dummy window.");
         return false;
     }
 
@@ -100,7 +102,7 @@ bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
         outResizeBuffers = reinterpret_cast<uintptr_t>(vtable[kResizeBuffersVtableIndex]);
         ok = true;
     } else {
-        Logger::getInstance().error("RenderHook: D3D11CreateDeviceAndSwapChain failed (0x{:X}).",
+        crabe::shared::Logger::getInstance().error("RenderHook: D3D11CreateDeviceAndSwapChain failed (0x{:X}).",
                                     static_cast<uint32_t>(hr));
     }
 
@@ -121,7 +123,7 @@ bool RenderHook::initialize()
     uintptr_t setFullscreenStateAddr = 0;
 
     if (!resolveSwapChainFunctions(presentAddr, resizeBuffersAddr, setFullscreenStateAddr)) {
-        Logger::getInstance().error("RenderHook: failed to resolve swapchain vtable.");
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to resolve swapchain vtable.");
         return false;
     }
 
@@ -198,7 +200,7 @@ void RenderHook::toggleMenu()
 {
     _menuOpen = !_menuOpen;
     updateCursorVisibility();
-    Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
+    crabe::shared::Logger::getInstance().debug("RenderHook: overlay {}.", _menuOpen ? "opened" : "closed");
 }
 
 // Returns whether the debug console overlay is currently visible.
@@ -265,7 +267,7 @@ void RenderHook::applyPendingWindowMode([[maybe_unused]] IDXGISwapChain* swapCha
     SetForegroundWindow(_hwnd);
     saveWindowModeConfig(currentMode);
 
-    Logger::getInstance().info("RenderHook: window mode set to {}.",
+    crabe::shared::Logger::getInstance().info("RenderHook: window mode set to {}.",
                                currentMode == WindowMode::BorderlessWindowed ? "borderless" : "windowed");
 }
 
@@ -343,7 +345,7 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     createRenderTarget(swapChain);
 
     _backendInitialized = true;
-    Logger::getInstance().debug("RenderHook: ImGui DX11/Win32 initialized (hwnd 0x{:X}).",
+    crabe::shared::Logger::getInstance().debug("RenderHook: ImGui DX11/Win32 initialized (hwnd 0x{:X}).",
                                 reinterpret_cast<uintptr_t>(_hwnd));
 }
 
@@ -395,8 +397,8 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             if (self._menuOpen)
                 self._overlay.renderOverlay();
 
-            CrashHandler::runGuarded([]() {
-                Crabe::Presentation::DrawBuffer::get().replay();
+            crabe::infrastructure::CrashHandler::runGuarded([]() {
+                crabe::presentation::DrawBuffer::get().replay();
             }, "RenderHook::replayDrawBuffer");
 
             ImGui::Render();
@@ -432,7 +434,7 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
-        Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+        crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
     }
 
     if (msg == WM_ACTIVATE) {
@@ -502,9 +504,12 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     // Case 2: a mod asked for these keys, so the game must not also act on them.
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR) {
-        if (Loader::get().isKeyCaptured(static_cast<int>(wParam)))
+        if (crabe::application::Loader::get().isKeyCaptured(static_cast<int>(wParam)))
             return 0;
     }
 
     return CallWindowProcW(self._originalWndProc, hwnd, msg, wParam, lParam);
 }
+
+} // namespace crabe::presentation
+

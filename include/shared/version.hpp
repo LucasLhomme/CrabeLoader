@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace Crabe::Version {
+namespace crabe::version {
 
     constexpr uint32_t Major = 0;
     constexpr uint32_t Minor = 2;
@@ -22,6 +22,6 @@ namespace Crabe::Version {
 
     bool isCompatible(std::string_view requiredVersion);
 
-} // namespace Crabe::Version
+} // namespace crabe::version
 
 #endif /* !CRABELOADER_VERSION_HPP_ */

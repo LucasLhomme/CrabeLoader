@@ -11,6 +11,8 @@
 #include "minhook/MinHook.h"
 #include "shared/logger.hpp"
 
+namespace crabe::infrastructure {
+
 namespace {
     int g_refCount = 0;
     std::mutex g_refMutex;
@@ -23,7 +25,7 @@ namespace {
         if (g_refCount == 0) {
             MH_STATUS status = MH_Initialize();
             if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {
-                Logger::getInstance().error("Hook: MH_Initialize failed: {}", MH_StatusToString(status));
+                crabe::shared::Logger::getInstance().error("Hook: MH_Initialize failed: {}", MH_StatusToString(status));
                 return false;
             }
         }
@@ -52,7 +54,7 @@ bool Hook::install(void* src, void* dst)
     if (_installed || !src || !dst) return false;
     if (!acquireMinHook()) return false;
 
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
     void* original = nullptr;
     MH_STATUS status = MH_CreateHook(src, dst, &original);
@@ -93,7 +95,7 @@ void Hook::remove()
 
 bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const char* name)
 {
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
     if (addr == 0) {
         logger.warning("{}: {} skipped (address not resolved).", owner, name);
@@ -116,3 +118,6 @@ void* Hook::getOriginal() const
 {
     return _trampoline;
 }
+
+} // namespace crabe::infrastructure
+

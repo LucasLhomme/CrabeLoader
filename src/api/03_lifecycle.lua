@@ -101,9 +101,19 @@ end
 
 --- Registers a callback to be executed when mod reload is requested.
 --- Enables reload handlers to re-execute mod scripts from disk.
+--- The subscription is owned by the calling mod and revoked on hot reload.
 function Crabe.Mod.onReload(callback)
     if type(callback) == "function" then
-        table.insert(Crabe.Mod._reloadCallbacks, callback)
+        local callbacks = Crabe.Mod._reloadCallbacks
+        table.insert(callbacks, callback)
+        Crabe.Registry.track(function()
+            for i = #callbacks, 1, -1 do
+                if callbacks[i] == callback then
+                    table.remove(callbacks, i)
+                    break
+                end
+            end
+        end)
     end
 end
 
@@ -111,6 +121,12 @@ end
 --- Emits reload event, invokes reload callbacks, and dispatches init.
 function Crabe.Mod.reload()
     Crabe.Mod.dispatchShutdown()
+    -- Revocation is what makes reload idempotent: without it every reload
+    -- left the previous generation's onTick / onDeath / event listeners /
+    -- reload callbacks behind, so each one ran once more per frame than
+    -- before. Mods get their teardown notice from dispatchShutdown above;
+    -- by this point they own nothing. Core-owned subscriptions survive.
+    Crabe.Registry.revokeAllMods()
     Crabe.Mod._registered = {}
     if Crabe.Scheduler and Crabe.Scheduler.clear then
         Crabe.Scheduler.clear()

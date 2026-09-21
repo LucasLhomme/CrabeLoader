@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Crabe::Presentation {
+namespace crabe::presentation {
 
     enum class DrawOp : std::uint8_t {
         Begin,
@@ -117,6 +117,6 @@ namespace Crabe::Presentation {
         mutable std::mutex _resultsMutex;
     };
 
-} // namespace Crabe::Presentation
+} // namespace crabe::presentation
 
 #endif /* !DRAW_BUFFER_HPP_ */

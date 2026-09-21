@@ -9,14 +9,14 @@
 
 #include <cstdint>
 
-#include "infrastructure/luacall.hpp"
+#include "infrastructure/lua_call.hpp"
 
-namespace LuaSymbols {
+namespace crabe::lua_symbols {
 
 // Every Lua C API address the loader needs, resolved against the module base.
 // A field left at 0 did not resolve; LuaCall::initialize decides which of
 // those are fatal.
-LuaApiAddresses resolveAll(uintptr_t base);
+crabe::infrastructure::LuaApiAddresses resolveAll(uintptr_t base);
 
 }
 

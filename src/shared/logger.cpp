@@ -11,6 +11,8 @@
 #include <iomanip>
 #include <sstream>
 
+namespace crabe::shared {
+
 Logger& Logger::getInstance() {
     static Logger instance;
     return instance;
@@ -93,3 +95,5 @@ std::string Logger::getCurrentTime() const {
                             static_cast<int>(ms.count()));
     return std::string(buffer, len > 0 ? static_cast<size_t>(len) : 0);
 }
+
+} // namespace crabe::shared

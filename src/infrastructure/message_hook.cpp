@@ -12,6 +12,8 @@
 #include "infrastructure/message_hook.hpp"
 #include "shared/logger.hpp"
 
+namespace crabe::infrastructure {
+
 namespace {
     constexpr size_t kMaxRecorded = 200;
 }
@@ -26,8 +28,8 @@ MessageHook& MessageHook::get()
 // native's address sits 6 bytes before the push naming it.
 uintptr_t MessageHook::resolveDispatcher()
 {
-    for (uintptr_t nameAddr = Memory::findString("System_StartButtonPushed"); nameAddr;
-        nameAddr = Memory::findString("System_StartButtonPushed", nameAddr)) {
+    for (uintptr_t nameAddr = crabe::memory::findString("System_StartButtonPushed"); nameAddr;
+        nameAddr = crabe::memory::findString("System_StartButtonPushed", nameAddr)) {
 
         char pattern[32];
         std::snprintf(pattern, sizeof(pattern), "68 %02X %02X %02X %02X",
@@ -36,16 +38,16 @@ uintptr_t MessageHook::resolveDispatcher()
                     static_cast<unsigned>((nameAddr >> 16) & 0xFF),
                     static_cast<unsigned>((nameAddr >> 24) & 0xFF));
 
-        for (uintptr_t push = Memory::patternScan(pattern); push;
-            push = Memory::patternScan(pattern, nullptr, push)) {
+        for (uintptr_t push = crabe::memory::patternScan(pattern); push;
+            push = crabe::memory::patternScan(pattern, nullptr, push)) {
 
-            if (!Memory::isReadable(push - 7, 7)) continue;
+            if (!crabe::memory::isReadable(push - 7, 7)) continue;
             if (*reinterpret_cast<const uint8_t*>(push - 7) != 0xB8) continue;
 
             auto native = *reinterpret_cast<const uintptr_t*>(push - 6);
-            if (!Memory::isReadable(native, 64)) continue;
+            if (!crabe::memory::isReadable(native, 64)) continue;
 
-            std::vector<uintptr_t> calls = Memory::findCalls(native, 64);
+            std::vector<uintptr_t> calls = crabe::memory::findCalls(native, 64);
             if (calls.size() >= 4) return calls[3];
         }
     }
@@ -54,7 +56,7 @@ uintptr_t MessageHook::resolveDispatcher()
 
 bool MessageHook::initialize()
 {
-    Logger& logger = Logger::getInstance();
+    crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
     uintptr_t dispatcher = resolveDispatcher();
     if (!dispatcher) {
@@ -102,7 +104,7 @@ void __fastcall MessageHook::hkDispatch(void* self, void* edx, const char* name,
         return;
     }
 
-    if (name && Memory::isReadable(reinterpret_cast<uintptr_t>(name), 1)) {
+    if (name && crabe::memory::isReadable(reinterpret_cast<uintptr_t>(name), 1)) {
         std::lock_guard<std::mutex> lock(hook._mutex);
 
         for (const auto& needle : hook._watched) {
@@ -127,3 +129,6 @@ std::string MessageHook::report() const
     }
     return out;
 }
+
+} // namespace crabe::infrastructure
+

@@ -9,7 +9,7 @@
 
 #include "shared/version.hpp"
 
-namespace Crabe::Version {
+namespace crabe::version {
 
     namespace {
 
@@ -63,4 +63,4 @@ namespace Crabe::Version {
         return Patch >= req.patch;
     }
 
-} // namespace Crabe::Version
+} // namespace crabe::version

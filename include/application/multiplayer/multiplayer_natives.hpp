@@ -7,7 +7,7 @@
 #ifndef MULTIPLAYER_NATIVES_HPP_
 #define MULTIPLAYER_NATIVES_HPP_
 
-namespace Multiplayer::Natives {
+namespace crabe::multiplayer::natives {
 
     bool registerAll(void* L);
 
@@ -30,7 +30,7 @@ namespace Multiplayer::Natives {
     int __cdecl steamGetLobbyStatus(void* L);
     int __cdecl steamGetFriends(void* L);
 
-} // namespace Multiplayer::Natives
+} // namespace crabe::multiplayer::natives
 
 #endif /* !MULTIPLAYER_NATIVES_HPP_ */
 

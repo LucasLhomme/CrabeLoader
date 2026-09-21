@@ -9,6 +9,8 @@
 
 #include <windows.h>
 
+namespace crabe::infrastructure {
+
 // A single inline detour hook, backed by MinHook. install() redirects `src`
 // to `dst`; getOriginal() returns the trampoline for calling through to the
 // real function. MinHook itself is reference-counted process-wide.
@@ -41,5 +43,7 @@ class Hook {
         void* _trampoline = nullptr;
         bool _installed = false;
 };
+
+} // namespace crabe::infrastructure
 
 #endif /* !HOOK_HPP_ */

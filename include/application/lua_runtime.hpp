@@ -10,7 +10,7 @@
 #include <filesystem>
 
 // The modding API CrabeLoader exposes to mods: the `Crabe` namespace
-namespace LuaRuntime {
+namespace crabe::lua_runtime {
     // How usable a given lua_State is. The process runs more than one: the
     // first the loader sees belongs to the Slang shader compiler, and the
     // earliest states of any kind are seen before luaopen_base has filled _G.

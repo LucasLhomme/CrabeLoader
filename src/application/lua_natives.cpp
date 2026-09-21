@@ -18,9 +18,9 @@
 #include "presentation/input_hook.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
-#include "infrastructure/luacall.hpp"
+#include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
-#include "infrastructure/codecave.hpp"
+#include "infrastructure/code_cave.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/multiplayer_natives.hpp"
 #include "presentation/render_hook.hpp"
@@ -32,20 +32,20 @@ namespace {
     // happen on the render thread, not here, hence just posting a request.
     int __cdecl nativeSetWindowMode(void* L)
     {
-        const char* mode = LuaCall::get().argToString(L, 1);
+        const char* mode = crabe::infrastructure::LuaCall::get().argToString(L, 1);
         bool borderless = mode && std::strcmp(mode, "borderless") == 0;
 
-        RenderHook::get().requestWindowMode(borderless ? WindowMode::BorderlessWindowed : WindowMode::Windowed);
+        crabe::presentation::RenderHook::get().requestWindowMode(borderless ? crabe::presentation::WindowMode::BorderlessWindowed : crabe::presentation::WindowMode::Windowed);
         return 0;
     }
 
     // Returns the active window mode as a string: borderless or windowed.
     int __cdecl nativeGetWindowMode(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        bool borderless = (RenderHook::get().getCurrentWindowMode() == WindowMode::BorderlessWindowed);
+        bool borderless = (crabe::presentation::RenderHook::get().getCurrentWindowMode() == crabe::presentation::WindowMode::BorderlessWindowed);
         lua.pushString(L, borderless ? "borderless" : "windowed");
         return 1;
     }
@@ -54,7 +54,7 @@ namespace {
     // sees them. Called with no arguments, it releases every captured key.
     int __cdecl nativeSetCapturedKeys(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         std::vector<int> keys;
 
         int top = lua.getTop(L);
@@ -64,20 +64,20 @@ namespace {
                 keys.push_back(virtualKey);
         }
 
-        Loader::get().setCapturedKeys(std::move(keys));
+        crabe::application::Loader::get().setCapturedKeys(std::move(keys));
         return 0;
     }
 
     // Crabe._findGameNative(name) -> address, or nil.
     int __cdecl nativeFindGameNative(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
         const char* name = lua.argToString(L, 1);
         if (!name) return 0;
 
-        uintptr_t address = Memory::findRegisteredFunction(name);
+        uintptr_t address = crabe::memory::findRegisteredFunction(name);
         if (!address) return 0;
 
         lua.pushNumber(L, static_cast<double>(address));
@@ -87,7 +87,7 @@ namespace {
     // Crabe._moduleBase() -> base address of the game image
     int __cdecl nativeModuleBase(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
         lua.pushNumber(L, static_cast<double>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))));
@@ -97,35 +97,35 @@ namespace {
     // Crabe._inputReport() -> which XInput slots the game has polled so far.
     int __cdecl nativeInputReport(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        lua.pushString(L, InputHook::get().report());
+        lua.pushString(L, crabe::presentation::InputHook::get().report());
         return 1;
     }
 
     // Crabe._messageWatch(substring)
     int __cdecl nativeMessageWatch(void* L)
     {
-        const char* substring = LuaCall::get().argToString(L, 1);
-        if (substring) MessageHook::get().watch(substring);
+        const char* substring = crabe::infrastructure::LuaCall::get().argToString(L, 1);
+        if (substring) crabe::infrastructure::MessageHook::get().watch(substring);
         return 0;
     }
 
     // Crabe._messageReport() -> "name(a,b) | name(a,b) | ...", oldest first.
     int __cdecl nativeMessageReport(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        lua.pushString(L, MessageHook::get().report());
+        lua.pushString(L, crabe::infrastructure::MessageHook::get().report());
         return 1;
     }
 
     int __cdecl nativeMessageClear(void* L)
     {
         (void)L;
-        MessageHook::get().clear();
+        crabe::infrastructure::MessageHook::get().clear();
         return 0;
     }
 
@@ -134,13 +134,13 @@ namespace {
     // Crabe._patternScan("55 8B EC ...") -> address, or nil
     int __cdecl nativePatternScan(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
         const char* pattern = lua.argToString(L, 1);
         if (!pattern) return 0;
 
-        uintptr_t address = Memory::patternScan(pattern);
+        uintptr_t address = crabe::memory::patternScan(pattern);
         if (!address) return 0;
 
         lua.pushNumber(L, static_cast<double>(address));
@@ -150,7 +150,7 @@ namespace {
     // Crabe._patchBytes(addr, "90 90 ...") -> bool
     int __cdecl nativePatchBytes(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
         const char* hexStr = lua.argToString(L, 2);
         if (!addr || !hexStr) {
@@ -170,7 +170,7 @@ namespace {
             p = next;
         }
 
-        bool ok = !bytes.empty() && CodeCave::patchBytes(addr, bytes.data(), bytes.size());
+        bool ok = !bytes.empty() && crabe::infrastructure::CodeCave::patchBytes(addr, bytes.data(), bytes.size());
         if (lua.hasReturnSupport()) {
             lua.pushBoolean(L, ok);
             return 1;
@@ -181,11 +181,11 @@ namespace {
     // Crabe._readFloat(addr) -> number or nil
     int __cdecl nativeReadFloat(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
         auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
-        if (!addr || !Memory::isReadable(addr, sizeof(float))) return 0;
+        if (!addr || !crabe::memory::isReadable(addr, sizeof(float))) return 0;
 
         float val = *reinterpret_cast<const float*>(addr);
         lua.pushNumber(L, static_cast<double>(val));
@@ -195,7 +195,7 @@ namespace {
     // Crabe._writeFloat(addr, val) -> bool
     int __cdecl nativeWriteFloat(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
         auto val = static_cast<float>(lua.argToNumber(L, 2));
         if (!addr) {
@@ -203,7 +203,7 @@ namespace {
             return 1;
         }
 
-        bool ok = CodeCave::patchBytes(addr, &val, sizeof(float));
+        bool ok = crabe::infrastructure::CodeCave::patchBytes(addr, &val, sizeof(float));
         if (lua.hasReturnSupport()) {
             lua.pushBoolean(L, ok);
             return 1;
@@ -214,11 +214,11 @@ namespace {
     // Crabe._readU32(addr) -> number or nil
     int __cdecl nativeReadU32(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
         auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
-        if (!addr || !Memory::isReadable(addr, sizeof(uint32_t))) return 0;
+        if (!addr || !crabe::memory::isReadable(addr, sizeof(uint32_t))) return 0;
 
         uint32_t val = *reinterpret_cast<const uint32_t*>(addr);
         lua.pushNumber(L, static_cast<double>(val));
@@ -228,7 +228,7 @@ namespace {
     // Crabe._writeU32(addr, val) -> bool
     int __cdecl nativeWriteU32(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
         auto val = static_cast<uint32_t>(lua.argToNumber(L, 2));
         if (!addr) {
@@ -236,7 +236,7 @@ namespace {
             return 1;
         }
 
-        bool ok = CodeCave::patchBytes(addr, &val, sizeof(uint32_t));
+        bool ok = crabe::infrastructure::CodeCave::patchBytes(addr, &val, sizeof(uint32_t));
         if (lua.hasReturnSupport()) {
             lua.pushBoolean(L, ok);
             return 1;
@@ -247,7 +247,7 @@ namespace {
     // Crabe._installCodeCave(addr, "90 90 ...", [stolenLength = 0]) -> bool
     int __cdecl nativeInstallCodeCave(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         auto addr = static_cast<uintptr_t>(lua.argToNumber(L, 1));
         const char* hexBytes = lua.argToString(L, 2);
         auto stolenLength = static_cast<size_t>(lua.argToNumber(L, 3));
@@ -273,7 +273,7 @@ namespace {
             return 1;
         }
 
-        auto cave = std::make_unique<CodeCave>();
+        auto cave = std::make_unique<crabe::infrastructure::CodeCave>();
         bool ok = cave->install(addr, body, stolenLength);
         if (ok) {
             cave.release();
@@ -288,12 +288,12 @@ namespace {
     // Crabe._registerLoadOverride(matchSubstring, luaSource)
     int __cdecl nativeRegisterLoadOverride(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* matchSubstring = lua.argToString(L, 1);
         const char* luaSource = lua.argToString(L, 2);
         if (!matchSubstring || !luaSource) return 0;
 
-        Loader::get().registerLoadOverride(matchSubstring, luaSource);
+        crabe::application::Loader::get().registerLoadOverride(matchSubstring, luaSource);
         return 0;
     }
 
@@ -301,18 +301,18 @@ namespace {
     int __cdecl nativeClearLoadOverrides(void* L)
     {
         (void)L;
-        Loader::get().clearLoadOverrides();
+        crabe::application::Loader::get().clearLoadOverrides();
         return 0;
     }
 
     // Crabe._registerChunkPatch(matchSubstring, luaSource)
     int __cdecl nativeRegisterChunkPatch(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* match = lua.argToString(L, 1);
         const char* source = lua.argToString(L, 2);
         if (match && source) {
-            Loader::get().registerChunkPatch(match, source);
+            crabe::application::Loader::get().registerChunkPatch(match, source);
         }
         return 0;
     }
@@ -320,11 +320,11 @@ namespace {
     // Crabe._registerNamedPatch(exactChunkName, luaSource)
     int __cdecl nativeRegisterNamedPatch(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* name = lua.argToString(L, 1);
         const char* source = lua.argToString(L, 2);
         if (name && source) {
-            Loader::get().registerNamedPatch(name, source);
+            crabe::application::Loader::get().registerNamedPatch(name, source);
         }
         return 0;
     }
@@ -332,7 +332,7 @@ namespace {
     // Saves string content to <GameRoot>/storage/<relPath>.
     int __cdecl nativeStorageSave(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* relPath = lua.argToString(L, 1);
         const char* content = lua.argToString(L, 2);
         if (!relPath) {
@@ -360,7 +360,7 @@ namespace {
     // Reads string content from <GameRoot>/storage/<relPath>.
     int __cdecl nativeStorageLoad(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* relPath = lua.argToString(L, 1);
         if (!relPath) {
             lua.pushNil(L);
@@ -388,7 +388,7 @@ namespace {
     // Appends a log entry to <GameRoot>/logs/mods/<modName>.log.
     int __cdecl nativeFileLog(void* L)
     {
-        LuaCall& lua = LuaCall::get();
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         const char* modName = lua.argToString(L, 1);
         const char* level = lua.argToString(L, 2);
         const char* message = lua.argToString(L, 3);
@@ -402,7 +402,7 @@ namespace {
         std::ofstream stream(logFile, std::ios::app);
         if (stream.is_open()) {
             stream << std::format("[{}] [{}] {}\n",
-                                  Logger::getInstance().getCurrentTime(),
+                                  crabe::shared::Logger::getInstance().getCurrentTime(),
                                   level ? level : "INFO",
                                   message);
         }
@@ -411,11 +411,11 @@ namespace {
 
 } // namespace
 
-bool LuaRuntime::registerNatives(void* L)
+bool crabe::lua_runtime::registerNatives(void* L)
 {
     struct Entry {
         const char* name;
-        LuaCall::t_lua_cfunction fn;
+        crabe::infrastructure::LuaCall::t_lua_cfunction fn;
     };
 
     static constexpr Entry kNatives[] = {
@@ -424,7 +424,7 @@ bool LuaRuntime::registerNatives(void* L)
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_inputReport",           &nativeInputReport },
-        { "_keyDown",               &InputNatives::keyDown },
+        { "_keyDown",               &crabe::input_natives::keyDown },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },
         { "_messageWatch",          &nativeMessageWatch },
         { "_messageReport",         &nativeMessageReport },
@@ -445,18 +445,18 @@ bool LuaRuntime::registerNatives(void* L)
         { "_fileLog",               &nativeFileLog },
     };
 
-    bool allOk = Multiplayer::Natives::registerAll(L);
-    ImGuiBindings::registerBindings(L);
+    bool allOk = crabe::multiplayer::natives::registerAll(L);
+    crabe::presentation::ImGuiBindings::registerBindings(L);
 
-    LuaCall::get().runSnippet(L, std::format(
+    crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
         "Crabe = Crabe or {{}}; Crabe.version = '{}'; Crabe.versionMajor = {}; "
         "Crabe.versionMinor = {}; Crabe.versionPatch = {};",
-        Crabe::Version::String, Crabe::Version::Major, Crabe::Version::Minor, Crabe::Version::Patch));
+        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch));
 
     for (const auto& entry : kNatives) {
-        if (LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
+        if (crabe::infrastructure::LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
 
-        Logger::getInstance().error("LuaRuntime: failed to register Crabe.{}.", entry.name);
+        crabe::shared::Logger::getInstance().error("LuaRuntime: failed to register Crabe.{}.", entry.name);
         allOk = false;
     }
 

@@ -13,6 +13,8 @@
 
 #include "infrastructure/hook.hpp"
 
+namespace crabe::presentation {
+
 // Counts which XInput slots the game polls, and which answer "connected".
 // Observer only: always forwards to the real function, never fakes a result.
 class InputHook {
@@ -35,7 +37,7 @@ class InputHook {
         typedef uint32_t(__stdcall* t_XInputGetState)(uint32_t userIndex, void* state);
         static uint32_t __stdcall hkXInputGetState(uint32_t userIndex, void* state);
 
-        Hook _hookGetState;
+        crabe::infrastructure::Hook _hookGetState;
 
         // Relaxed: written from whichever thread polls input, read from the
         // Lua thread. Only the counts matter, never their ordering.
@@ -44,13 +46,15 @@ class InputHook {
         std::atomic<uint32_t> _connected[kMaxSlots] = {};
 };
 
+} // namespace crabe::presentation
+
 // Lua C function for reading live key state. It lives here rather than in
 // lua_natives.cpp only because that file is at the line cap.
 //
 // This reads the keyboard directly instead of going through the game's input
 // path. A mod that has to steer something every frame -- a free camera -- needs
 // key state at tick time, and the engine never hands that to Lua.
-namespace InputNatives {
+namespace crabe::input_natives {
     int __cdecl keyDown(void* L);
 }
 

@@ -1,6 +1,6 @@
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/draw_buffer.hpp"
-#include "infrastructure/luacall.hpp"
+#include "infrastructure/lua_call.hpp"
 #include "shared/logger.hpp"
 #include "imgui/imgui.h"
 
@@ -8,12 +8,14 @@
 #include <cstring>
 #include <string>
 
+namespace crabe::presentation {
+
 namespace {
 
-using Crabe::Presentation::DrawBuffer;
-using Crabe::Presentation::DrawCommand;
-using Crabe::Presentation::DrawOp;
-using Crabe::Presentation::WidgetResult;
+using crabe::presentation::DrawBuffer;
+using crabe::presentation::DrawCommand;
+using crabe::presentation::DrawOp;
+using crabe::presentation::WidgetResult;
 
 /// Records `command` and reports what the render thread measured for it on the
 /// previous frame, leaving `out` untouched when the widget is new.
@@ -32,14 +34,14 @@ void recordOnly(DrawCommand command)
 /// Reads argument `idx` as a string, or an empty string when absent.
 std::string argText(void* L, int idx)
 {
-    const char* value = LuaCall::get().argToString(L, idx);
+    const char* value = crabe::infrastructure::LuaCall::get().argToString(L, idx);
     return value ? std::string(value) : std::string();
 }
 
 /// Queues an ImGui window and pushes its visibility and close-button state.
 int __cdecl luaBegin(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::Begin;
     command.label = argText(L, 1);
@@ -87,7 +89,7 @@ int __cdecl luaText(void* L)
 /// Queues colored text using RGBA float components.
 int __cdecl luaTextColored(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::TextColored;
     command.f0 = static_cast<float>(lua.argToNumber(L, 1, 1.0));
@@ -112,7 +114,7 @@ int __cdecl luaTextDisabled(void* L)
 /// Queues a selectable row and pushes whether it was clicked.
 int __cdecl luaSelectable(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::Selectable;
     command.label = argText(L, 1);
@@ -128,7 +130,7 @@ int __cdecl luaSelectable(void* L)
 /// Queues a scroll so that the previous row is brought into view.
 int __cdecl luaSetScrollHereY(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::SetScrollHereY;
     command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.5));
@@ -139,7 +141,7 @@ int __cdecl luaSetScrollHereY(void* L)
 /// Queues a button and pushes whether it was clicked on the previous frame.
 int __cdecl luaButton(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::Button;
     command.label = argText(L, 1);
@@ -155,7 +157,7 @@ int __cdecl luaButton(void* L)
 /// Queues a checkbox and pushes its state, defaulting to the supplied value.
 int __cdecl luaCheckbox(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     bool value = lua.argToBoolean(L, 2, false);
 
     DrawCommand command;
@@ -173,7 +175,7 @@ int __cdecl luaCheckbox(void* L)
 /// Queues a float slider and pushes its value, defaulting to the supplied one.
 int __cdecl luaSliderFloat(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     double value = lua.argToNumber(L, 2, 0.0);
 
     DrawCommand command;
@@ -193,7 +195,7 @@ int __cdecl luaSliderFloat(void* L)
 /// Queues an integer slider and pushes its value, defaulting to the supplied one.
 int __cdecl luaSliderInt(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     double value = lua.argToNumber(L, 2, 0.0);
 
     DrawCommand command;
@@ -213,7 +215,7 @@ int __cdecl luaSliderInt(void* L)
 /// Queues a text input and pushes its buffer plus a changed flag.
 int __cdecl luaInputText(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     std::string value = argText(L, 2);
 
     auto maxLen = static_cast<std::size_t>(lua.argToNumber(L, 3, 256.0));
@@ -239,7 +241,7 @@ int __cdecl luaInputText(void* L)
 /// Queues placement of the next widget on the current line.
 int __cdecl luaSameLine(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::SameLine;
     command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.0));
@@ -271,7 +273,7 @@ int __cdecl luaSpacing(void* L)
 /// Queues a scrolling child region and pushes its visibility.
 int __cdecl luaBeginChild(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::BeginChild;
     command.label = argText(L, 1);
@@ -300,7 +302,7 @@ int __cdecl luaEndChild(void* L)
 /// Queues a tab bar and pushes whether it was opened.
 int __cdecl luaBeginTabBar(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::BeginTabBar;
     command.label = argText(L, 1);
@@ -325,7 +327,7 @@ int __cdecl luaEndTabBar(void* L)
 /// before reports unselected, so its body starts being recorded one frame later.
 int __cdecl luaBeginTabItem(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::BeginTabItem;
     command.label = argText(L, 1);
@@ -349,7 +351,7 @@ int __cdecl luaEndTabItem(void* L)
 /// Queues the position of the next created window.
 int __cdecl luaSetNextWindowPos(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::SetNextWindowPos;
     command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.0));
@@ -362,7 +364,7 @@ int __cdecl luaSetNextWindowPos(void* L)
 /// Queues the size of the next created window.
 int __cdecl luaSetNextWindowSize(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::SetNextWindowSize;
     command.f0 = static_cast<float>(lua.argToNumber(L, 1, 0.0));
@@ -375,7 +377,7 @@ int __cdecl luaSetNextWindowSize(void* L)
 /// Queues a click test against the previously queued widget.
 int __cdecl luaIsItemClicked(void* L)
 {
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     DrawCommand command;
     command.op = DrawOp::IsItemClicked;
     command.i0 = static_cast<int>(lua.argToNumber(L, 1, 0.0));
@@ -394,12 +396,12 @@ void ImGuiBindings::registerBindings(void* L)
     if (!L) {
         return;
     }
-    LuaCall& lua = LuaCall::get();
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
     lua.runSnippet(L, "ImGui = ImGui or {}; Crabe = Crabe or {}; Crabe.ImGui = ImGui;");
 
     struct Entry {
         const char* name;
-        LuaCall::t_lua_cfunction fn;
+        crabe::infrastructure::LuaCall::t_lua_cfunction fn;
     };
 
     static constexpr Entry kEntries[] = {
@@ -431,8 +433,11 @@ void ImGuiBindings::registerBindings(void* L)
 
     for (const auto& entry : kEntries) {
         if (!lua.registerNativeFunction(L, "ImGui", entry.name, entry.fn)) {
-            Logger::getInstance().error("ImGuiBindings: failed to register ImGui.{}", entry.name);
+            crabe::shared::Logger::getInstance().error("ImGuiBindings: failed to register ImGui.{}", entry.name);
         }
     }
     lua.runSnippet(L, "Crabe.ImGui = ImGui;");
 }
+
+} // namespace crabe::presentation
+

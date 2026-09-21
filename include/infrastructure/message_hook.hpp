@@ -15,6 +15,8 @@
 
 #include "infrastructure/hook.hpp"
 
+namespace crabe::infrastructure {
+
 // Traces the engine's named-message dispatcher (the bus System_StartButtonPushed
 // posts to, alongside "DropInBlocked"). Observer only: nothing is recorded
 // unless it matches a watch prefix.
@@ -57,5 +59,7 @@ class MessageHook {
         std::atomic<size_t> _watchCount{0};
         std::vector<std::string> _recorded;
 };
+
+} // namespace crabe::infrastructure
 
 #endif /* !MESSAGE_HOOK_HPP_ */

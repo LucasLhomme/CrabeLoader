@@ -14,7 +14,7 @@
 
 // Read-only introspection of the host process' main module. The game ships
 // no debug info, so every address is resolved at runtime instead.
-namespace Memory {
+namespace crabe::memory {
     // IDA-style byte pattern scan (e.g. "55 8B EC ?? 8B 45 10"). `after`
     // walks past a previous match to find the next one.
     uintptr_t patternScan(const char* pattern, HMODULE module = nullptr, uintptr_t after = 0);

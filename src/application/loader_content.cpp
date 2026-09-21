@@ -13,6 +13,8 @@
 #include "application/loader.hpp"
 #include "shared/logger.hpp"
 
+namespace crabe::application {
+
 // Two ways to change a chunk the game is about to compile, both keyed on
 // something recognisable in the chunk itself:
 //
@@ -65,7 +67,7 @@ namespace {
     // cannot be opened or is empty -- both mean "skip this one, keep going".
     bool readTextFile(const std::filesystem::path& path, const char* folder, std::string& out)
     {
-        Logger& logger = Logger::getInstance();
+        crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
         std::string name = path.filename().string();
 
         std::ifstream file(path, std::ios::binary);
@@ -146,7 +148,7 @@ void Loader::armPatchIfNameMatched(const char* name)
 
     void loadOverridesFromDirectory(Loader& loader, const std::filesystem::path& folder, const std::string& labelPrefix)
     {
-        Logger& logger = Logger::getInstance();
+        crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
         size_t loadedOverrides = 0;
         size_t loadedPatches = 0;
 
@@ -207,3 +209,6 @@ void Loader::loadOverridesFromDisk()
         }
     }
 }
+
+} // namespace crabe::application
+
