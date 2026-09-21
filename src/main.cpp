@@ -76,6 +76,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     (void)lpReserved;
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
+        DisableProcessWindowsGhosting();
         initLogger(hModule);
 
         // Installed before anything else runs, and before the game gets a

@@ -397,6 +397,11 @@ RenderHook::t_ShowWindow RenderHook::originalShowWindow() const
 // Releases the active backbuffer render target view.
 void RenderHook::releaseRenderTarget()
 {
+    if (_context) {
+        ID3D11RenderTargetView* nullViews[1] = { nullptr };
+        _context->OMSetRenderTargets(1, nullViews, nullptr);
+        _context->Flush();
+    }
     if (_renderTargetView) {
         _renderTargetView->Release();
         _renderTargetView = nullptr;
@@ -523,19 +528,6 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
 
-    // Limit to 30 FPS when the game is in the background (lost focus) to preserve user performance
-    if (!self._isFocused.load() && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
-        using namespace std::chrono;
-        static auto lastBackgroundFrame = steady_clock::now();
-        auto now = steady_clock::now();
-        auto elapsed = duration_cast<milliseconds>(now - lastBackgroundFrame);
-        constexpr milliseconds kTargetFrameTime(33); // ~30 FPS
-        if (elapsed < kTargetFrameTime) {
-            std::this_thread::sleep_for(kTargetFrameTime - elapsed);
-        }
-        lastBackgroundFrame = steady_clock::now();
-    }
-
     if (self._backendInitialized && self._device && self._context) {
         if (!self._renderTargetView) {
             self.createRenderTarget(swapChain);
@@ -558,10 +550,23 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
             ImGui::Render();
             self._context->OMSetRenderTargets(1, &self._renderTargetView, nullptr);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+            ID3D11RenderTargetView* nullViews[1] = { nullptr };
+            self._context->OMSetRenderTargets(1, nullViews, nullptr);
         }
     }
 
-    return self.originalPresent()(swapChain, syncInterval, flags);
+    HRESULT hr = self.originalPresent()(swapChain, syncInterval, flags);
+    if (hr == DXGI_STATUS_OCCLUDED) {
+        return S_OK;
+    }
+    if (FAILED(hr)) {
+        crabe::shared::Logger::getInstance().error("RenderHook: Present returned 0x{:X}.", static_cast<uint32_t>(hr));
+        if (hr == DXGI_ERROR_DEVICE_RESET || hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_INVALID_CALL) {
+            return S_OK;
+        }
+    }
+    return hr;
 }
 
 // Releases and recreates render target view across swapchain resizing.
@@ -571,9 +576,16 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
 {
     RenderHook& self = RenderHook::get();
 
+    crabe::shared::Logger::getInstance().info("RenderHook: ResizeBuffers requested ({}x{}, format {}).",
+                                              width, height, static_cast<uint32_t>(newFormat));
+
     self.releaseRenderTarget();
 
     HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);
+    if (FAILED(hr)) {
+        crabe::shared::Logger::getInstance().error("RenderHook: ResizeBuffers failed (0x{:X}).", static_cast<uint32_t>(hr));
+    }
+
     if (SUCCEEDED(hr) && self._backendInitialized && self._device) {
         self.createRenderTarget(swapChain);
     }
@@ -612,32 +624,57 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     }
 
     if (msg == WM_ACTIVATE) {
-        bool active = (LOWORD(wParam) != WA_INACTIVE);
+        const bool active = (LOWORD(wParam) != WA_INACTIVE);
         self._isFocused.store(active);
         if (!active) {
             ClipCursor(nullptr);
             if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
                 SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                return 0; // Prevent game's internal focus-loss routine from minimizing
             }
         } else {
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                BringWindowToTop(hwnd);
+            }
             self.updateCursorVisibility();
         }
+        // Spoof to the game: always pretend active
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            wParam = MAKEWPARAM(WA_ACTIVE, HIWORD(wParam));
+        }
     } else if (msg == WM_ACTIVATEAPP) {
-        bool active = (wParam != FALSE);
+        const bool active = (wParam != FALSE);
         self._isFocused.store(active);
-        if (!active && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
-            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (!active) {
+            ClipCursor(nullptr);
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        } else {
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                BringWindowToTop(hwnd);
+            }
+        }
+        // Spoof to the game: pretend app is always active
+        wParam = TRUE;
+    } else if (msg == WM_NCACTIVATE) {
+        // Keep active title bar look and avoid game reacting to inactive border
+        return CallWindowProcW(self._originalWndProc, hwnd, msg, TRUE, lParam);
+    } else if (msg == WM_SIZE) {
+        if (wParam == SIZE_MINIMIZED) {
+            // Block internal minimization logic
             return 0;
         }
     } else if (msg == WM_KILLFOCUS) {
         self._isFocused.store(false);
         ClipCursor(nullptr);
-        if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
-            return 0; // Prevent focus loss from interrupting rendering
-        }
     } else if (msg == WM_SETFOCUS) {
         self._isFocused.store(true);
+        if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            BringWindowToTop(hwnd);
+        }
         self.updateCursorVisibility();
     }
 
@@ -658,11 +695,6 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             self.requestWindowMode(next);
             return 0;
         }
-        if (wParam == VK_TAB && (lParam & (1 << 29))) {
-            ClipCursor(nullptr);
-            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        }
         if (wParam == VK_F4 && (lParam & (1 << 29))) {
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
@@ -673,6 +705,10 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         if (cmd == SC_MINIMIZE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
             ClipCursor(nullptr);
             return 0; // Prevent window minimization on focus loss in borderless mode
+        }
+        if (cmd == SC_RESTORE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            BringWindowToTop(hwnd);
         }
         if (cmd == SC_KEYMENU && lParam != VK_SPACE) {
             return 0;

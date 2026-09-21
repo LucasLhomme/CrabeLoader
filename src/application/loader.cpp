@@ -396,6 +396,13 @@ void Loader::ensureRuntimeReady(void* L)
 
     crabe::lua_runtime::injectAll(L);
     crabe::lua_runtime::registerNatives(L);
+
+    if (!_characterInjectionScript.empty()) {
+        crabe::shared::Logger::getInstance().info("Loader: injecting character definitions into Lua state ({} bytes).",
+                                                  _characterInjectionScript.size());
+        crabe::infrastructure::LuaCall::get().runSnippet(L, _characterInjectionScript);
+    }
+
     onLoadmods();
     _runtimeReady = true;
 }

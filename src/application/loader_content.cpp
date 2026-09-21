@@ -149,11 +149,24 @@ void Loader::armPatchIfNameMatched(const char* name, int depth)
     if (!name || _namedPatches.empty())
         return;
 
+    std::string cleanName = name;
+    if (!cleanName.empty() && cleanName[0] == '@')
+        cleanName.erase(0, 1);
+    for (char& c : cleanName) {
+        if (c == '\\') c = '/';
+    }
+
     for (const ChunkRule& rule : _namedPatches) {
-        if (rule.key == name) {
-            // A name match is more specific than a content match, so it
-            // replaces one armed for the same chunk rather than queuing behind
-            // it -- both were armed by the same loadbuffer.
+        std::string cleanRuleKey = rule.key;
+        if (!cleanRuleKey.empty() && cleanRuleKey[0] == '@')
+            cleanRuleKey.erase(0, 1);
+        for (char& c : cleanRuleKey) {
+            if (c == '\\') c = '/';
+        }
+
+        if (cleanRuleKey == cleanName) {
+            crabe::shared::Logger::getInstance().debug(
+                "Loader: armed named patch '{}' for '{}' at depth {}.", rule.label, cleanName, depth);
             if (!_armedPatches.empty() && _armedPatches.back().depth == depth)
                 _armedPatches.back().rule = rule;
             else
@@ -264,7 +277,8 @@ void Loader::loadCharactersFromDisk()
         return;
     }
 
-    registerNamedPatch(kTargetName, gateway::buildSkuTableLua(exposed) + combined, "characters/");
+    _characterInjectionScript = gateway::buildSkuTableLua(exposed) + combined;
+    registerNamedPatch(kTargetName, _characterInjectionScript, "characters/");
     registerChunkPatch(gateway::containerKey(), gateway::buildInjectionLua(exposed),
                        "figure registry");
     logger.info("Loader: {} total character definition(s) registered.", exposed.size());

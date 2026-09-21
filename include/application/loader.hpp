@@ -168,6 +168,7 @@ class Loader {
         std::vector<ChunkRule> _loadOverrides;
         std::vector<ChunkRule> _chunkPatches;
         std::vector<ChunkRule> _namedPatches;
+        std::string _characterInjectionScript;
 
         // Armed patches that have not fired yet, innermost last. Bounded by
         // the nesting depth of the game's own chunk loading, which is two.

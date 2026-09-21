@@ -163,9 +163,9 @@ namespace {
             //                    kUnmeasured to skip the check)
             // Any PE viewer reports all three: `dumpbin /headers
             // DisneyInfinity3.exe`, CFF Explorer, or PE-bear.
-            .timeDateStamp = crabe::domain::kUnmeasured,
-            .sizeOfImage = crabe::domain::kUnmeasured,
-            .checkSum = crabe::domain::kUnmeasured,
+            .timeDateStamp = 0x5851C5D1,
+            .sizeOfImage   = 0x0209B000,
+            .checkSum      = 0x00000000,
 
             .luaSymbols = kDi3GoldLuaSymbols,
             .patchSites = kDi3GoldPatchSites,

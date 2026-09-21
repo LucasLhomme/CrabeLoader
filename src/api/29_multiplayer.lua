@@ -80,6 +80,15 @@ _G.UGC_IsLegalContentRequest = function(playerNum)
     return 1, ""
 end
 
+-- Disable onboard tutorial popups and gates (e.g. Collection / VirtualReader welcome callout)
+_G.UI_IsOnboardTutorialActive = function()
+    return false
+end
+
+_G.UI_GetOnboardTutorialStateString = function()
+    return ""
+end
+
 -- Track whether an active networked session is currently hosted
 _G._mpHostingActive = false
 local nativeHosting = _G.UI_HostingNetworkedGame
