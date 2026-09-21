@@ -9,12 +9,37 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 #include <windows.h>
 
 // Read-only introspection of the host process' main module. The game ships
 // no debug info, so every address is resolved at runtime instead.
 namespace crabe::memory {
+    // One token of a parsed IDA-style pattern. `??` (or a bare `?`) is a
+    // wildcard and matches any byte.
+    struct PatternByte {
+        uint8_t value = 0;
+        bool wildcard = false;
+    };
+
+    // Splits "55 8B EC ?? 8B 45 10" into one PatternByte per token.
+    // Deliberately forgiving: a token strtoul cannot read yields 0, which is
+    // what the scan has always done -- a malformed pattern silently matches
+    // zero bytes rather than being rejected.
+    std::vector<PatternByte> parsePattern(const char* pattern);
+
+    // Returned by findPattern when the needle does not occur.
+    inline constexpr size_t kNoMatch = static_cast<size_t>(-1);
+
+    // Offset of the first occurrence of `needle` in `haystack`, or kNoMatch.
+    // The pure core of patternScan: no process, no module, no page walk, so
+    // it can be exercised against a synthetic buffer.
+    size_t findPattern(std::span<const uint8_t> haystack, std::span<const PatternByte> needle);
+
+    // Same, parsing `pattern` first. kNoMatch for an empty pattern.
+    size_t findPattern(std::span<const uint8_t> haystack, const char* pattern);
+
     // IDA-style byte pattern scan (e.g. "55 8B EC ?? 8B 45 10"). `after`
     // walks past a previous match to find the next one.
     uintptr_t patternScan(const char* pattern, HMODULE module = nullptr, uintptr_t after = 0);

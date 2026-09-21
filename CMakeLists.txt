@@ -20,6 +20,7 @@ configure_file(
 
 option(CRABELOADER_AS_SHARED "Build CrabeLoader as a shared library (DLL)." OFF)
 option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
+option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -53,12 +54,16 @@ set(CRABELOADER_CORE_SOURCES
     src/application/multiplayer/multiplayer_natives.cpp
 
     # Domain Layer
+    src/domain/semver.cpp
     src/domain/mod_manifest.cpp
+    src/domain/dependency_resolver.cpp
+    src/domain/game_profile.cpp
     src/domain/mod_manager.cpp
 
     # Infrastructure Layer
     src/infrastructure/crash_handler.cpp
     src/infrastructure/memory.cpp
+    src/infrastructure/game_profile_detect.cpp
     src/infrastructure/hook.cpp
     src/infrastructure/code_cave.cpp
     src/infrastructure/message_hook.cpp
@@ -173,3 +178,4 @@ if(CRABELOADER_BUILD_IMGUI)
             iphlpapi
     )
 endif()
+

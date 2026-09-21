@@ -9,8 +9,18 @@
 
 namespace crabe::domain {
 
+    class ModManifest;
+
     struct Mod {
+        // The name the dependency resolver knows this mod by: what its mod.json
+        // declares, or the "local.<folder>" id ModManager synthesised for a
+        // manifest that declares none. Unique across a single discovery pass.
+        std::string id;
+
+        // The folder or script name as it appears on disk, which is what the
+        // Lua sandbox is keyed on and what the reader has to go and look at.
         std::string name;
+
         std::filesystem::path rootPath;
         bool isLoaded = false;
     };
@@ -37,11 +47,22 @@ namespace crabe::domain {
         ModManager(const ModManager&) = delete;
         ModManager& operator=(const ModManager&) = delete;
 
-        void loadModDirectory(void* L, const std::filesystem::path& modPath);
-        void loadStandaloneScript(void* L, const std::filesystem::path& scriptPath);
+        // Both run one mod and return whether it ran. Neither records anything
+        // in _mods and neither decides whether the mod should run at all: by
+        // the time either is called the dependency resolver has already said
+        // so, and discoverAndLoadMods owns the load report.
+        bool loadModDirectory(void* L, const std::filesystem::path& modPath,
+                              const std::string& modName, const ModManifest& manifest);
+        bool loadStandaloneScript(void* L, const std::filesystem::path& scriptPath,
+                                  const std::string& modName);
+
+        // Takes the manifest the caller already parsed rather than reading
+        // mod.json a second time: parsing it twice would also report any
+        // defect in it twice.
         std::filesystem::path resolveEntryScript(
             const std::filesystem::path& modPath,
-            const std::string& modName) const;
+            const std::string& modName,
+            const ModManifest& manifest) const;
 
         std::vector<Mod> _mods;
         std::filesystem::path _modsFolder;

@@ -17,12 +17,8 @@ namespace crabe::infrastructure {
 
 namespace {
 
-    // A relative jmp is 5 bytes, so a site has to give up at least that much.
-    constexpr size_t kJmpLength = 5;
-
-    // Nothing here needs a big cave; refuse anything that looks like a mistake
-    // rather than allocating it.
-    constexpr size_t kMaxStolen = 32;
+    // kJmpLength and kMaxStolen live in the header: the measurement they
+    // constrain is a free function now, and the tests assert against them.
     constexpr size_t kMaxBody = 256;
 
     // Writes `E9 rel32` at `at`, jumping to `target`. rel32 is measured from
@@ -36,6 +32,26 @@ namespace {
     }
 
 } // namespace
+
+size_t measureStolenLength(const uint8_t* code, size_t* failedAtOffset)
+{
+    if (failedAtOffset) *failedAtOffset = 0;
+    if (!code) return 0;
+
+    size_t accumulated = 0;
+
+    while (accumulated < kJmpLength) {
+        hde32s hs{};
+        unsigned int len = hde32_disasm(code + accumulated, &hs);
+
+        if (len == 0 || (hs.flags & F_ERROR)) {
+            if (failedAtOffset) *failedAtOffset = accumulated;
+            return 0;
+        }
+        accumulated += len;
+    }
+    return accumulated;
+}
 
 CodeCave::~CodeCave()
 {
@@ -67,22 +83,18 @@ bool CodeCave::install(uintptr_t site, const std::vector<uint8_t>& body, size_t 
 
     if (stolenLength == 0) {
         if (!crabe::memory::isReadable(site, kJmpLength)) return false;
-        size_t accumulated = 0;
-        const auto* p = reinterpret_cast<const uint8_t*>(site);
-        while (accumulated < kJmpLength) {
-            hde32s hs{};
-            unsigned int len = hde32_disasm(p + accumulated, &hs);
-            if (len == 0 || (hs.flags & F_ERROR)) {
-                crabe::shared::Logger::getInstance().error("CodeCave: instruction disassembly failed at site 0x{:X} (offset +{}).",
-                                            site, accumulated);
-                return false;
-            }
-            accumulated += len;
+
+        size_t failedAt = 0;
+        stolenLength = measureStolenLength(reinterpret_cast<const uint8_t*>(site), &failedAt);
+
+        if (stolenLength == 0) {
+            crabe::shared::Logger::getInstance().error("CodeCave: instruction disassembly failed at site 0x{:X} (offset +{}).",
+                                        site, failedAt);
+            return false;
         }
-        stolenLength = accumulated;
     }
 
-    if (stolenLength < kJmpLength || stolenLength > kMaxStolen) return false;
+    if (!isStolenLengthAcceptable(stolenLength)) return false;
     if (!crabe::memory::isReadable(site, stolenLength)) return false;
 
     size_t caveSize = body.size() + stolenLength + kJmpLength;
