@@ -16,7 +16,7 @@
 #    pragma GCC diagnostic ignored "-Wextra"
 #endif
 
-#include "third_party/tomlplusplus/toml.hpp"
+#include <toml++/toml.hpp>
 
 #if defined(_MSC_VER)
 #    pragma warning(pop)

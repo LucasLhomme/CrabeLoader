@@ -15,7 +15,7 @@
 #    pragma GCC diagnostic ignored "-Wextra"
 #endif
 
-#include "third_party/nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 
 #if defined(_MSC_VER)
 #    pragma warning(pop)

@@ -44,6 +44,30 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # depend on a VC++ redistributable (debug or release) being installed there.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+include(FetchContent)
+
+# Third-party dependencies
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+FetchContent_Declare(
+    nlohmann_json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+set(BUILD_TESTING OFF CACHE INTERNAL "")
+set(TOML_ENABLE_TESTS OFF CACHE INTERNAL "")
+set(TOML_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+FetchContent_Declare(
+    tomlplusplus
+    URL https://github.com/marzer/tomlplusplus/archive/refs/tags/v3.4.0.tar.gz
+    URL_HASH SHA256=8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_MakeAvailable(nlohmann_json tomlplusplus)
+
+
 set(CRABELOADER_CORE_SOURCES
     src/main.cpp
     src/version.rc
@@ -187,7 +211,12 @@ endif()
 # src/infrastructure/crash_reporter.cpp also carries a #pragma comment(lib) for
 # it, so that the test suite and the crash probe -- which compile that
 # translation unit without going through this target -- link it too.
-target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp)
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        dbghelp
+        nlohmann_json::nlohmann_json
+        tomlplusplus::tomlplusplus
+)
 
 if(CRABELOADER_BUILD_IMGUI)
     target_link_libraries(${PROJECT_NAME}
@@ -256,6 +285,7 @@ if(CRABELOADER_BUILD_CLI)
     # include/ alone: no src/, no imgui, no minhook, no Lua. Mirrors
     # crabe_resolver_pure's own include directories in tests/CMakeLists.txt.
     target_include_directories(crabe-cli PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(crabe-cli PRIVATE nlohmann_json::nlohmann_json)
 
     target_compile_definitions(crabe-cli
         PRIVATE
