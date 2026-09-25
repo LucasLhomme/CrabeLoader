@@ -27,6 +27,7 @@
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/message_hook.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
 #include "application/multiplayer/multiplayer_natives.hpp"
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
@@ -111,6 +112,54 @@ namespace {
         if (!lua.hasReturnSupport() || !active) return 0;
 
         lua.pushBoolean(L, *active);
+        return 1;
+    }
+
+    // Crabe._vfsGetOverrideCount() -> number of registered file overrides.
+    int __cdecl nativeVfsGetOverrideCount(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushNumber(L, static_cast<double>(crabe::infrastructure::VfsOverrideManager::get().getOverrideCount()));
+        return 1;
+    }
+
+    // Crabe._vfsResolve(virtualPath) -> resolved physical path or nil.
+    int __cdecl nativeVfsResolve(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* path = lua.argToString(L, 1);
+        if (!path || !lua.hasReturnSupport()) return 0;
+
+        std::filesystem::path resolved;
+        if (crabe::infrastructure::VfsOverrideManager::get().resolve(path, resolved)) {
+            lua.pushString(L, resolved.string());
+            return 1;
+        }
+        return 0;
+    }
+
+    // Crabe._vfsGetStats() -> totalOverrides, totalResolutions, totalHits.
+    int __cdecl nativeVfsGetStats(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        auto stats = crabe::infrastructure::VfsOverrideManager::get().getStats();
+        lua.pushNumber(L, static_cast<double>(stats.totalOverrides));
+        lua.pushNumber(L, static_cast<double>(stats.totalResolutions));
+        lua.pushNumber(L, static_cast<double>(stats.totalHits));
+        return 3;
+    }
+
+    // Crabe._vfsLastRedirected() -> path of most recently redirected asset.
+    int __cdecl nativeVfsLastRedirected(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushString(L, crabe::infrastructure::VfsOverrideManager::get().getLastRedirectedFile());
         return 1;
     }
 
@@ -464,6 +513,10 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_storageSave",           &nativeStorageSave },
         { "_storageLoad",           &nativeStorageLoad },
         { "_fileLog",               &nativeFileLog },
+        { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
+        { "_vfsResolve",            &nativeVfsResolve },
+        { "_vfsGetStats",           &nativeVfsGetStats },
+        { "_vfsLastRedirected",     &nativeVfsLastRedirected },
     };
 
     bool allOk = crabe::multiplayer::natives::registerAll(L);

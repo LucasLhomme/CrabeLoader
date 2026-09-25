@@ -201,7 +201,34 @@ function Crabe.Hooks.overrideChunk(matchPattern, luaCode) end
 ---@param shellcodeBytes number[] Assembly payload bytes.
 ---@param stolenLen? number Optional manual stolen byte count override.
 ---@return number trampolineAddress Address of allocated trampoline, or 0 on failure.
-function Crabe.Hooks.installCodeCave(address, shellcodeBytes, stolenLen) end
+--------------------------------------------------------------------------------
+-- Crabe.Vfs: Virtual File System & Zero-Touch Modding
+--------------------------------------------------------------------------------
+
+---@class CrabeVfsStats
+---@field totalOverrides number
+---@field totalResolutions number
+---@field totalHits number
+
+---@class CrabeVfs
+Crabe.Vfs = {}
+
+--- Returns the total number of active virtual file overrides.
+---@return number count
+function Crabe.Vfs.count() end
+
+--- Resolves a virtual asset path to its loose file location on disk.
+---@param path string Virtual path (e.g. "characters/sora.p3d").
+---@return string? resolved Physical file path or nil if not overridden.
+function Crabe.Vfs.resolve(path) end
+
+--- Returns operational lookup and hit statistics for the VFS.
+---@return CrabeVfsStats stats
+function Crabe.Vfs.stats() end
+
+--- Returns the virtual path of the most recently redirected file.
+---@return string lastPath
+function Crabe.Vfs.lastRedirected() end
 
 --------------------------------------------------------------------------------
 -- Crabe.Input: Keybinding Management

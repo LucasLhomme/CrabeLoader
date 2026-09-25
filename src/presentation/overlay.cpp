@@ -15,6 +15,8 @@
 #include "presentation/overlay.hpp"
 #include "application/loader.hpp"
 #include "domain/config.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
+#include "infrastructure/vfs_hook.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 
@@ -92,6 +94,45 @@ void Overlay::submitConsoleInput()
     crabe::application::Loader::get().queueConsoleSnippet(_consoleInputBuffer);
 }
 
+void Overlay::drawVfsTab()
+{
+    using crabe::infrastructure::VfsOverrideManager;
+    using crabe::infrastructure::VfsHook;
+
+    const bool isHooked = VfsHook::get().isHooked();
+    if (isHooked)
+        ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "VFS Status: Active (Win32 Detours Installed)");
+    else
+        ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.2f, 1.0f), "VFS Status: Inactive");
+
+    const auto stats = VfsOverrideManager::get().getStats();
+    ImGui::Text("Overrides: %zu | Resolutions: %zu | Hits: %zu",
+                stats.totalOverrides, stats.totalResolutions, stats.totalHits);
+
+    const std::string last = VfsOverrideManager::get().getLastRedirectedFile();
+    ImGui::Text("Last Redirected: %s", last.empty() ? "(none)" : last.c_str());
+
+    ImGui::Separator();
+    ImGui::InputText("Filter", _vfsFilterBuffer, sizeof(_vfsFilterBuffer));
+
+    std::string filter = _vfsFilterBuffer;
+    for (char& c : filter)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    ImGui::BeginChild("VfsList", ImVec2(0.0f, 0.0f), true);
+    for (const auto& [virtualPath, entry] : VfsOverrideManager::get().getActiveOverrides()) {
+        if (!filter.empty() && virtualPath.find(filter) == std::string::npos &&
+            entry.originMod.find(filter) == std::string::npos)
+            continue;
+
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[%s]", entry.originMod.c_str());
+        ImGui::SameLine();
+        ImGui::Text("%s", virtualPath.c_str());
+        ImGui::TextDisabled("  -> %s (hits: %zu)", entry.physicalPath.string().c_str(), entry.hitCount);
+    }
+    ImGui::EndChild();
+}
+
 void Overlay::renderOverlay()
 {
     Overlay::defaultSettings();
@@ -108,6 +149,10 @@ void Overlay::renderOverlay()
         }
         if (ImGui::BeginTabItem("Console")) {
             drawConsoleTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("VFS")) {
+            drawVfsTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

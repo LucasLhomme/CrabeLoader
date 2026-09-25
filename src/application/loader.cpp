@@ -30,6 +30,8 @@
 #include "infrastructure/memory.hpp"
 #include "presentation/input_hook.hpp"
 #include "infrastructure/message_hook.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
+#include "infrastructure/vfs_hook.hpp"
 #include "application/multiplayer/multiplayer_manager.hpp"
 #include "presentation/render_hook.hpp"
 #include "domain/config.hpp"
@@ -283,6 +285,7 @@ void Loader::runTicks(void* L)
     // asks the same question on its own thread. See domain/reload_generation.hpp.
     if (crabe::domain::ModManager::get().needsReload(L)) {
         crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
+        crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(std::filesystem::current_path() / "mods");
         crabe::domain::ModManager::get().reloadAllMods(L);
     }
 
@@ -598,6 +601,8 @@ bool Loader::initialize()
 
     crabe::presentation::InputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
+    crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
+    crabe::infrastructure::VfsHook::get().initialize();
 
     // Two independent gates, and both must open. The config gate is the
     // player's stated preference; the profile gate is a safety property --
@@ -620,6 +625,8 @@ bool Loader::initialize()
 void Loader::uninitialize()
 {
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
+    crabe::infrastructure::VfsHook::get().uninitialize();
+    crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
     crabe::infrastructure::MessageHook::get().uninitialize();
     crabe::presentation::RenderHook::get().uninitialize();

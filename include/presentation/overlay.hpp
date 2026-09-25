@@ -32,10 +32,12 @@ class Overlay {
     protected:
     private:
         void drawConsoleTab();
+        void drawVfsTab();
         void submitConsoleInput();
         bool isLevelVisible(crabe::shared::LogLevel level) const;
 
         char _consoleInputBuffer[1024] = {};
+        char _vfsFilterBuffer[256] = {};
 
         // Debug is opt-in: it is the noisy per-keypress/per-hook-install level,
         // the other three are what you want on by default.

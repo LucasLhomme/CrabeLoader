@@ -112,6 +112,8 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/message_hook.cpp
     src/infrastructure/lua_call.cpp
     src/infrastructure/lua_symbols.cpp
+    src/infrastructure/vfs_override_manager.cpp
+    src/infrastructure/vfs_hook.cpp
     src/infrastructure/multiplayer/memory_patcher.cpp
     src/infrastructure/multiplayer/winhttp_redirector.cpp
     src/infrastructure/multiplayer/fallback_response_provider.cpp
@@ -299,6 +301,29 @@ if(CRABELOADER_BUILD_CLI)
     else()
         target_compile_options(crabe-cli PRIVATE -Wall -Wextra -Wpedantic)
     endif()
+endif()
+
+add_executable(test_vfs_override
+    tests/cpp/test_vfs_override.cpp
+    src/infrastructure/vfs_override_manager.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+target_include_directories(test_vfs_override PRIVATE
+    include
+    include/infrastructure
+    include/shared
+    src
+)
+target_compile_definitions(test_vfs_override PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+if(MSVC)
+    target_compile_options(test_vfs_override PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_vfs_override PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 
