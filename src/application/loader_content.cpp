@@ -212,9 +212,27 @@ void Loader::armPatchIfNameMatched(const char* name, int depth)
         }
     }
 
-    // Every characters/*.lua in one folder: its exposeCharacter declarations are
-    // collected for the registry, and its source appended to `combined` wrapped
-    // in do...end so two files cannot collide on a local.
+    // One characters/*.lua, isolated: its own function scope and its own pcall, so
+    // an error in it no longer aborts the files after it. The error is collected
+    // under the file's name; the origin sits in a long bracket no name can close.
+    std::string guardedCharacterSource(const std::string& origin, const std::string& content)
+    {
+        return "do local ok, err = pcall(function()\n" + content +
+               "\nend) if not ok then _crabeCharErrors = _crabeCharErrors .. "
+               "\"\\n  [[\" .. [==[" + origin + "]==] .. \"]] \" .. tostring(err) end end\n";
+    }
+
+    // Runs the guarded files in one chunk, then raises every collected error at
+    // once, so the patch still fails loudly in loader.log, naming each file.
+    std::string characterScript(const std::string& skuTable, const std::string& guardedFiles)
+    {
+        return skuTable + "local _crabeCharErrors = \"\"\n" + guardedFiles +
+               "if _crabeCharErrors ~= \"\" then error(\"characters/*.lua failed:\" .. "
+               "_crabeCharErrors, 0) end\n";
+    }
+
+    // Every characters/*.lua in one folder: exposeCharacter declarations go to
+    // `exposed` for the registry, guarded sources are appended to `combined`.
     void loadCharactersFromDirectory(const std::filesystem::path& folder,
                                      const std::string& labelPrefix,
                                      std::vector<gateway::Entry>& exposed,
@@ -228,10 +246,13 @@ void Loader::armPatchIfNameMatched(const char* name, int depth)
             if (!readTextFile(entry.path(), labelPrefix.c_str(), content))
                 continue;
 
-            for (auto& exposedEntry : gateway::parseExposedCharacters(content))
+            const std::string origin = labelPrefix + "/" + entry.path().filename().string();
+            for (auto& exposedEntry : gateway::parseExposedCharacters(content)) {
+                exposedEntry.origin = origin;
                 exposed.push_back(std::move(exposedEntry));
+            }
 
-            combined += "do\n" + content + "\nend\n";
+            combined += guardedCharacterSource(origin, content);
         }
     }
 
@@ -277,7 +298,10 @@ void Loader::loadCharactersFromDisk()
         return;
     }
 
-    _characterInjectionScript = gateway::buildSkuTableLua(exposed) + combined;
+    for (const std::string& issue : gateway::resolveSkus(exposed))
+        logger.error("Loader: characters: {}", issue);
+
+    _characterInjectionScript = characterScript(gateway::buildSkuTableLua(exposed), combined);
     registerNamedPatch(kTargetName, _characterInjectionScript, "characters/");
     registerChunkPatch(gateway::containerKey(), gateway::buildInjectionLua(exposed),
                        "figure registry");

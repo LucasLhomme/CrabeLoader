@@ -129,8 +129,17 @@ function Game.LoadLevel(levelName, force)
     return levelName
 end
 
+-- Adds the main menu screens to the front end. Only meaningful once the front
+-- end is up: from inside a world it changes nothing. To leave a world, use
+-- Game.QuitToMainMenu.
 function Game.LoadMainMenu()
     Crabe.native("UI_LaunchMainMenu", "Game.LoadMainMenu")()
+end
+
+-- The pause menu's Quit without its popup (pausemenu.lua PauseExit): the game
+-- autosaves, then returns to the main menu by itself.
+function Game.QuitToMainMenu()
+    Crabe.native("Pause_ExitGame", "Game.QuitToMainMenu")()
 end
 
 function Game.LoadDefaultLevel()
@@ -141,8 +150,9 @@ end
 -- Returning and resetting
 -- ---------------------------------------------------------------------------
 
-function Game.ReturnToHub()
-    Crabe.native("UI_ReturnToHub", "Game.ReturnToHub")()
+-- UI_ReturnToHub takes the player number, as pausemenu.lua passes it.
+function Game.ReturnToHub(playerId)
+    Crabe.native("UI_ReturnToHub", "Game.ReturnToHub")(Crabe.hostPlayer(playerId))
 end
 
 -- Destructive. Kept separate from ReturnToHub so no menu can wire them to

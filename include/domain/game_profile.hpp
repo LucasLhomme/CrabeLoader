@@ -101,6 +101,10 @@ namespace crabe::domain {
         // src/infrastructure/multiplayer/memory_patcher.cpp gives them.
         std::span<const PatchSite> patchSites{};
 
+        // Engine entry points the Lua API calls into, keyed on the name
+        // src/infrastructure/engine_free_camera.cpp resolves.
+        std::span<const SymbolRva> engineSymbols{};
+
         // False when the profile carries no field that could identify a build,
         // which is what an unfilled table looks like. Such a profile is skipped
         // by matchProfile() rather than matching everything.
@@ -113,6 +117,10 @@ namespace crabe::domain {
 
         // nullptr when this profile does not carry `name`.
         [[nodiscard]] const PatchSite* patchSite(std::string_view name) const noexcept;
+
+        // kUnmeasured when this profile does not carry `name`, which under a
+        // matched profile is a refusal, exactly as for luaSymbolRva().
+        [[nodiscard]] std::uint32_t engineSymbolRva(std::string_view name) const noexcept;
     };
 
     // The three ways a launch can go once detection has had its say.

@@ -10,11 +10,15 @@
 
 #include "application/gateway.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <regex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -253,6 +257,90 @@ std::string allocateSku(const std::string& name)
     return std::to_string(sku);
 }
 
+namespace {
+
+// Name as the ActorList and the catalog compare it: case-insensitively.
+std::string lowered(std::string s)
+{
+    std::ranges::transform(s, s.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+// First declaration of each Name, in order; a later one is reported and dropped.
+std::vector<Entry> firstDeclarations(std::vector<Entry> entries, std::vector<std::string>& issues)
+{
+    std::vector<Entry> unique;
+    std::set<std::string> names;
+    for (Entry& entry : entries) {
+        if (names.insert(lowered(entry.name)).second) {
+            unique.push_back(std::move(entry));
+        } else {
+            issues.push_back("'" + entry.name + "' declared again in " + entry.origin +
+                             " -- the first declaration is kept, this one is ignored");
+        }
+    }
+    return unique;
+}
+
+// The modder's own sku_id, unless another mod character already holds it.
+std::optional<std::string> claimExplicit(const Entry& entry, std::set<std::string>& taken,
+                                         std::vector<std::string>& issues)
+{
+    if (taken.insert(entry.sku).second)
+        return entry.sku;
+    issues.push_back("sku_id " + entry.sku + " of '" + entry.name + "' (" + entry.origin +
+                     ") is already used by another mod character -- no registry slot "
+                     "written; remove sku_id to get a free one");
+    return std::nullopt;
+}
+
+// The id derived from Name, moved up by one inside the mod range until free.
+std::optional<std::string> claimDerived(const Entry& entry, std::set<std::string>& taken,
+                                        std::vector<std::string>& issues)
+{
+    const uint32_t start = static_cast<uint32_t>(std::stoul(allocateSku(entry.name)));
+    uint32_t sku = start;
+    for (uint32_t step = 0; step < kSkuSpan && taken.contains(std::to_string(sku)); ++step)
+        sku = kSkuBase + (sku - kSkuBase + 1) % kSkuSpan;
+
+    if (!taken.insert(std::to_string(sku)).second) {
+        issues.push_back("no free sku_id left in the mod range for '" + entry.name + "' (" +
+                         entry.origin + ")");
+        return std::nullopt;
+    }
+    if (sku != start) {
+        issues.push_back("derived sku_id " + std::to_string(start) + " of '" + entry.name +
+                         "' was taken, moved to " + std::to_string(sku));
+    }
+    return std::to_string(sku);
+}
+
+} // namespace
+
+std::vector<std::string> resolveSkus(std::vector<Entry>& entries)
+{
+    std::vector<std::string> issues;
+    std::vector<Entry> unique = firstDeclarations(std::move(entries), issues);
+
+    auto derived = std::ranges::stable_partition(unique, [](const Entry& e) { return !e.sku.empty(); });
+    std::ranges::sort(derived, {}, &Entry::name);
+
+    std::set<std::string> taken;
+    std::vector<Entry> resolved;
+    for (Entry& entry : unique) {
+        std::optional<std::string> sku = entry.sku.empty() ? claimDerived(entry, taken, issues)
+                                                           : claimExplicit(entry, taken, issues);
+        if (!sku)
+            continue;
+        entry.sku = std::move(*sku);
+        resolved.push_back(std::move(entry));
+    }
+
+    entries = std::move(resolved);
+    return issues;
+}
+
 const std::string& containerKey()
 {
     static const std::string key(reinterpret_cast<const char*>(kContainerKey.data()),
@@ -313,12 +401,14 @@ std::string buildSkuTableLua(const std::vector<Entry>& entries)
     return lua;
 }
 
+// Every field but `name` is constant across the shipped avatar slots. The slot
+// key is the entry's sku_id, and an existing slot -- a shipped figure's -- is
+// never overwritten.
 std::string buildInjectionLua(const std::vector<Entry>& entries)
 {
     if (entries.empty())
         return {};
 
-    // Constant across every avatar slot in the shipped data.
     static const struct {
         const char* key;
         bool isNumber;
@@ -340,7 +430,7 @@ std::string buildInjectionLua(const std::vector<Entry>& entries)
     lua += "-- No standard library is available in this Lua state.\n";
     lua += "local c = _G[";
     lua += luaLiteral(containerKey());
-    lua += "]\nif c then\nlocal t\n";
+    lua += "]\nif c then\nlocal t, k\n";
 
     for (const Entry& entry : entries) {
         lua += "t = {}\n";
@@ -360,12 +450,10 @@ std::string buildInjectionLua(const std::vector<Entry>& entries)
             lua += "\n";
         }
 
-        // An explicit sku_id in the .lua wins: the row will select with that id,
-        // so the slot has to carry it too.
-        lua += "c[";
+        lua += "k = ";
         lua += luaLiteral(encryptString(entry.sku.empty() ? allocateSku(entry.name)
                                                           : entry.sku));
-        lua += "] = t\n";
+        lua += "\nif c[k] == nil then c[k] = t end\n";
     }
 
     lua += "end\n";

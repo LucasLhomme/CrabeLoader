@@ -25,6 +25,7 @@
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
+#include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "application/multiplayer/multiplayer_natives.hpp"
 #include "presentation/render_hook.hpp"
@@ -95,6 +96,21 @@ namespace {
         if (!lua.hasReturnSupport()) return 0;
 
         lua.pushNumber(L, static_cast<double>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))));
+        return 1;
+    }
+
+    // Crabe._engineFreeCamera(playerId, skipNoControl) -> true/false (now on/off),
+    // or nil when this build does not carry the engine free camera.
+    int __cdecl nativeEngineFreeCamera(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const int playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+        const bool skipNoControl = lua.argToBoolean(L, 2);
+
+        const std::optional<bool> active = crabe::infrastructure::EngineFreeCamera::get().toggle(playerId, skipNoControl);
+        if (!lua.hasReturnSupport() || !active) return 0;
+
+        lua.pushBoolean(L, *active);
         return 1;
     }
 
@@ -427,6 +443,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_getWindowModeNative",   &nativeGetWindowMode },
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
+        { "_engineFreeCamera",      &nativeEngineFreeCamera },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },

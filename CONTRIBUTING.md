@@ -1,6 +1,6 @@
 # Contributing to CrabeLoader
 
-Thank you for your interest in contributing to **CrabeLoader**! 
+Thank you for your interest in contributing to **CrabeLoader**!
 
 CrabeLoader is an open-source, high-performance mod loader and runtime platform for *Disney Infinity 3.0: Gold Edition (PC)*. We welcome contributions from developers, reverse engineers, and modders of all experience levels.
 
@@ -10,7 +10,7 @@ CrabeLoader is an open-source, high-performance mod loader and runtime platform 
 
 Before writing any code, it is vital to understand our core architectural rule:
 
-> **The C++ Loader is strictly an infrastructure platform.**  
+> **The C++ Loader is strictly an infrastructure platform.**
 > It must contain **zero gameplay logic, zero cheats, and zero hardcoded menus**.
 
 * **What belongs in C++ (`CrabeLoader`):** Direct3D 11 hooks, Win32 window procedures, Lua VM interception, memory scanning / patching primitives, dynamic instruction disassembly (HDE32), hardware SEH crash guards, and the multi-buffer UI pipeline (`DrawBuffer`).
@@ -23,6 +23,7 @@ For full architectural details, consult the **[Architecture Blueprint](docs/ARCH
 ## 🛠️ Development Setup
 
 ### Prerequisites
+
 * **Operating System:** Windows 10 or 11 (64-bit host)
 * **Target Architecture:** **Win32 (x86, 32-bit)** (Disney Infinity 3.0 is a 32-bit binary)
 * **Compiler:** Visual Studio 2022 (MSVC v143) with **C++23** support
@@ -50,6 +51,7 @@ cmake --build build --config Release
 ```
 
 The compiled proxy DLL will be located at:
+
 ```text
 build/Release/bink2w32.dll
 ```
@@ -65,6 +67,7 @@ We follow a structured GitFlow-inspired model:
 * **`feature/<name>`** or **`fix/<name>`**: Individual feature or bugfix branches created off `dev`.
 
 ### Step-by-Step:
+
 1. **Fork** the repository on GitHub.
 2. **Branch** off `dev`:
    ```bash
@@ -168,6 +171,7 @@ Do not put comments inside a function body.
   ```powershell
   python tools/embed_api.py
   ```
+
   *(This automatically generates `include/application/embedded_api.hpp`).*
 
 ---
@@ -198,5 +202,6 @@ Before submitting your PR, ensure:
 ## 💬 Community & Questions
 
 Need help or want to discuss reverse engineering ideas?
+
 * Open an **[Issue](https://github.com/LucasLhomme/CrabeLoader/issues)** or a Discussion thread.
 * Check existing reverse-engineering references and documentation in [`docs/`](docs/).
