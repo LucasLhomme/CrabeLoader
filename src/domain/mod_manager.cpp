@@ -18,6 +18,7 @@
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/hook_registry.hpp"
 #include "infrastructure/lua_call.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
 #include "presentation/draw_buffer.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
@@ -117,6 +118,12 @@ bool ModManager::needsReload(void* L) const
 void ModManager::requestHotReload()
 {
     _reloads.requestReload();
+    crabe::shared::Logger::getInstance().info(
+        "ModManager: hot-reload requested (F4). Re-scanning VFS overrides & invalidating texture cache...");
+    const std::filesystem::path modsFolder = _modsFolder.empty()
+        ? (std::filesystem::current_path() / "mods")
+        : _modsFolder;
+    crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(modsFolder);
 }
 
 // Returns the collection of discovered and tracked mods.

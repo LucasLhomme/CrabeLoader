@@ -147,18 +147,39 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
             if (virtualKey.empty())
                 continue;
 
-            auto it = fresh.find(virtualKey);
-            if (it != fresh.end()) {
-                logger.info("VFS: Override: '{}' -> '{}' (superseded '{}')",
-                            virtualKey, fileEntry.path().string(), it->second.originMod);
-                it->second.physicalPath = fileEntry.path();
-                it->second.originMod = modName;
-            } else {
-                fresh[virtualKey] = OverrideEntry{
-                    .physicalPath = fileEntry.path(),
-                    .originMod = modName,
-                    .hitCount = 0
-                };
+            auto registerKey = [&](const std::string& key) {
+                if (key.empty()) return;
+                auto it = fresh.find(key);
+                if (it != fresh.end()) {
+                    logger.info("VFS: Override: '{}' -> '{}' (superseded '{}')",
+                                key, fileEntry.path().string(), it->second.originMod);
+                    it->second.physicalPath = fileEntry.path();
+                    it->second.originMod = modName;
+                } else {
+                    fresh[key] = OverrideEntry{
+                        .physicalPath = fileEntry.path(),
+                        .originMod = modName,
+                        .hitCount = 0
+                    };
+                }
+            };
+
+            registerKey(virtualKey);
+
+            // Special support for loose .tbody textures:
+            // Octane engine textures may be referenced as:
+            //   textures/<2hex>/<hash>.tbody
+            //   textures/<hash>.tbody
+            //   <hash>.tbody
+            if (fileEntry.path().extension() == ".tbody") {
+                const std::string filename = fileEntry.path().filename().string();
+                const std::string lowerFilename = normalizeVirtualPath(filename);
+                registerKey(lowerFilename);
+                registerKey("textures/" + lowerFilename);
+                if (lowerFilename.size() >= 2) {
+                    const std::string prefix2 = lowerFilename.substr(0, 2);
+                    registerKey("textures/" + prefix2 + "/" + lowerFilename);
+                }
             }
         }
     }
@@ -203,19 +224,46 @@ bool VfsOverrideManager::resolve(std::string_view requestedPath,
 
     std::shared_lock<std::shared_mutex> lock(_mutex);
     auto it = _overrides.find(key);
-    if (it == _overrides.end())
-        return false;
+    if (it != _overrides.end()) {
+        _hitCount.fetch_add(1, std::memory_order_relaxed);
+        ++it->second.hitCount;
+        outPhysicalPath = it->second.physicalPath;
 
-    _hitCount.fetch_add(1, std::memory_order_relaxed);
-    ++it->second.hitCount;
-    outPhysicalPath = it->second.physicalPath;
-
-    {
         std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
         _lastRedirected = key;
+        return true;
     }
 
-    return true;
+    // Fallback resolution for loose .tbody textures
+    if (key.ends_with(".tbody")) {
+        const size_t lastSlash = key.rfind('/');
+        const std::string filename = (lastSlash != std::string::npos) ? key.substr(lastSlash + 1) : key;
+
+        auto itFn = _overrides.find(filename);
+        if (itFn != _overrides.end()) {
+            _hitCount.fetch_add(1, std::memory_order_relaxed);
+            ++itFn->second.hitCount;
+            outPhysicalPath = itFn->second.physicalPath;
+
+            std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
+            _lastRedirected = filename;
+            return true;
+        }
+
+        const std::string texKey = "textures/" + filename;
+        auto itTex = _overrides.find(texKey);
+        if (itTex != _overrides.end()) {
+            _hitCount.fetch_add(1, std::memory_order_relaxed);
+            ++itTex->second.hitCount;
+            outPhysicalPath = itTex->second.physicalPath;
+
+            std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
+            _lastRedirected = texKey;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 std::optional<std::filesystem::path> VfsOverrideManager::resolve(
