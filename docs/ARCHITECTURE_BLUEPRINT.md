@@ -81,6 +81,22 @@ All development across the CrabeLoader codebase must adhere to one non-negotiabl
 
 ---
 
+### Rule 8: Zero False-Positive Cheats & Primitives Policy
+* **The Rule:** Any cheat, trainer action, memory patch, or code cave that fails to acquire its required memory addresses, AOB patterns, or hardware components must NEVER silently succeed or toggle to `[ON]`. It must immediately report a failure status, log the underlying error to `loader.log`, and revert the UI toggle state to `[OFF]`.
+* **Why it is this way:** A toggle that reports `[ON]` while the underlying memory cave failed to install gives a false sense of security to players and modders, hiding memory regressions and making debugging impossible.
+* **Failure Scenario (Anti-Pattern):** An `onToggle` handler in a menu returning `"God mode ON"` unconditionally after a failed `patternScan` or `installCodeCave`.
+* **Compliant Implementation (Standard):** Checking the return value of cave installation primitives. If false, raising a Lua error or returning an explicit error string; `Crabe.Menu` automatically catches the failure, logs it, and reverts `item.state = false`.
+
+---
+
+### Rule 9: Virtual File System (VFS) Loose Resource Redirection
+* **The Rule:** Mods must never overwrite vanilla `.zip` archives on disk. Texture and geometry overrides must be served via the engine's loose VFS hooks (`VfsOverrideManager`), intercepting file open requests and redirecting them to loose files under `mods/<mod>/`.
+* **Why it is this way:** Repacking 50MB+ texture zip archives causes irreversible file bloat, destroys vanilla installation integrity, and guarantees mod conflicts when two mods touch the same zip archive prefix. Loose VFS redirection guarantees 100% Zero-Touch modding.
+* **Failure Scenario (Anti-Pattern):** Overwriting `assets/textures/a5.zip` to install custom character textures.
+* **Compliant Implementation (Standard):** Placing `a5a0000050a40001.tbody` into `mods/sora/textures/`; CrabeLoader intercepts the file query and serves the loose file with zero archive repacking.
+
+---
+
 ## 3. The 4-Layer Architecture Model
 
 ```mermaid
