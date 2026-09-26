@@ -313,6 +313,23 @@ namespace {
         return 0;
     }
 
+    // Crabe._sharedBlock(name, size) -> address of a zeroed block that survives hot reloads, or nil
+    int __cdecl nativeSharedBlock(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* name = lua.argToString(L, 1);
+        auto size = static_cast<size_t>(lua.argToNumber(L, 2));
+        if (!name) return 0;
+
+        uintptr_t address = crabe::infrastructure::acquireSharedBlock(name, size);
+        if (!address) return 0;
+
+        lua.pushNumber(L, static_cast<double>(address));
+        return 1;
+    }
+
     // Crabe._installCodeCave(addr, "90 90 ...", [stolenLength = 0]) -> bool
     int __cdecl nativeInstallCodeCave(void* L)
     {
@@ -506,6 +523,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_readU32",               &nativeReadU32 },
         { "_writeU32",              &nativeWriteU32 },
         { "_installCodeCave",       &nativeInstallCodeCave },
+        { "_sharedBlock",           &nativeSharedBlock },
         { "_registerLoadOverride",  &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",    &nativeClearLoadOverrides },
         { "_registerChunkPatch",    &nativeRegisterChunkPatch },

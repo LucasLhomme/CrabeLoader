@@ -88,6 +88,17 @@ function Memory.installCodeCave(address, hexBody, stolenLength)
     return Crabe._installCodeCave(address, hexBody, stolenLength or 0)
 end
 
+--- Returns a zeroed data block shared with code caves; the same name returns the same block after a hot reload.
+--- @param name string Unique block name, e.g. "mymod.godmode"
+--- @param size number Size in bytes
+--- @return number|nil address Base address, or nil if the size exceeds the existing block
+function Memory.sharedBlock(name, size)
+    if type(name) ~= "string" or name == "" then return nil end
+    if type(size) ~= "number" or size <= 0 then return nil end
+    if not Crabe._sharedBlock then return nil end
+    return Crabe._sharedBlock(name, size)
+end
+
 --- Registers a Lua patch executing after a matching chunk.
 --- @param matchSubstring string Substring identifying the chunk
 --- @param luaSource string Lua code to execute

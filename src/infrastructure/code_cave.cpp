@@ -11,6 +11,10 @@
 #include "infrastructure/code_cave.hpp"
 
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 #include <windows.h>
 
 #include "infrastructure/memory.hpp"
@@ -55,6 +59,27 @@ size_t measureStolenLength(const uint8_t* code, size_t* failedAtOffset)
         accumulated += len;
     }
     return accumulated;
+}
+
+uintptr_t acquireSharedBlock(std::string_view name, size_t size)
+{
+    struct Block {
+        std::unique_ptr<uint8_t[]> bytes;
+        size_t size = 0;
+    };
+    static std::mutex mutex;
+    static std::unordered_map<std::string, Block> blocks;
+
+    if (size == 0 || name.empty())
+        return 0;
+
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = blocks.find(std::string(name));
+    if (it == blocks.end())
+        it = blocks.emplace(std::string(name), Block{ std::make_unique<uint8_t[]>(size), size }).first;
+    if (size > it->second.size)
+        return 0;
+    return reinterpret_cast<uintptr_t>(it->second.bytes.get());
 }
 
 CodeCave::~CodeCave()
