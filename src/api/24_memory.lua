@@ -147,8 +147,8 @@ end
 function Input.bindKey(vk, callback)
     if type(vk) ~= "number" or type(callback) ~= "function" then return end
     if Crabe.Events and Crabe.Events.on then
-        Crabe.Events.on("keyDown", function(key)
-            if key == vk then
+        Crabe.Events.on("keyDown", function(key, isRepeat)
+            if key == vk and not isRepeat then
                 callback()
             end
         end)

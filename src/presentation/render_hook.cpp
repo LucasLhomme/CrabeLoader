@@ -611,7 +611,9 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
-        crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+        const bool isDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        const bool isRepeat = isDown && (lParam & (1 << 30)) != 0;
+        crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), isDown, isRepeat);
     }
 
     if (msg == WM_WINDOWPOSCHANGING) {

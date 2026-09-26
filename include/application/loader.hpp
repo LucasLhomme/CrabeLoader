@@ -35,7 +35,8 @@ class Loader {
         void onLuaState(void *L);
         void onLoadmods();
         void registerKeybind(int virtualKey, std::function<void()> onPress);
-        void onKeyEvent(int virtualKey, bool isDown);
+        // isRepeat: a key-down Windows generated because the key is held (lParam bit 30).
+        void onKeyEvent(int virtualKey, bool isDown, bool isRepeat = false);
 
         // Virtual keys the window procedure must swallow instead of forwarding
         // to the game. Which keys those are is the caller's business, so a mod
@@ -149,7 +150,11 @@ class Loader {
         // Bounded: a key held down while the script thread is stalled must not
         // grow this queue without limit.
         static constexpr std::size_t kMaxPendingKeyEvents = 64;
-        std::vector<int> _pendingKeyEvents;
+        struct PendingKeyEvent {
+            int virtualKey;
+            bool isRepeat;
+        };
+        std::vector<PendingKeyEvent> _pendingKeyEvents;
         std::mutex _keyEventQueueMutex;
         std::unordered_set<int> _capturedKeys;
         mutable std::mutex _capturedKeysMutex;

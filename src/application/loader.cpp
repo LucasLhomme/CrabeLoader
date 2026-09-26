@@ -324,7 +324,7 @@ void Loader::runTicks(void* L)
 // Emits every key press collected by the window thread since the last tick.
 void Loader::drainPendingKeyEvents(void* L)
 {
-    std::vector<int> pending;
+    std::vector<PendingKeyEvent> pending;
     {
         std::lock_guard<std::mutex> lock(_keyEventQueueMutex);
         if (_pendingKeyEvents.empty())
@@ -332,10 +332,12 @@ void Loader::drainPendingKeyEvents(void* L)
         pending.swap(_pendingKeyEvents);
     }
 
-    for (int virtualKey : pending) {
+    // The second argument tells a held key's auto-repeat apart from a press:
+    // scrolling wants the repeats, an action must run once per press.
+    for (const PendingKeyEvent& event : pending) {
         crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
-            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}) end",
-            virtualKey));
+            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}, {}) end",
+            event.virtualKey, event.isRepeat ? "true" : "false"));
     }
 }
 
@@ -483,7 +485,7 @@ void Loader::registerDefaultKeybinds()
 }
 
 // Updates keybind states and executes callbacks on key-down transitions.
-void Loader::onKeyEvent(int virtualKey, bool isDown)
+void Loader::onKeyEvent(int virtualKey, bool isDown, bool isRepeat)
 {
     std::function<void()> callback;
     {
@@ -505,7 +507,7 @@ void Loader::onKeyEvent(int virtualKey, bool isDown)
     if (isDown && _runtimeReady) {
         std::lock_guard<std::mutex> lock(_keyEventQueueMutex);
         if (_pendingKeyEvents.size() < kMaxPendingKeyEvents)
-            _pendingKeyEvents.push_back(virtualKey);
+            _pendingKeyEvents.push_back({ virtualKey, isRepeat });
     }
 }
 
