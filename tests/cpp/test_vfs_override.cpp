@@ -58,6 +58,8 @@ int main()
                 "Normalization 6 failed");
         require(VfsOverrideManager::normalizeVirtualPath("assets//characters///sora.p3d") == "characters/sora.p3d",
                 "Normalization 7 failed");
+        require(VfsOverrideManager::normalizeVirtualPath("D:\\Games\\Disney Infinity\\mods\\mod_a\\main.lua").empty(),
+                "Normalization 8 failed: a mod's own file must never resolve to another mod");
         std::cout << "[Test] Path normalization passed.\n";
     }
 

@@ -53,6 +53,10 @@ std::string VfsOverrideManager::normalizeVirtualPath(std::string_view path) noex
     } else if (normalized.starts_with("assets/")) {
         normalized = normalized.substr(7);
     } else if (normalized.size() >= 2 && normalized[1] == ':') {
+        // A mod's own files (entry scripts, modules) are opened by absolute path:
+        // reduced to a basename, mods/a/main.lua would resolve to mods/b/main.lua.
+        if (normalized.find("/mods/") != std::string::npos)
+            return {};
         size_t lastSlash = normalized.rfind('/');
         if (lastSlash != std::string::npos && lastSlash + 1 < normalized.size())
             normalized = normalized.substr(lastSlash + 1);
@@ -120,8 +124,7 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
         return a.filename().string() < b.filename().string();
     });
 
-    std::unique_lock<std::shared_mutex> lock(_mutex);
-    std::size_t newOverrides = 0;
+    std::unordered_map<std::string, OverrideEntry> fresh;
 
     for (const auto& modDir : modDirs) {
         const std::string modName = modDir.filename().string();
@@ -144,22 +147,29 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
             if (virtualKey.empty())
                 continue;
 
-            auto it = _overrides.find(virtualKey);
-            if (it != _overrides.end()) {
+            auto it = fresh.find(virtualKey);
+            if (it != fresh.end()) {
                 logger.info("VFS: Override: '{}' -> '{}' (superseded '{}')",
                             virtualKey, fileEntry.path().string(), it->second.originMod);
                 it->second.physicalPath = fileEntry.path();
                 it->second.originMod = modName;
             } else {
-                _overrides[virtualKey] = OverrideEntry{
+                fresh[virtualKey] = OverrideEntry{
                     .physicalPath = fileEntry.path(),
                     .originMod = modName,
                     .hitCount = 0
                 };
-                ++newOverrides;
             }
         }
     }
+
+    std::unique_lock<std::shared_mutex> lock(_mutex);
+    for (auto& [key, entry] : fresh) {
+        auto previous = _overrides.find(key);
+        if (previous != _overrides.end())
+            entry.hitCount = previous->second.hitCount;
+    }
+    _overrides = std::move(fresh);
 
     logger.info("VFS: Indexed {} active virtual asset override(s) across {} mod directory(ies).",
                 _overrides.size(), modDirs.size());
