@@ -199,7 +199,14 @@ function Menu._activate(index)
         trace("toggle was", item.state)
         item.state = not item.state
         trace("toggle now", item.state)
-        status = runHandler(item.onToggle, item.state)
+        local ok, result = pcall(item.onToggle, item.state)
+        if not ok then
+            item.state = not item.state
+            status = "Error: " .. tostring(result)
+            if Crabe and Crabe.write then Crabe.write("Menu error: " .. tostring(result)) end
+        else
+            status = result
+        end
     elseif item.cycle then
         local count = #item.cycle
         item.index = (item.index or 1) % count + 1
