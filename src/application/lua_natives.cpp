@@ -20,6 +20,7 @@
 #include "shared/version.hpp"
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/input_hook.hpp"
+#include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
 #include "infrastructure/lua_call.hpp"
@@ -495,6 +496,20 @@ namespace {
         return 0;
     }
 
+    // Crabe._allocateSku(name) -> deterministic string sku inside mod range
+    int __cdecl nativeAllocateSku(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* name = lua.argToString(L, 1);
+        if (!name) return 0;
+
+        std::string sku = crabe::application::gateway::allocateSku(name);
+        lua.pushString(L, sku);
+        return 1;
+    }
+
 } // namespace
 
 bool crabe::lua_runtime::registerNatives(void* L)
@@ -524,6 +539,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_writeU32",              &nativeWriteU32 },
         { "_installCodeCave",       &nativeInstallCodeCave },
         { "_sharedBlock",           &nativeSharedBlock },
+        { "_allocateSku",           &nativeAllocateSku },
         { "_registerLoadOverride",  &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",    &nativeClearLoadOverrides },
         { "_registerChunkPatch",    &nativeRegisterChunkPatch },

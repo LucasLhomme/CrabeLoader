@@ -26,9 +26,13 @@ namespace crabe::application::gateway {
 
     // One character needing a registry slot.
     struct Entry {
-        std::string name;   // catalog Name, and the slot's `name` field
-        std::string sku;    // empty -> derived from `name` by allocateSku
-        std::string origin; // file that declared it, for diagnostics only
+        std::string name;            // catalog Name, and the slot's `name` field
+        std::string sku;             // empty -> derived from `name` by allocateSku
+        std::string baseCharacter;   // optional: base character to inherit ActorList/DataMap/Progression from
+        std::string displayName;     // optional: localized display name
+        std::string icon;            // optional: HUD icon name
+        std::string progressionTree; // optional: ProgressionTree name
+        std::string origin;          // file or manifest that declared it, for diagnostics only
     };
 
     // Deterministic sku_id for a character name, inside the range reserved for
@@ -51,6 +55,10 @@ namespace crabe::application::gateway {
     // sku_id, which already owns a slot.
     [[nodiscard]] std::vector<Entry> parseExposedCharacters(const std::string& luaSource);
 
+    // Characters declared in mod.json under "character" or "characters".
+    [[nodiscard]] std::vector<Entry> parseManifestCharacters(const std::string& jsonSource,
+                                                             const std::string& origin);
+
     // Lua source inserting one AVATAR slot per entry into the live registry, never
     // overwriting an existing slot. Calls no standard library function: gateway
     // chunks run in a Lua state with no base library loaded.
@@ -60,6 +68,13 @@ namespace crabe::application::gateway {
     // API can look ids up instead of re-deriving them. Keeping the hash on one
     // side only is what stops a row and its registry slot from disagreeing.
     [[nodiscard]] std::string buildSkuTableLua(const std::vector<Entry>& entries);
+
+    // Lua source calling Crabe.VirtualReader.exposeCharacter for manifest characters.
+    [[nodiscard]] std::string buildExposeCallLua(const Entry& entry);
+
+    // Auto-patch sources for ActorList and DataMap for characters declaring baseCharacter.
+    [[nodiscard]] std::string buildActorListPatchLua(const std::vector<Entry>& entries);
+    [[nodiscard]] std::string buildDataMapPatchLua(const std::vector<Entry>& entries);
 
     // AES-128-CBC + PKCS7 under the gateway's fixed key and IV, behind the game's
     // type tag. Exposed for tests and diagnostics.

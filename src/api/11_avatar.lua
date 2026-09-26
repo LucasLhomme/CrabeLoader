@@ -167,6 +167,30 @@ function Game.SetCharacter(sku, method, playerId)
     if sku == nil then
         error("Game.SetCharacter: a sku_id is required", 2)
     end
+
+    -- Support passing character name directly (e.g. "SOR_Sora", "Luke Skywalker")
+    if type(sku) == "string" and not tonumber(sku) then
+        local foundSku = nil
+        if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.skuForName then
+            foundSku = Crabe.VirtualReader.skuForName(sku)
+        end
+        if not foundSku then
+            local lowerName = string.lower(sku)
+            for _, list in pairs(Game.CHARACTER_ROSTER) do
+                for _, c in ipairs(list) do
+                    if string.lower(c.name) == lowerName then
+                        foundSku = c.sku
+                        break
+                    end
+                end
+                if foundSku then break end
+            end
+        end
+        if foundSku then
+            sku = foundSku
+        end
+    end
+
     playerId = hostPlayer(playerId)
     method = method or "loadout"
 
@@ -393,12 +417,28 @@ Game.CHARACTER_ROSTER = {
 
 function Game.ListCharacters(franchise)
     if franchise then
-        return Game.CHARACTER_ROSTER[string.lower(franchise)] or {}
+        local f = string.lower(franchise)
+        if f == "custom" or f == "mods" then
+            if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.getModdedCharacters then
+                local res = {}
+                for _, row in ipairs(Crabe.VirtualReader.getModdedCharacters()) do
+                    table.insert(res, { name = row.Name, sku = tonumber(row.sku_id) or row.sku_id, icon = row.Icon })
+                end
+                return res
+            end
+            return {}
+        end
+        return Game.CHARACTER_ROSTER[f] or {}
     end
     local all = {}
     for _, list in pairs(Game.CHARACTER_ROSTER) do
         for _, c in ipairs(list) do
             all[#all + 1] = c
+        end
+    end
+    if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.getModdedCharacters then
+        for _, row in ipairs(Crabe.VirtualReader.getModdedCharacters()) do
+            all[#all + 1] = { name = row.Name, sku = tonumber(row.sku_id) or row.sku_id, icon = row.Icon }
         end
     end
     return all

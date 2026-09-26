@@ -53,6 +53,23 @@ namespace {
         rules.push_back({std::move(key), std::move(source), std::move(label)});
     }
 
+    // Appends source to an existing rule with the same key, or adds a new one.
+    // Chunk patches compose additively so multiple mods can patch the same table.
+    void appendPatchRule(Rules& rules, std::string key, std::string source, std::string label)
+    {
+        if (key.empty())
+            return;
+
+        for (auto& rule : rules) {
+            if (rule.key == key) {
+                rule.source += "\n" + source;
+                rule.label += " + " + label;
+                return;
+            }
+        }
+        rules.push_back({std::move(key), std::move(source), std::move(label)});
+    }
+
     // First rule whose key appears anywhere in the chunk source, or nullptr.
     // Reads the caller's buffer in place -- this runs on every chunk the game
     // compiles, ~1500 per boot.
@@ -112,7 +129,7 @@ const std::string* Loader::findLoadOverride(const char* buff, size_t size) const
 void Loader::registerChunkPatch(std::string matchSubstring, std::string patchSource,
                                 std::string label)
 {
-    upsert(_chunkPatches, std::move(matchSubstring), std::move(patchSource), std::move(label));
+    appendPatchRule(_chunkPatches, std::move(matchSubstring), std::move(patchSource), std::move(label));
 }
 
 void Loader::armPatchIfMatched(const char* buff, size_t size, int depth)
@@ -141,7 +158,7 @@ std::optional<Loader::ChunkRule> Loader::takePatchForDepth(int depth)
 void Loader::registerNamedPatch(std::string exactName, std::string patchSource,
                                 std::string label)
 {
-    upsert(_namedPatches, std::move(exactName), std::move(patchSource), std::move(label));
+    appendPatchRule(_namedPatches, std::move(exactName), std::move(patchSource), std::move(label));
 }
 
 void Loader::armPatchIfNameMatched(const char* name, int depth)
@@ -269,10 +286,8 @@ void Loader::loadCharactersFromDisk()
     std::vector<gateway::Entry> exposed;
     std::string combined;
 
-    // mods/<name>/characters/ only. A <gameDir>/characters/ folder was read too
-    // until this was restored; it is not any more, because a character is mod
-    // content and belongs with the mod that ships it -- the same shape as
-    // mods/<name>/skilltrees/, which loadOverridesFromDisk below reads.
+    // mods/<name>/characters/ and mods/<name>/mod.json.
+    // A character is mod content and belongs with the mod that ships it.
     std::filesystem::path modsFolder = std::filesystem::current_path() / "mods";
     if (std::filesystem::exists(modsFolder)) {
         for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
@@ -282,6 +297,20 @@ void Loader::loadCharactersFromDisk()
             if (modName.empty() || modName[0] == '.' || modName[0] == '_')
                 continue;
 
+            // 1. Check mod.json for declarative character definition(s)
+            const auto manifestPath = entry.path() / "mod.json";
+            if (std::filesystem::exists(manifestPath)) {
+                std::string manifestContent;
+                if (readTextFile(manifestPath, modName.c_str(), manifestContent)) {
+                    auto manifestChars = gateway::parseManifestCharacters(manifestContent, modName + "/mod.json");
+                    for (auto& mChar : manifestChars) {
+                        combined += guardedCharacterSource(mChar.origin, gateway::buildExposeCallLua(mChar));
+                        exposed.push_back(std::move(mChar));
+                    }
+                }
+            }
+
+            // 2. Check characters/*.lua
             for (const std::string_view sub : crabe::domain::kCharacterDirectories) {
                 auto subPath = entry.path() / sub;
                 if (std::filesystem::exists(subPath)) {
@@ -294,12 +323,24 @@ void Loader::loadCharactersFromDisk()
     }
 
     if (exposed.empty() && combined.empty()) {
-        logger.debug("Loader: no characters/*.lua found; the character grid is left alone.");
+        logger.debug("Loader: no characters/*.lua or character manifests found; the character grid is left alone.");
         return;
     }
 
     for (const std::string& issue : gateway::resolveSkus(exposed))
         logger.error("Loader: characters: {}", issue);
+
+    // Auto-patch ActorList and DataMap for characters that declare a baseCharacter
+    const std::string actorListPatch = gateway::buildActorListPatchLua(exposed);
+    if (!actorListPatch.empty()) {
+        registerChunkPatch("ActorList", actorListPatch, "auto ActorList");
+        logger.info("Loader: registered auto-patch for ActorList.");
+    }
+    const std::string dataMapPatch = gateway::buildDataMapPatchLua(exposed);
+    if (!dataMapPatch.empty()) {
+        registerChunkPatch("DataMap", dataMapPatch, "auto DataMap");
+        logger.info("Loader: registered auto-patch for DataMap.");
+    }
 
     _characterInjectionScript = characterScript(gateway::buildSkuTableLua(exposed), combined);
     registerNamedPatch(kTargetName, _characterInjectionScript, "characters/");
