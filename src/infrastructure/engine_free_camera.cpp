@@ -33,6 +33,13 @@ namespace {
     constexpr std::uintptr_t kCallerScenesImmOffset = 10;
     constexpr std::uintptr_t kCallerCallOffset = 14;
 
+    // Body of LoopScenes::CreateFreeCamera(CameraScene*) after its SEH frame: `new ControlCamera`
+    // (0x6D0 bytes), then CameraPropertySet::Find(id, 0) and CameraPropertySet::AddCamera(camera).
+    constexpr const char* kCreateFreeCameraPattern =
+        "55 56 8B 74 24 18 57 8B F9 85 F6 0F 84 ?? ?? ?? ?? 68 D0 06 00 00 E8";
+    constexpr std::uintptr_t kFindPropertySetCallOffset = 0xEA;
+    constexpr std::uintptr_t kAddCameraCallOffset = 0xFB;
+
     constexpr const char* kActivateSymbol = "LoopScenes::ActivateFreeCamera";
     constexpr const char* kScenesSymbol = "BaseLoop::s_Scenes";
 
@@ -40,6 +47,8 @@ namespace {
     using GetCameraSceneFn = void*(__cdecl*)(int playerId);
     using FindCameraFn = void*(__thiscall*)(void* scene, const char* name);
     using SceneStackFn = bool(__thiscall*)(void* scene, std::uint32_t propertySetId);
+    using FindPropertySetFn = void*(__cdecl*)(std::uint32_t propertySetId, int flags);
+    using AddCameraFn = void(__thiscall*)(void* propertySet, void* camera);
 
     // Inside ActivateFreeCamera, measured on di3-gold-steam-1.0: the `call [imm32]`
     // reaching the camera-scene hook, then the scene's FindCamera, IsOnStack and Remove.
@@ -142,6 +151,54 @@ void EngineFreeCamera::resolveSceneHelpers()
     _findCamera = findCamera;
     _isOnStack = isOnStack;
     _removeFromStack = removeFromStack;
+
+    const std::uintptr_t createBody = crabe::memory::patternScan(kCreateFreeCameraPattern);
+    const std::uintptr_t findSet = createBody ? crabe::memory::resolveCall(createBody + kFindPropertySetCallOffset) : 0;
+    const std::uintptr_t addCamera = createBody ? crabe::memory::resolveCall(createBody + kAddCameraCallOffset) : 0;
+    if (!findSet || !addCamera) {
+        crabe::shared::Logger::getInstance().warning(
+            "EngineFreeCamera: CreateFreeCamera helpers not found; the free camera cannot be rebound after a world change.");
+        return;
+    }
+    _findPropertySet = findSet;
+    _addCamera = addCamera;
+}
+
+const char* EngineFreeCamera::currentCameraName(int playerId) const
+{
+    if (!_sceneHookSlot)
+        return nullptr;
+    const auto getScene = readAt<GetCameraSceneFn>(_sceneHookSlot);
+    void* scene = getScene ? getScene(playerId) : nullptr;
+    if (!scene)
+        return nullptr;
+    const auto sceneAddress = reinterpret_cast<std::uintptr_t>(scene);
+    std::uintptr_t current = readAt<std::uintptr_t>(sceneAddress + kSceneCurrentCamera);
+    if (!current)
+        current = readAt<std::uintptr_t>(sceneAddress + kSceneFallbackCamera);
+    return current ? reinterpret_cast<const char*>(current + kCameraName) : nullptr;
+}
+
+void EngineFreeCamera::rebindFreeCamera(int playerId) const
+{
+    if (!_sceneHookSlot || !_findCamera || !_findPropertySet || !_addCamera)
+        return;
+
+    const auto getScene = readAt<GetCameraSceneFn>(_sceneHookSlot);
+    void* scene = getScene ? getScene(playerId) : nullptr;
+    if (!scene || !readAt<std::uint8_t>(reinterpret_cast<std::uintptr_t>(scene) + kSceneIsActive))
+        return;
+
+    const std::uint32_t propertySetId = readAt<std::uint32_t>(_scenes + kScenesPropertySetId);
+    if (!propertySetId)
+        return;
+
+    void* propertySet = reinterpret_cast<FindPropertySetFn>(_findPropertySet)(propertySetId, 0);
+    void* freeCam = reinterpret_cast<FindCameraFn>(_findCamera)(scene, kFreeCamName);
+    if (!propertySet || !freeCam)
+        return;
+
+    reinterpret_cast<AddCameraFn>(_addCamera)(propertySet, freeCam);
 }
 
 void EngineFreeCamera::dropStaleEntry(int playerId) const
@@ -193,7 +250,16 @@ std::optional<bool> EngineFreeCamera::toggle(int playerId, bool skipNoControl)
     const bool completed = CrashHandler::runGuarded(
         [&] {
             dropStaleEntry(playerId);
+            rebindFreeCamera(playerId);
             active = activate(scenes, playerId, skipNoControl);
+            if (active) {
+                const char* current = currentCameraName(playerId);
+                if (current && std::strcmp(current, kFreeCamName) != 0) {
+                    crabe::shared::Logger::getInstance().warning(
+                        "EngineFreeCamera: the engine reports the free camera on, but player {}'s current camera is '{}'.",
+                        playerId, current);
+                }
+            }
         },
         "EngineFreeCamera::toggle");
     if (!completed)
