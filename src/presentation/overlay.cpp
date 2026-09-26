@@ -167,12 +167,11 @@ void Overlay::initialize()
     ImGui::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.IniFilename = nullptr; // Do not litter game root with imgui.ini
     io.LogFilename = nullptr; // Do not litter game root with imgui_log.txt
 
     ImGui::StyleColorsDark();
+    ImGui::GetStyle().Colors[ImGuiCol_NavHighlight] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 }
 
 void Overlay::uninitialize()
