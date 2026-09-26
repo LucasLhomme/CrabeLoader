@@ -261,12 +261,41 @@ end
 
 -- Returns a list of all custom/modded characters found in the roster.
 function Crabe.VirtualReader.getModdedCharacters()
-    local list = Crabe.VirtualReader.listCharacters() or {}
+    local list = Crabe.VirtualReader.listCharacters()
     local custom = {}
-    for _, row in ipairs(list) do
-        local skuNum = tonumber(row.sku_id)
-        if skuNum and ((skuNum >= 1000340 and skuNum <= 1000999) or skuNum >= 2000000) then
-            table.insert(custom, row)
+    local seen = {}
+    if list then
+        for _, row in ipairs(list) do
+            local skuNum = tonumber(row.sku_id)
+            if skuNum and ((skuNum >= 1000340 and skuNum <= 1000999) or skuNum >= 2000000) then
+                table.insert(custom, row)
+                seen[row.Name] = true
+            end
+        end
+    end
+    -- Fallback from pendingAdds or known mod characters if this Lua state lacks VirtualReaderPC_Data
+    if pendingAdds then
+        for _, entry in ipairs(pendingAdds) do
+            if entry.Name and not seen[entry.Name] then
+                table.insert(custom, {
+                    Name = entry.Name,
+                    sku_id = entry.sku_id or Crabe.VirtualReader.skuForName(entry.Name),
+                    Icon = entry.Icon or "default",
+                })
+                seen[entry.Name] = true
+            end
+        end
+    end
+    if Crabe.VirtualReader._skus then
+        for name, sku in pairs(Crabe.VirtualReader._skus) do
+            if not seen[name] then
+                table.insert(custom, {
+                    Name = name,
+                    sku_id = sku,
+                    Icon = "default",
+                })
+                seen[name] = true
+            end
         end
     end
     return custom
