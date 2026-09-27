@@ -145,8 +145,10 @@ namespace {
     // Engine entry points behind the Lua API. ActivateFreeCamera is the
     // __thiscall at the start of the engine's free-camera state machine; s_Scenes
     // is the static object the game itself passes as `this` (rva 0x2A7A30).
+    // CreateFreeCameras runs on every world load, from Players::InitializeScenes (rva 0xFA7F9A).
     constexpr crabe::domain::SymbolRva kDi3GoldEngineSymbols[] = {
         { "LoopScenes::ActivateFreeCamera", 0x002A1000 },
+        { "LoopScenes::CreateFreeCameras",  0x002A45C0 },
         { "BaseLoop::s_Scenes",             0x01E02940 },
     };
 

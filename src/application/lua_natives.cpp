@@ -116,6 +116,17 @@ namespace {
         return 1;
     }
 
+    // Crabe._engineSceneGeneration() -> how many times the engine has rebuilt its
+    // camera scenes, once per world load. A free camera belongs to one generation.
+    int __cdecl nativeEngineSceneGeneration(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushNumber(L, static_cast<double>(crabe::infrastructure::EngineFreeCamera::get().sceneGeneration()));
+        return 1;
+    }
+
     // Crabe._vfsGetOverrideCount() -> number of registered file overrides.
     int __cdecl nativeVfsGetOverrideCount(void* L)
     {
@@ -525,6 +536,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
+        { "_engineSceneGeneration", &nativeEngineSceneGeneration },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },

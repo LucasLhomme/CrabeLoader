@@ -108,7 +108,25 @@ end
 -- right stick looks, R1 and R2 raise and lower. While it runs, the engine
 -- turns the avatar's controls off, and turns them back on when it stops.
 
-Camera.freeCam = { active = false, playerId = nil }
+Camera.freeCam = { active = false, playerId = nil, generation = nil }
+
+-- The engine rebuilds its camera scenes on every world load. A free camera
+-- switched on in an earlier world went away with it, whatever `active` says.
+local function sceneGeneration()
+    if type(Crabe._engineSceneGeneration) ~= "function" then return nil end
+    return Crabe._engineSceneGeneration()
+end
+
+-- Clears a free camera left over from an earlier world, so the next start
+-- asks the engine instead of trusting the flag. Calls no native: this can run
+-- from a tick in the middle of a world load.
+local function forgetStaleFreeCam()
+    local freeCam = Camera.freeCam
+    if not freeCam.active or freeCam.generation == sceneGeneration() then return end
+    freeCam.active = false
+    freeCam.playerId = nil
+    freeCam.generation = nil
+end
 
 -- One step of the engine state machine. true/false is the state it is now
 -- in; nil means the native is missing or refused (loader.log says why).
@@ -135,6 +153,7 @@ end
 -- Returns true when it is on, false when the player has no camera to switch.
 function Camera.StartFreeCam(playerId)
     playerId = Crabe.hostPlayer(playerId)
+    forgetStaleFreeCam()
     if Camera.freeCam.active then return true end
 
     local state = setEngineFreeCam(true, playerId)
@@ -145,6 +164,7 @@ function Camera.StartFreeCam(playerId)
 
     Camera.freeCam.active = true
     Camera.freeCam.playerId = playerId
+    Camera.freeCam.generation = sceneGeneration()
     if type(Game) == "table" and type(Game.SuppressHud) == "function" then
         Game.SuppressHud(true, playerId)
     end
@@ -153,11 +173,13 @@ end
 
 -- Returns the view to the avatar camera. false when nothing was running.
 function Camera.StopFreeCam()
+    forgetStaleFreeCam()
     if not Camera.freeCam.active then return false end
 
     local playerId = Camera.freeCam.playerId
     Camera.freeCam.active = false
     Camera.freeCam.playerId = nil
+    Camera.freeCam.generation = nil
 
     setEngineFreeCam(false, playerId)
     if type(Game) == "table" and type(Game.SuppressHud) == "function" then
@@ -167,11 +189,12 @@ function Camera.StopFreeCam()
 end
 
 function Camera.IsFreeCamActive()
+    forgetStaleFreeCam()
     return Camera.freeCam.active
 end
 
 function Camera.ToggleFreeCam(playerId)
-    if Camera.freeCam.active then
+    if Camera.IsFreeCamActive() then
         Camera.StopFreeCam()
         return false
     end
