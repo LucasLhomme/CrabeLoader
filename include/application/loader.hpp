@@ -166,8 +166,9 @@ class Loader {
         std::atomic<bool> _runtimeReady{false};
         bool _sawForeignState = false;
         std::unordered_set<void*> _initializedStates;
-        // States that answered the probe and are not the game's. Their answer
-        // cannot change, so they are never probed again.
+        // States that answered the probe and are not the game's. They are not
+        // probed again unless the game's natives appear at that address, which
+        // means the game closed that state and opened its own in its place.
         std::unordered_set<void*> _rejectedStates;
 
         std::vector<ChunkRule> _loadOverrides;

@@ -368,8 +368,25 @@ void Loader::drainPendingSnippets(void* L)
 
 void Loader::ensureRuntimeReady(void* L)
 {
-    if (isGameState(L) || _rejectedStates.count(L) != 0)
+    if (!L)
         return;
+
+    // Nothing observes lua_close, and the game opens a new state at the
+    // address of one it just closed (seen on a world load). A known address is
+    // only trusted while it still looks like the state it was: an injected one
+    // keeps its Crabe global, a rejected one still lacks the game's natives.
+    if (isGameState(L)) {
+        if (crabe::infrastructure::LuaCall::get().hasGlobal(L, "Crabe"))
+            return;
+        _initializedStates.erase(L);
+        crabe::shared::Logger::getInstance().info(
+            "Loader: Lua state 0x{:X} lost the API -- the game reused a closed state's address; injecting again.",
+            reinterpret_cast<uintptr_t>(L));
+    } else if (_rejectedStates.count(L) != 0) {
+        if (!crabe::infrastructure::LuaCall::get().hasGlobal(L, "UI_GetSparks"))
+            return;
+        _rejectedStates.erase(L);
+    }
     constexpr auto kInterval = std::chrono::milliseconds(250);
 
     auto now = std::chrono::steady_clock::now();
