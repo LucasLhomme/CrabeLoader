@@ -27,6 +27,7 @@
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
 #include "application/multiplayer/multiplayer_natives.hpp"
@@ -124,6 +125,40 @@ namespace {
         if (!lua.hasReturnSupport()) return 0;
 
         lua.pushNumber(L, static_cast<double>(crabe::infrastructure::EngineFreeCamera::get().sceneGeneration()));
+        return 1;
+    }
+
+    // Crabe._cameraEye(playerId) -> x, y, z of that player's current camera (the free
+    // camera while it runs), or nothing when the player has no camera.
+    int __cdecl nativeCameraEye(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const int playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+
+        const auto eye = crabe::infrastructure::EngineKinematics::get().cameraEye(playerId);
+        if (!lua.hasReturnSupport() || !eye) return 0;
+
+        lua.pushNumber(L, (*eye)[0]);
+        lua.pushNumber(L, (*eye)[1]);
+        lua.pushNumber(L, (*eye)[2]);
+        return 3;
+    }
+
+    // Crabe._actorPlace(actorHandle, x, y, z) -> true when the engine placed the actor.
+    int __cdecl nativeActorPlace(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const crabe::infrastructure::EngineKinematics::Position position{
+            static_cast<float>(lua.argToNumber(L, 2, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 3, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 4, 0.0)),
+        };
+
+        const bool placed = crabe::infrastructure::EngineKinematics::get().placeActor(handle, position);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, placed);
         return 1;
     }
 
@@ -537,6 +572,8 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
         { "_engineSceneGeneration", &nativeEngineSceneGeneration },
+        { "_cameraEye",             &nativeCameraEye },
+        { "_actorPlace",            &nativeActorPlace },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },

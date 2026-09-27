@@ -14,8 +14,9 @@
 -- is a discovery aid, never the authority. UI_GetListPlayerIndx("Levels", ...)
 -- is what the game itself asks, and it is what LoadLevel validates against.
 --
--- There is no native anywhere that reads or writes a world position, so there
--- is no teleport here. Free-coordinate movement lives in 25_cheats.lua.
+-- No Lua native reads or writes a world position. Placing an actor goes through
+-- Crabe._actorPlace, which calls the engine setter the script VM's own
+-- KinematicStatePlaceWithPosition uses -- a raw memory write never sticks.
 
 Game = Game or {}
 
@@ -31,6 +32,23 @@ function Crabe.splitList(csv)
         if trimmed ~= "" then out[#out + 1] = trimmed end
     end
     return out
+end
+
+-- ---------------------------------------------------------------------------
+-- Placing an actor
+-- ---------------------------------------------------------------------------
+
+-- Moves the actor behind `handle` (Game.GetAvatarHandle for a player) to
+-- x, y, z, y being height. Keeps its facing. True when the engine placed it;
+-- false when the handle names nothing that can be placed.
+function Game.PlaceActor(handle, x, y, z)
+    if type(Crabe._actorPlace) ~= "function" then
+        error("Game.PlaceActor: this loader has no actor placement native", 2)
+    end
+    if type(handle) ~= "number" or type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+        error("Game.PlaceActor: expected handle, x, y, z as numbers", 2)
+    end
+    return Crabe._actorPlace(handle, x, y, z) == true
 end
 
 -- ---------------------------------------------------------------------------

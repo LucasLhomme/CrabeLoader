@@ -2,7 +2,7 @@
 -- File description:
 -- Camera control: the engine free camera, the Toy Box editor camera and the customize camera.
 -- The free camera is the engine's own; its flight and controls never pass through Lua.
--- Moves no player -- position is read through src/api/14_world.lua and owned by the engine.
+-- Moves a player only on request, to the camera, through Game.PlaceActor in src/api/14_world.lua.
 --
 -- Authors: @LucasLhomme
 
@@ -199,4 +199,36 @@ function Camera.ToggleFreeCam(playerId)
         return false
     end
     return Camera.StartFreeCam(playerId)
+end
+
+-- ---------------------------------------------------------------------------
+-- Camera position
+-- ---------------------------------------------------------------------------
+
+-- x, y, z of `playerId`'s current camera -- the free camera while it runs --
+-- y being height. nil when the player has no camera, as in the front end.
+function Camera.GetPosition(playerId)
+    if type(Crabe._cameraEye) ~= "function" then
+        error("Crabe.Camera.GetPosition: this loader has no camera position native", 2)
+    end
+    return Crabe._cameraEye(Crabe.hostPlayer(playerId))
+end
+
+-- Drops `playerId`'s avatar where their camera is, then hands the view back
+-- to it if the free camera was running. The avatar falls from there. Returns
+-- true when it was placed, or false and a reason.
+function Camera.MovePlayerToCamera(playerId)
+    playerId = Crabe.hostPlayer(playerId)
+
+    local x, y, z = Camera.GetPosition(playerId)
+    if not x then return false, "no camera" end
+
+    local handle = Game.GetAvatarHandle(playerId)
+    if type(handle) ~= "number" or handle == 0 then return false, "no avatar" end
+    if not Game.PlaceActor(handle, x, y, z) then return false, "the engine refused" end
+
+    if Camera.IsFreeCamActive() then
+        Camera.StopFreeCam()
+    end
+    return true
 end

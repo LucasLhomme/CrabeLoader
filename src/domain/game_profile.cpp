@@ -150,6 +150,9 @@ namespace {
         { "LoopScenes::ActivateFreeCamera", 0x002A1000 },
         { "LoopScenes::CreateFreeCameras",  0x002A45C0 },
         { "BaseLoop::s_Scenes",             0x01E02940 },
+        // Script VM natives the Lua state never sees; EngineKinematics reads its entry points off them.
+        { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
+        { "Script_CameraGetPosition",               0x00F7A4C0 },
     };
 
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
