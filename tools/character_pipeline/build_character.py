@@ -26,8 +26,11 @@ QUICKBMS = TOOLS_DIR / "QuickBMS" / "quickbms.exe"
 BMS_SCRIPT = TOOLS_DIR / "QuickBMS" / "disney_infinity_new.bms"
 GAME_DIR = Path(r"D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition")
 CHARACTERS_DIR = GAME_DIR / "assets" / "characters"
+# The .dnax files live in the shared characters archive, not in the actor's own zip.
+DNAX_ARCHIVE = CHARACTERS_DIR / "characters.zip"
 
-MODEL_EXTENSIONS = (".bent", ".oct", ".mtb", "_0.vbuf", "_0.ibuf", ".animtreeoverrides")
+# Copied untouched: geometry, material bundle and animation overrides hold no path to rename.
+COPIED_EXTENSIONS = (".mtb", "_0.vbuf", "_0.ibuf", ".animtreeoverrides")
 
 
 def extract_archive(archive: Path, pattern: str, out_dir: Path):
@@ -37,12 +40,61 @@ def extract_archive(archive: Path, pattern: str, out_dir: Path):
     subprocess.run(cmd, check=True, capture_output=True)
 
 
-def swap_bytes(data: bytearray, old: bytes, new: bytes) -> bytearray:
-    assert len(old) == len(new), f"Length mismatch: {old!r} vs {new!r}"
-    count = data.count(old)
-    if count > 0:
-        return bytearray(bytes(data).replace(old, new))
+def rename_tokens(data: bytes, renames: list[tuple[bytes, bytes]], label: str) -> bytes:
+    """Replaces each exact token, case-insensitively. Every token must be found at least once."""
+    for old, new in renames:
+        assert len(old) == len(new), f"Length mismatch: {old!r} vs {new!r}"
+        data, count = re.subn(re.escape(old), new, data, flags=re.IGNORECASE)
+        if count == 0:
+            print(f"  [WARN] {label}: '{old.decode(errors='replace')}' not found; left as the base.")
     return data
+
+
+def clone_actor(src_dir: Path, dnax_file: Path, char_dest: Path, base: str, name: str):
+    """Clones the base actor under the new name, measured against a clone that loads in game.
+
+    Only the paths to the clone's own files and the body material are renamed. Everything
+    else still names the base on purpose: animation clips (EMP_Luke_Combo_Y), the eye
+    material, costumes and the base's other archives only exist under the base's name.
+    """
+    lbase, lname = base.lower(), name.lower()
+    # A distinct body material gives the clone its own MATP hash, so its textures can be
+    # swapped without touching the base. Keeps the base's tail (SOR_Luke for SOR_Sora from
+    # EMP_Luke) unless both share a prefix, where only the full name stays distinct.
+    tag = name[:3] + base[3:] if name[:3].lower() != base[:3].lower() else name
+
+    for ext in COPIED_EXTENSIONS:
+        src_file = src_dir / f"{lbase}{ext}"
+        if src_file.exists():
+            shutil.copyfile(src_file, char_dest / f"{lname}{ext}")
+
+    bent = (src_dir / f"{lbase}.bent").read_bytes()
+    bent = rename_tokens(bent, [
+        (f"characters/{lbase}/{lbase}.oct\0".encode(), f"characters/{lname}/{lname}.oct\0".encode()),
+    ], ".bent")
+    (char_dest / f"{lname}.bent").write_bytes(bent)
+
+    oct_data = (src_dir / f"{lbase}.oct").read_bytes()
+    oct_data = rename_tokens(oct_data, [
+        (f"\0{lbase}.mtb\0".encode(), f"\0{lname}.mtb\0".encode()),
+        (f"\0{lbase}_0.vbuf\0".encode(), f"\0{lname}_0.vbuf\0".encode()),
+        (f"\0{lbase}_0.ibuf\0".encode(), f"\0{lname}_0.ibuf\0".encode()),
+        (f"materials__{lbase}__".encode(), f"materials__{tag.lower()}__".encode()),
+    ], ".oct")
+    # The body material's own name is the base name plus an index (EMP_Luke3); the eye's is not.
+    oct_data, count = re.subn(b"(Material\0)" + re.escape(base.encode()) + rb"(?=\d*\0)",
+                              b"\\g<1>" + tag.encode(), oct_data, flags=re.IGNORECASE)
+    if count == 0:
+        print("  [WARN] .oct: body material name not found; the clone shares the base's material.")
+    (char_dest / f"{lname}.oct").write_bytes(oct_data)
+
+    dnax = dnax_file.read_bytes()
+    dnax = rename_tokens(dnax, [
+        (f"characters/{base}/{base}\0".encode(), f"characters/{name}/{name}\0".encode()),
+        (f"characters/{base}/{base}.animtreeoverrides\0".encode(),
+         f"characters/{name}/{name}.animtreeoverrides\0".encode()),
+    ], ".dnax")
+    (char_dest / f"{lname}.dnax").write_bytes(dnax)
 
 
 def create_deploy_script(mod_dir: Path, mod_id: str):
@@ -83,6 +135,10 @@ def main():
     lbase = base.lower()
     lname = name.lower()
 
+    # Renames happen in place inside binary files, so every path must keep its length.
+    if len(name) != len(base):
+        sys.exit(f"--name '{name}' must be as long as --base '{base}' ({len(base)} characters).")
+
     if args.out:
         out_root = Path(args.out)
     else:
@@ -105,33 +161,16 @@ def main():
     temp_extract = out_root / "_temp_base"
     print(f"[1/4] Extracting base files from {vanilla_zip.name}...")
     extract_archive(vanilla_zip, f"{lbase}/*", temp_extract)
+    extract_archive(DNAX_ARCHIVE, f"characters/{lbase}.dnax", temp_extract)
 
     src_dir = temp_extract / lbase
+    dnax_file = temp_extract / "characters" / f"{lbase}.dnax"
+    if not dnax_file.exists():
+        raise FileNotFoundError(f"{lbase}.dnax not found in {DNAX_ARCHIVE}")
 
-    # 2. Clone and patch model files into character destination
-    print(f"[2/4] Cloning and patching model buffers...")
-    b_old = lbase.encode("ascii")
-    b_new = lname.encode("ascii")
-
-    for ext in MODEL_EXTENSIONS:
-        src_file = src_dir / f"{lbase}{ext}"
-        dst_file = char_dest / f"{lname}{ext}"
-        if src_file.exists():
-            data = bytearray(src_file.read_bytes())
-            if len(b_old) == len(b_new):
-                data = swap_bytes(data, b_old, b_new)
-                data = swap_bytes(data, base.encode("ascii"), name.encode("ascii"))
-            dst_file.write_bytes(data)
-
-    # 3. Handle .dnax
-    dnax_src = src_dir / f"{lbase}.dnax"
-    if dnax_src.exists():
-        dnax_dst = char_dest / f"{lname}.dnax"
-        data = bytearray(dnax_src.read_bytes())
-        if len(b_old) == len(b_new):
-            data = swap_bytes(data, b_old, b_new)
-            data = swap_bytes(data, base.encode("ascii"), name.encode("ascii"))
-        dnax_dst.write_bytes(data)
+    # 2. Clone the actor: model, material and DNA, renaming only the clone's own paths
+    print(f"[2/4] Cloning model, material and DNA files...")
+    clone_actor(src_dir, dnax_file, char_dest, base, name)
 
     # Clean up temp base
     shutil.rmtree(temp_extract, ignore_errors=True)
