@@ -48,7 +48,7 @@ We provide an automated CLI tool under `tools/character_pipeline/build_character
 
 ### Prerequisites
 * **Python 3.9+**, run from the CrabeLoader repository root.
-* **Pillow** (`pip install pillow`), only when you pass `--icon`.
+* The Python dependencies: `pip install -r tools/character_pipeline/requirements.txt` (Pillow, used by `--icon`).
 * The game path is set in `GAME_DIR` at the top of `build_character.py` (default: `D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition`). QuickBMS must be present in `tools/QuickBMS/`.
 * **`--name` must have exactly as many characters as `--base`** (`SOR_Sora` and `EMP_Luke` are both 8). Names are rewritten in place inside binary files, so the pipeline refuses any other length.
 
