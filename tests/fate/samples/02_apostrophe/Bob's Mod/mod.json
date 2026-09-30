@@ -1,0 +1,7 @@
+{
+  "manifestVersion": 1,
+  "id": "com.bobs.mod",
+  "name": "Bob's Mod",
+  "version": "1.2.0",
+  "entry": "entry.lua"
+}

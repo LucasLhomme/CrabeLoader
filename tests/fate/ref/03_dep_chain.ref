@@ -1,0 +1,7 @@
+TEST: 03_dep_chain
+LOAD_ORDER_COUNT: 3
+REJECTED_COUNT: 0
+LOAD_ORDER:
+  1. com.crabe.core-lib
+  2. com.crabe.gameplay
+  3. com.crabe.ui-addon

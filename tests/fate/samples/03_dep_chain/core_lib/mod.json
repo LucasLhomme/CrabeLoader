@@ -1,0 +1,7 @@
+{
+  "manifestVersion": 1,
+  "id": "com.crabe.core-lib",
+  "name": "Core Library",
+  "version": "1.0.0",
+  "entry": "core.lua"
+}
