@@ -43,3 +43,11 @@ jobs:
             echo "Error: bink2w32.dll not produced."
             exit 1
           fi
+
+      - name: Run VFS Override Tests
+        run: |
+          .\build\Release\test_vfs_override.exe
+
+      - name: Run CRABE-FATE Regression Suite
+        run: |
+          .\build\Release\crabe_fate.exe
