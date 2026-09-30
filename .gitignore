@@ -5,6 +5,7 @@ tools/*
 !tools/character_pipeline/
 !tools/embed_api.py
 !tools/embed_api_def.py
+!tools/check_headers.py
 herald-report.txt
 mods/*
 !mods/_template/

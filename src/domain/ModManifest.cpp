@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** ModManifest implementation
+** Reads mod.json with a minimal string scanner instead of a JSON library.
+** Takes the first quoted value after each key: no escapes, numbers, booleans or nesting.
+** Compatibility is delegated to Crabe::Version::isCompatible; nothing is loaded or logged here.
+**
+** Authors: @LucasLhomme
 */
 
 #include <fstream>

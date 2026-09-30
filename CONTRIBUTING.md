@@ -90,7 +90,8 @@ We follow a structured GitFlow-inspired model:
 
 Every non-vendored, non-generated file under `src/` and `include/` opens with this
 header, and `python tools/check_headers.py` fails the build if one is missing,
-malformed, or says nothing:
+malformed, or says nothing (the multiplayer subsystem is excluded for now, see
+`DEFERRED_DIRS` in the script):
 
 ```cpp
 /*

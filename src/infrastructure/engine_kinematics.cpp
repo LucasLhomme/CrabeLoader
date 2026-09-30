@@ -3,7 +3,7 @@
 ** File description:
 ** Resolves the engine's camera eye and actor placement from the script natives that use them.
 ** The natives register as `push handler; push "Name"; call RegisterFunction`, so each name leads
-** to a handler whose body is checked byte by byte, and under a matched profile must land on its RVA.
+** to a handler whose body is checked byte by byte; under a matched profile it must land on its RVA.
 **
 ** Authors: @LucasLhomme
 */

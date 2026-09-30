@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** luacall
+** Implements LuaCall and the loadfile/loadbuffer/pcall hooks that observe the game's Lua states.
+** hkLoadbuffer first sees a valid lua_State; hkPcall runs queued calls on the game thread.
+** Native-side reads avoid calls that can raise a Lua error, which would longjmp out of C++.
+**
+** Authors: @LucasLhomme
 */
 
 #include <cstring>

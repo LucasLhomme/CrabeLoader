@@ -22,6 +22,10 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Check file headers
+        run: |
+          python tools/check_headers.py
+
       - name: Configure CMake
         run: |
           cmake -B build -S . -A Win32 -DCRABELOADER_AS_SHARED=ON -DCMAKE_BUILD_TYPE=Release
