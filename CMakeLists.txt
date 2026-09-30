@@ -327,4 +327,106 @@ else()
     target_compile_options(test_vfs_override PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(crabe_fate
+    tests/cpp/crabe_fate_main.cpp
+    src/infrastructure/vfs_override_manager.cpp
+    src/domain/dependency_resolver.cpp
+    src/domain/mod_manifest.cpp
+    src/domain/mod_id.cpp
+    src/domain/semver.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+target_include_directories(crabe_fate PRIVATE
+    include
+    include/domain
+    include/infrastructure
+    include/shared
+    src
+)
+target_compile_definitions(crabe_fate PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(crabe_fate PRIVATE
+    nlohmann_json::nlohmann_json
+)
+if(MSVC)
+    target_compile_options(crabe_fate PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(crabe_fate PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(test_telemetry
+    tests/cpp/test_telemetry.cpp
+    src/infrastructure/telemetry_monitor.cpp
+)
+target_include_directories(test_telemetry PRIVATE
+    include
+    include/infrastructure
+    include/shared
+    src
+)
+target_compile_definitions(test_telemetry PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_telemetry PRIVATE
+    nlohmann_json::nlohmann_json
+)
+if(MSVC)
+    target_compile_options(test_telemetry PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_telemetry PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ---------------------------------------------------------------------------
+# crabe_lua -- standalone Lua 5.1.5 interpreter used to execute the Lua API
+# test suite (tests/lua/run_tests.lua) offline without requiring the game.
+# ---------------------------------------------------------------------------
+FetchContent_Declare(lua51
+    URL https://www.lua.org/ftp/lua-5.1.5.tar.gz
+    URL_HASH SHA256=2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR crabe-does-not-configure-lua
+)
+FetchContent_MakeAvailable(lua51)
+
+set(CRABELOADER_LUA_SRC_DIR "${lua51_SOURCE_DIR}/src")
+file(GLOB CRABELOADER_LUA_SOURCES "${CRABELOADER_LUA_SRC_DIR}/*.c")
+list(REMOVE_ITEM CRABELOADER_LUA_SOURCES
+    "${CRABELOADER_LUA_SRC_DIR}/lua.c"
+    "${CRABELOADER_LUA_SRC_DIR}/luac.c"
+    "${CRABELOADER_LUA_SRC_DIR}/print.c"
+)
+
+add_library(crabe_lua51 STATIC ${CRABELOADER_LUA_SOURCES})
+target_include_directories(crabe_lua51 PUBLIC "${CRABELOADER_LUA_SRC_DIR}")
+target_compile_definitions(crabe_lua51 PRIVATE _CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    target_compile_options(crabe_lua51 PRIVATE /W0)
+else()
+    target_compile_options(crabe_lua51 PRIVATE -w)
+endif()
+
+add_executable(crabe_lua "${CRABELOADER_LUA_SRC_DIR}/lua.c")
+target_link_libraries(crabe_lua PRIVATE crabe_lua51)
+target_compile_definitions(crabe_lua PRIVATE _CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    target_compile_options(crabe_lua PRIVATE /W0)
+else()
+    target_compile_options(crabe_lua PRIVATE -w)
+endif()
+
+enable_testing()
+add_test(NAME test_vfs_override COMMAND test_vfs_override)
+add_test(NAME test_telemetry COMMAND test_telemetry)
+add_test(NAME crabe_fate COMMAND crabe_fate)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    add_test(NAME test_lua_suite COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_lua_tests.py")
+endif()
 

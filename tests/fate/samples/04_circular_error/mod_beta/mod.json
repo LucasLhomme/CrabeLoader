@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "com.crabe.beta",
+  "name": "Mod Beta",
+  "version": "1.0.0",
+  "entry": "beta.lua",
+  "dependencies": [
+    {
+      "id": "com.crabe.alpha",
+      "version": "*"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+TEST: 06_malformed_json
+MANIFEST_STATE: Malformed
+ERROR_CODE: InvalidJson
+IS_ABSENT: false
+HAS_DIAGNOSTIC: true

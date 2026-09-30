@@ -1,0 +1,9 @@
+TEST: 02_apostrophe
+MANIFEST_STATE: Valid
+ID: com.bobs.mod
+NAME: Bob's Mod
+VFS_RESOLVE_P3D: OK
+VFS_RESOLVE_ASSETS_PREFIX: OK
+RESOLVE_STATUS: OK
+LOAD_ORDER:
+  1. com.bobs.mod (1.2.0)

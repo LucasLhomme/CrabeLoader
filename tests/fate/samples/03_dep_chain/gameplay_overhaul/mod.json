@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "com.crabe.gameplay",
+  "name": "Gameplay Overhaul",
+  "version": "2.0.0",
+  "entry": "gameplay.lua",
+  "dependencies": [
+    {
+      "id": "com.crabe.core-lib",
+      "version": "^1.0.0"
+    }
+  ]
+}

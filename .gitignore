@@ -19,3 +19,4 @@ include/application/embedded_api.hpp
 include/cli/embedded_api_def.hpp
 AUDIT_*.md
 DEVLOG_*.md
+telemetry_report.json

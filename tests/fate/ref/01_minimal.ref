@@ -1,0 +1,10 @@
+TEST: 01_minimal
+MANIFEST_STATE: Valid
+MANIFEST_VERSION: 1
+ID: com.crabe.minimal
+NAME: Minimal Sample Mod
+VERSION: 1.0.0
+ENTRY: main.lua
+RESOLVE_STATUS: OK
+LOAD_ORDER:
+  1. com.crabe.minimal (1.0.0)
