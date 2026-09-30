@@ -29,7 +29,7 @@ All development across the CrabeLoader codebase must adhere to one non-negotiabl
 * **The Rule:** No C++ file may contain hardcoded game attributes (health, sparks, damage), character names, figurine SKUs, menu UI layouts, or game-specific keyboard shortcuts (such as hardcoding `VK_F5` to open a menu).
 * **Why it is this way:** Hardcoding game mechanics into the C++ DLL binds the binary to specific game memory offsets, bloats compilation cycles, and prevents live hot-reloading (`F4`). Every gameplay change would require rebuilding the DLL in Visual Studio.
 * **Failure Scenario (Anti-Pattern):** Writing a `cheats.cpp` file inside the C++ loader with hardcoded `GodMode` toggles or speed multipliers.
-* **Compliant Implementation (Standard):** The loader exposes `Crabe.Memory.patchBytes()` and `Crabe.Events.on('keyDown')`. The mod (`CrabeMenu/mods/crabemenu.lua`) consumes these primitives to implement GodMode and bind keys dynamically.
+* **Compliant Implementation (Standard):** The loader exposes `Crabe.Memory.patchBytes()` and `Crabe.Events.on('keyDown')`. The mod ([CrabeMenu](https://github.com/LucasLhomme/CrabeMenu), `main.lua`) consumes these primitives to implement GodMode and bind keys dynamically.
 
 ---
 
@@ -121,7 +121,7 @@ flowchart TD
     end
 
     subgraph L3["Layer 3: Lua Mods & Content Ecosystem (mods/)"]
-        CRABEMENU["CrabeMenu (mods/crabemenu.lua): In-Game Menu, Trainer, Cheats, UI"]
+        CRABEMENU["CrabeMenu (main.lua): In-Game Menu, Trainer, Cheats, UI"]
         WINDOW_MODE["Window Mode (mods/window_mode.lua): Borderless Fullscreen"]
         CUSTOM_SKILLS["mods/*/skilltrees/ (*.patch & *.lua Custom Progression Trees)"]
         CUSTOM_HEROES["mods/*/characters/ (*.lua Roster Expansions)"]
@@ -150,7 +150,7 @@ flowchart TD
     Q1 -->|"YES"| Q2{"What type of feature is it?"}
     Q1 -->|"NO"| Q3{"Is it a reusable system primitive<br/>(Memory, Hook, OS) ?"}
 
-    Q2 -->|"Menu, cheats, camera, or tools"| DEST_CRABEMENU["Implement in CrabeMenu (mods/crabemenu.lua)"]
+    Q2 -->|"Menu, cheats, camera, or tools"| DEST_CRABEMENU["Implement in CrabeMenu (main.lua)"]
     Q2 -->|"New hero, figure, or costume skin"| DEST_CHAR["Implement in a mod's characters/ folder"]
     Q2 -->|"Ability tree or progression tweak"| DEST_SKILL["Implement in a mod's skilltrees/ folder"]
     Q2 -->|"Standalone game mode or tool"| DEST_MOD["Create standalone mod in mods/<mod_name>/"]

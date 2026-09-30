@@ -71,6 +71,8 @@ compilation (`Loader::findLoadOverride`). Needed only when "assign into an
 existing global" does not fit — for example restructuring a `Grid3` layout.
 
 To build one: decompile the original, edit, save here as `<matchHint>.lua`.
+[unluac](https://sourceforge.net/projects/unluac/) is not bundled: download `unluac.jar`
+and place it in `tools/unluac/` (git-ignored).
 
 ```bash
 java -jar tools/unluac/unluac.jar <path-to-gamedb-file> > out.lua

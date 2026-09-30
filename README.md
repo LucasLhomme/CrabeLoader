@@ -67,7 +67,7 @@ Comprehensive technical guides are available in the [`docs/`](docs/) directory:
 
 ## Installation
 
-1. In your game installation folder (e.g., `D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
+1. In your game installation folder (e.g., `<steam-library>\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
 2. Copy the release `bink2w32.dll` into the game root directory.
 3. Place your mods or packages into the `mods/` directory (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
 4. Launch `DisneyInfinity3.exe`.
