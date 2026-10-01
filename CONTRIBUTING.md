@@ -81,6 +81,7 @@ We follow a structured GitFlow-inspired model:
    git commit -m "feat(render): add scissor rect support to DrawBuffer"
    ```
 5. **Push** to your fork and open a Pull Request targeting **`dev`**.
+6. **Review:** the CI must pass, every conversation must be resolved, and a maintainer listed in [`.github/CODEOWNERS`](.github/CODEOWNERS) must approve before the pull request is merged. Nobody pushes straight to `main` or `dev`.
 
 ---
 
