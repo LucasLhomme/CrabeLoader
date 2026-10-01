@@ -74,7 +74,7 @@ A single executable that installs CrabeLoader without any manual file work.
 1. It looks for the game in your Steam libraries and asks **Yes / No / Cancel**. If it finds nothing, or you say **No**, it opens the native Windows folder picker (`IFileOpenDialog`).
 2. It checks that the folder contains `DisneyInfinity3.exe`.
 3. It installs `bink2w32.dll` (the proxy) and keeps the game's own DLL as `bink2w32_orig.dll`.
-4. It creates `mods\` and `mods\LISEZMOI.txt` (English first, then French).
+4. It creates `mods\` and `mods\README.txt` (English first, then French).
 
 ### The rule that protects the original DLL
 
@@ -93,7 +93,7 @@ How it stays safe even when something goes wrong:
 * The loader is first written to `bink2w32.dll.crabe-new`, hashed back, and only then moved into place.
 * If the final move fails after the original was renamed, the original is renamed back.
 * An update while the game is running fails (Windows will not replace a loaded DLL), with a clear message and everything left as found.
-* An existing `mods\LISEZMOI.txt` is never overwritten.
+* An existing `mods\README.txt` is never overwritten.
 
 The recognised original lives in `include/installer/install_plan.hpp` (`kKnownOriginalSha256`). If another edition of the game ships a different `bink2w32.dll`, add its hash there.
 

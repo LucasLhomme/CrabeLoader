@@ -65,7 +65,7 @@ namespace crabe::installer {
         std::vector<std::string> _knownOriginals;
     };
 
-    // The text written to mods/LISEZMOI.txt, in French then English.
+    // The text written to mods/README.txt, in English then French.
     [[nodiscard]] std::string_view modsReadmeText() noexcept;
 
 } // namespace crabe::installer

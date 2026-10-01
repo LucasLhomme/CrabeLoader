@@ -65,7 +65,7 @@ namespace {
         L"Choisissez le dossier de Disney Infinity 3.0 (celui qui contient DisneyInfinity3.exe)",
         L"DisneyInfinity3.exe est introuvable dans :\n\n{}\n\nChoisissez le dossier qui contient le jeu.",
         L"CrabeLoader {} a été installé dans :\n\n{}\n\n"
-        L"Le dossier « mods » est prêt : lisez mods\\LISEZMOI.txt pour y ajouter vos mods.\n\n"
+        L"Le dossier « mods » est prêt : lisez mods\\README.txt pour y ajouter vos mods.\n\n"
         L"Lancez le jeu pour commencer.",
         L"CrabeLoader a été mis à jour vers la version {} dans :\n\n{}\n\n"
         L"Vos mods et votre configuration n'ont pas été touchés.",
@@ -93,7 +93,7 @@ namespace {
         L"Choose the Disney Infinity 3.0 folder (the one containing DisneyInfinity3.exe)",
         L"DisneyInfinity3.exe was not found in:\n\n{}\n\nChoose the folder that contains the game.",
         L"CrabeLoader {} was installed in:\n\n{}\n\n"
-        L"The \"mods\" folder is ready: read mods\\LISEZMOI.txt to add your mods.\n\n"
+        L"The \"mods\" folder is ready: read mods\\README.txt to add your mods.\n\n"
         L"Start the game to begin.",
         L"CrabeLoader was updated to version {} in:\n\n{}\n\n"
         L"Your mods and your configuration were not touched.",

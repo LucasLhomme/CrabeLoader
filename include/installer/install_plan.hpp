@@ -22,7 +22,7 @@ namespace crabe::installer {
     constexpr std::string_view kBackupName = "bink2w32_orig.dll";
     constexpr std::string_view kStagingName = "bink2w32.dll.crabe-new";
     constexpr std::string_view kModsFolderName = "mods";
-    constexpr std::string_view kReadmeName = "LISEZMOI.txt";
+    constexpr std::string_view kReadmeName = "README.txt";
 
     // SHA-256 (lowercase hex) of the Bink DLL shipped with the Steam build of the game.
     constexpr std::array<std::string_view, 1> kKnownOriginalSha256 = {

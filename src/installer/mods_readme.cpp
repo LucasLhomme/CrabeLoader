@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Holds the text of mods/LISEZMOI.txt, written once beside the empty mods folder.
+** Holds the text of mods/README.txt, written once beside the empty mods folder.
 ** English first, then French; the keys named are the shipped defaults in crabe.toml.
 ** Contains no logic: it is the readme and nothing else.
 **
