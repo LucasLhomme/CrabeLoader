@@ -27,12 +27,13 @@
 // so nothing is lost to the translation.
 
 #include "infrastructure/minhook_backend.hpp"
-#include <memory>
 
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/memory.hpp"
 #include "minhook/MinHook.h"
 #include "shared/logger.hpp"
+
+#include <memory>
 
 namespace crabe::infrastructure {
 
@@ -164,25 +165,25 @@ namespace crabe::infrastructure {
         return measured;
     }
 
+    // Both are deliberately immortal, and that is load-bearing rather than
+    // laziness.
+    //
+    // A Hook lives as a member of another singleton -- RenderHook's,
+    // LuaCall's, MessageHook's -- and calls remove() from its own destructor
+    // at process exit. Those singletons are constructed *before* this one,
+    // because constructing them is what leads to the first install() that
+    // gets here, so static destruction order tears this registry down
+    // *first*. A Hook destructor running afterwards would then lock a mutex
+    // that no longer exists.
+    //
+    // So neither object is ever destroyed. Nothing is lost by it. MinHook's
+    // trampoline pages are already leaked on purpose (see ~MinHookBackend),
+    // a process on its way out does not care whether its own code is still
+    // patched, and unpatching at that point would race whatever thread is
+    // still executing inside a trampoline -- which is precisely the race
+    // ~MinHookBackend refuses to take.
     HookRegistry& coreRegistry()
     {
-        // Both are deliberately immortal, and that is load-bearing rather than
-        // laziness.
-        //
-        // A Hook lives as a member of another singleton -- RenderHook's,
-        // LuaCall's, MessageHook's -- and calls remove() from its own destructor
-        // at process exit. Those singletons are constructed *before* this one,
-        // because constructing them is what leads to the first install() that
-        // gets here, so static destruction order tears this registry down
-        // *first*. A Hook destructor running afterwards would then lock a mutex
-        // that no longer exists.
-        //
-        // So neither object is ever destroyed. Nothing is lost by it. MinHook's
-        // trampoline pages are already leaked on purpose (see ~MinHookBackend),
-        // a process on its way out does not care whether its own code is still
-        // patched, and unpatching at that point would race whatever thread is
-        // still executing inside a trampoline -- which is precisely the race
-        // ~MinHookBackend refuses to take.
         static MinHookBackend* backend = std::make_unique<MinHookBackend>().release();
         static HookRegistry* registry =
             std::make_unique<HookRegistry>(*backend, Attribution::PublishToCrashHandler).release();

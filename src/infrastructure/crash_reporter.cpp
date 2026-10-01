@@ -19,7 +19,6 @@
 // std::string, formats nothing through <format>, and opens the report with
 // CreateFileA/WriteFile rather than std::ofstream. The module table is walked
 // out of the PEB rather than through Toolhelp or GetModuleHandleEx, because
-#include <memory>
 // both of the latter take the loader lock -- which the faulting thread may
 // already be holding, and which would then deadlock a process that was merely
 // crashing.
@@ -41,6 +40,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <memory>
 
 #if !defined(_M_IX86)
 #error "crash_reporter.cpp targets Win32 (x86): CrabeLoader ships as a 32-bit proxy DLL, \
