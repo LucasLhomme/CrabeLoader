@@ -11,11 +11,23 @@ Crabe.Sandbox = Crabe.Sandbox or {}
 Crabe.Exports = Crabe.Exports or {}
 
 --- Creates a read-only proxy table blocking writes with security logging.
-local function makeReadOnlyProxy(realTable, tableName, modName)
+--- Now uses deep proxying and a cache to preserve reference equality and prevent cyclic loops.
+local function makeReadOnlyProxy(realTable, tableName, modName, cache)
     if type(realTable) ~= "table" then return realTable end
+    cache = cache or {}
+    if cache[realTable] then return cache[realTable] end
+
     local proxy = {}
+    cache[realTable] = proxy
+    
     local mt = {
-        __index = realTable,
+        __index = function(t, k)
+            local v = realTable[k]
+            if type(v) == "table" then
+                return makeReadOnlyProxy(v, tableName .. "." .. tostring(k), modName, cache)
+            end
+            return v
+        end,
         __newindex = function(t, k, v)
             local msg = string.format(
                 "! [Crabe.Sandbox] Security Violation: Mod '%s' attempted to modify protected table '%s' at key '%s'. Mutation was blocked.",
@@ -41,21 +53,24 @@ function Crabe.Sandbox.create(modName)
     env._ENV = env
     env._M = env
     env.modName = modName
-    env.Crabe = Crabe
+    
+    local proxyCache = {}
+    env.Crabe = makeReadOnlyProxy(Crabe, "Crabe", modName, proxyCache)
 
-    if Game then env.Game = makeReadOnlyProxy(Game, "Game", modName) end
-    if table then env.table = makeReadOnlyProxy(table, "table", modName) end
-    if string then env.string = makeReadOnlyProxy(string, "string", modName) end
-    if math then env.math = makeReadOnlyProxy(math, "math", modName) end
-    if coroutine then env.coroutine = makeReadOnlyProxy(coroutine, "coroutine", modName) end
-    if os then env.os = makeReadOnlyProxy(os, "os", modName) end
-    if debug then env.debug = makeReadOnlyProxy(debug, "debug", modName) end
-    env._G = makeReadOnlyProxy(_G, "_G", modName)
+    if Game then env.Game = makeReadOnlyProxy(Game, "Game", modName, proxyCache) end
+    if table then env.table = makeReadOnlyProxy(table, "table", modName, proxyCache) end
+    if string then env.string = makeReadOnlyProxy(string, "string", modName, proxyCache) end
+    if math then env.math = makeReadOnlyProxy(math, "math", modName, proxyCache) end
+    if coroutine then env.coroutine = makeReadOnlyProxy(coroutine, "coroutine", modName, proxyCache) end
+    if os then env.os = makeReadOnlyProxy(os, "os", modName, proxyCache) end
+    if debug then env.debug = makeReadOnlyProxy(debug, "debug", modName, proxyCache) end
+    env._G = makeReadOnlyProxy(_G, "_G", modName, proxyCache)
 
     setmetatable(env, {
         __index = function(t, k)
             return _G[k]
-        end
+        end,
+        __metatable = false
     })
     return env
 end
