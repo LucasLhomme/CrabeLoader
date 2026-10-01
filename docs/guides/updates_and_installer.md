@@ -32,11 +32,14 @@ The only request is an HTTPS `GET` to `api.github.com` for this repository's lat
 `VERSION` is the single source of truth: the built loader reports it, and the release tag is derived from it (`v<VERSION>`), so a loader and its own release can never disagree. If they could, players of a release would be offered that same release forever.
 
 1. Merge into `main` with a new `VERSION` (plain `X.Y.Z`).
-2. The release workflow builds, runs the tests, creates the tag and publishes a **pre-release**.
-3. Test `CrabeInstaller.exe` from that page.
-4. Untick "Set as a pre-release". From then on the update check sees it and players are asked.
+2. The release workflow builds, runs the tests and prepares a **draft** release, flagged pre-release. A draft is visible to maintainers only: it is not on the public releases page, it has no tag yet, and its files can only be downloaded while signed in to GitHub with write access.
+3. Download and test `CrabeInstaller.exe` from the draft.
+4. Publish the draft (*Releases, Edit, Publish release*). It becomes public as a pre-release, and the tag is created at that moment.
+5. Untick "Set as a pre-release" when players should be told. From then on the update check sees it and they are asked.
 
-The update check only sees stable releases, so nobody is prompted while a version is still a pre-release. A merge that leaves `VERSION` unchanged publishes nothing, because that version already has a release. A `VERSION` that is not plain `X.Y.Z` fails the run, since a suffix would hide the release from the update check. Releases are only ever cut from `main`.
+The update check only sees published, stable releases, so nobody is prompted before step 5. While a release is still a draft, every merge into `main` rebuilds it, so it always matches `main`; once published it is frozen, and a merge that leaves `VERSION` unchanged does nothing. A `VERSION` that is not plain `X.Y.Z` fails the run, since a suffix would hide the release from the update check. Releases are only ever prepared from `main`.
+
+To hand a build to a scanner or to someone else before publishing, download it from the draft and send the file itself: a draft has no public link.
 
 ### Turning it off
 
