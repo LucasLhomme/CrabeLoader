@@ -1,9 +1,10 @@
 name: Release - Build & Publish
 
-# A release is cut when the VERSION file reaches main with a number that has no
-# release yet. Every other merge into main does nothing. The release is published
-# as a PRE-RELEASE: the in-game update prompt only sees stable releases, so nobody
-# is asked to update until the pre-release is promoted by hand on GitHub.
+# A release is prepared when the VERSION file reaches main with a number that has
+# no published release yet. It is created as a DRAFT (and flagged pre-release): only
+# maintainers can see it, and nobody is asked to update, until a maintainer publishes
+# it by hand on GitHub. While it stays a draft, every merge into main rebuilds it, so
+# it always matches main; once published it is frozen and later merges leave it alone.
 on:
   push:
     branches:
@@ -51,19 +52,22 @@ jobs:
 
           AUTH=()
           if [[ -n "${GH_TOKEN}" ]]; then AUTH=(-H "Authorization: Bearer ${GH_TOKEN}"); fi
-          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "${AUTH[@]}" \
+          LIST=$(mktemp)
+          STATUS=$(curl -s -o "${LIST}" -w '%{http_code}' "${AUTH[@]}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")
-
-          if [[ "${STATUS}" == "200" ]]; then
-            echo "::notice::${TAG} is already released. Bump the VERSION file to publish a new version."
-            echo "release=false" >> "$GITHUB_OUTPUT"
-          elif [[ "${STATUS}" == "404" ]]; then
-            echo "Releasing CrabeLoader ${VER} (tag ${TAG})."
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Could not check whether ${TAG} is already released (HTTP ${STATUS})."
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100")
+          if [[ "${STATUS}" != "200" ]]; then
+            echo "::error::Could not list the existing releases (HTTP ${STATUS})."
             exit 1
+          fi
+
+          PUBLISHED=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1],encoding="utf-8")); print(any(x["tag_name"]==sys.argv[2] and not x["draft"] for x in r))' "${LIST}" "${TAG}")
+          if [[ "${PUBLISHED}" == "True" ]]; then
+            echo "::notice::${TAG} is already published. Bump the VERSION file to release a new version."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Preparing the draft release for CrabeLoader ${VER} (tag ${TAG})."
+            echo "release=true" >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -156,17 +160,17 @@ jobs:
           sha256sum bink2w32.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Publish GitHub Release (pre-release)
+      - name: Prepare GitHub Release (draft)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: CrabeLoader ${{ needs.plan.outputs.tag }}
-          draft: false
+          draft: true
           prerelease: true
           generate_release_notes: true
           body: |
-            **Pre-release.** Test `CrabeInstaller.exe` first, then untick "Set as a pre-release" to roll this version out: the in-game update prompt only sees stable releases.
+            **Draft, visible to maintainers only.** Test `CrabeInstaller.exe`, then publish. To roll the version out to players, also untick "Set as a pre-release": the in-game update prompt only sees published, stable releases.
           files: |
             CrabeInstaller.exe
             bink2w32.dll
