@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mod Lifecycle:** Mod subscriptions and lifecycle hooks are now explicitly tracked and revoked on reload.
 
 ### Fixed
+- **IP Addresses in `loader.log`:** The multiplayer module no longer writes the player's local or public IP address, or a Direct Connect target address, to the log. Logs can now be shared in bug reports without editing them first.
 - **Settings Screen Race Condition:** Resolved timing issue where game options menu would render blank when injecting options.
 - **Multi-State Mod Reload (F4):** Ensured mod reloads are properly dispatched across all active engine Lua states.
 - **Hook Registry Safety:** Prevented hook collisions and attributed memory hook ownership.

@@ -132,7 +132,7 @@ namespace Crabe::Multiplayer {
         _forwardedProtocol = std::string(protocol);
         _status.statusMessage = std::format("Port {}/{} forwarded successfully via UPnP IGD", port, protocol);
 
-        logger.info("UpnpNatService: Port {}/{} successfully forwarded to local IP {}", port, protocol, _status.localIp);
+        logger.info("UpnpNatService: Port {}/{} successfully forwarded.", port, protocol);
 
         // Try to query router's external IP from mapping
         if (mapping) {
@@ -147,7 +147,7 @@ namespace Crabe::Multiplayer {
             _status.externalIp = resolveExternalIpViaStun();
         }
 
-        logger.info("UpnpNatService: Discovered External Public IP: {}", _status.externalIp);
+        logger.info("UpnpNatService: external address discovered.");
         return _status;
     }
 
@@ -318,7 +318,7 @@ namespace Crabe::Multiplayer {
                     addr.s_addr = htonl(realIp);
                     char ipStr[INET_ADDRSTRLEN] = {0};
                     if (inet_ntop(AF_INET, &addr, ipStr, sizeof(ipStr))) {
-                        logger.info("UpnpNatService: STUN resolved external IP: {}", ipStr);
+                        logger.info("UpnpNatService: STUN resolved the external address.");
                         return std::string(ipStr);
                     }
                 }
@@ -329,7 +329,7 @@ namespace Crabe::Multiplayer {
                     std::memcpy(&addr.s_addr, &response[offset + 4], 4);
                     char ipStr[INET_ADDRSTRLEN] = {0};
                     if (inet_ntop(AF_INET, &addr, ipStr, sizeof(ipStr))) {
-                        logger.info("UpnpNatService: STUN resolved external IP: {}", ipStr);
+                        logger.info("UpnpNatService: STUN resolved the external address.");
                         return std::string(ipStr);
                     }
                 }
