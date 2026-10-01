@@ -86,7 +86,10 @@ private:
     VfsOverrideManager(const VfsOverrideManager&) = delete;
     VfsOverrideManager& operator=(const VfsOverrideManager&) = delete;
 
+    struct string_hash { using is_transparent = void; [[nodiscard]] size_t operator()(std::string_view txt) const { return std::hash<std::string_view>{}(txt); } [[nodiscard]] size_t operator()(const std::string &txt) const { return std::hash<std::string>{}(txt); } };
     mutable std::shared_mutex _mutex;
+    mutable std::shared_mutex _fastCacheMutex;
+    mutable std::unordered_map<std::string, std::optional<std::filesystem::path>, string_hash, std::equal_to<>> _fastCache;
     std::unordered_map<std::string, OverrideEntry> _overrides;
     std::filesystem::path _gameRoot;
     mutable std::atomic<std::size_t> _resolutionCount{0};
@@ -98,3 +101,4 @@ private:
 } // namespace crabe::infrastructure
 
 #endif // CRABELOADER_INFRASTRUCTURE_VFS_OVERRIDE_MANAGER_HPP_
+

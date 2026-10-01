@@ -192,6 +192,11 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
     }
     _overrides = std::move(fresh);
 
+    {
+        std::unique_lock<std::shared_mutex> fastLock(_fastCacheMutex);
+        _fastCache.clear();
+    }
+
     logger.info("VFS: Indexed {} active virtual asset override(s) across {} mod directory(ies).",
                 _overrides.size(), modDirs.size());
 }
@@ -210,17 +215,44 @@ bool VfsOverrideManager::registerOverride(std::string_view virtualPath,
         .originMod = std::string(originMod),
         .hitCount = 0
     };
+
+    std::unique_lock<std::shared_mutex> fastLock(_fastCacheMutex);
+    _fastCache.clear();
     return true;
 }
 
 bool VfsOverrideManager::resolve(std::string_view requestedPath,
                                  std::filesystem::path& outPhysicalPath) const noexcept
 {
+    {
+        std::shared_lock<std::shared_mutex> fastLock(_fastCacheMutex);
+        auto cacheIt = _fastCache.find(requestedPath);
+        if (cacheIt != _fastCache.end()) {
+            _resolutionCount.fetch_add(1, std::memory_order_relaxed);
+            if (cacheIt->second.has_value()) {
+                _hitCount.fetch_add(1, std::memory_order_relaxed);
+                outPhysicalPath = cacheIt->second.value();
+                return true;
+            }
+            return false;
+        }
+    }
+
     _resolutionCount.fetch_add(1, std::memory_order_relaxed);
+
+    auto updateCache = [&](bool found) {
+        std::unique_lock<std::shared_mutex> fastLock(_fastCacheMutex);
+        if (found) {
+            _fastCache.insert_or_assign(std::string(requestedPath), std::make_optional(outPhysicalPath));
+        } else {
+            _fastCache.insert_or_assign(std::string(requestedPath), std::nullopt);
+        }
+        return found;
+    };
 
     std::string key = normalizeVirtualPath(requestedPath);
     if (key.empty())
-        return false;
+        return updateCache(false);
 
     std::shared_lock<std::shared_mutex> lock(_mutex);
     auto it = _overrides.find(key);
@@ -231,7 +263,7 @@ bool VfsOverrideManager::resolve(std::string_view requestedPath,
 
         std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
         _lastRedirected = key;
-        return true;
+        return updateCache(true);
     }
 
     // Fallback resolution for loose .tbody textures
@@ -247,7 +279,7 @@ bool VfsOverrideManager::resolve(std::string_view requestedPath,
 
             std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
             _lastRedirected = filename;
-            return true;
+            return updateCache(true);
         }
 
         const std::string texKey = "textures/" + filename;
@@ -259,11 +291,11 @@ bool VfsOverrideManager::resolve(std::string_view requestedPath,
 
             std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
             _lastRedirected = texKey;
-            return true;
+            return updateCache(true);
         }
     }
 
-    return false;
+    return updateCache(false);
 }
 
 std::optional<std::filesystem::path> VfsOverrideManager::resolve(
@@ -316,6 +348,9 @@ void VfsOverrideManager::clear() noexcept
     _overrides.clear();
     _resolutionCount.store(0, std::memory_order_relaxed);
     _hitCount.store(0, std::memory_order_relaxed);
+
+    std::unique_lock<std::shared_mutex> fastLock(_fastCacheMutex);
+    _fastCache.clear();
 
     std::lock_guard<std::mutex> lastLock(_lastRedirectedMutex);
     _lastRedirected.clear();
