@@ -1,6 +1,6 @@
-# CrabeLoader v0.2.0 Documentation
+# CrabeLoader v1.0.0 Documentation
 
-Welcome to the documentation repository for **CrabeLoader v0.2.0** — the decoupled, high-performance modloader and engine platform for *Disney Infinity 3.0: Gold Edition (PC)*.
+Welcome to the documentation repository for **CrabeLoader v1.0.0** — the decoupled, high-performance modloader and engine platform for *Disney Infinity 3.0: Gold Edition (PC)*.
 
 
 ---
