@@ -19,6 +19,7 @@
 // std::string, formats nothing through <format>, and opens the report with
 // CreateFileA/WriteFile rather than std::ofstream. The module table is walked
 // out of the PEB rather than through Toolhelp or GetModuleHandleEx, because
+#include <memory>
 // both of the latter take the loader lock -- which the faulting thread may
 // already be holding, and which would then deadlock a process that was merely
 // crashing.
@@ -1103,10 +1104,12 @@ namespace {
 
     void writeMinidump(EXCEPTION_POINTERS* pointers) noexcept
     {
-        HANDLE file = CreateFileA(g_dumpPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+        HANDLE rawFile = CreateFileA(g_dumpPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (file == INVALID_HANDLE_VALUE)
+        if (rawFile == INVALID_HANDLE_VALUE)
             return;
+
+        std::unique_ptr<void, decltype(&::CloseHandle)> file(rawFile, &::CloseHandle);
 
         MINIDUMP_EXCEPTION_INFORMATION information{};
         information.ThreadId = GetCurrentThreadId();
@@ -1117,9 +1120,8 @@ namespace {
             MiniDumpWithIndirectlyReferencedMemory | MiniDumpScanMemory |
             MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
 
-        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file, type,
+        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file.get(), type,
                           pointers ? &information : nullptr, nullptr, nullptr);
-        CloseHandle(file);
     }
 
     bool alreadyReported(const EXCEPTION_RECORD& record) noexcept

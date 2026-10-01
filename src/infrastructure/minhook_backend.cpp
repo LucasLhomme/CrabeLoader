@@ -27,6 +27,7 @@
 // so nothing is lost to the translation.
 
 #include "infrastructure/minhook_backend.hpp"
+#include <memory>
 
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/memory.hpp"
@@ -182,9 +183,9 @@ namespace crabe::infrastructure {
         // patched, and unpatching at that point would race whatever thread is
         // still executing inside a trampoline -- which is precisely the race
         // ~MinHookBackend refuses to take.
-        static MinHookBackend* backend = new MinHookBackend();
+        static MinHookBackend* backend = std::make_unique<MinHookBackend>().release();
         static HookRegistry* registry =
-            new HookRegistry(*backend, Attribution::PublishToCrashHandler);
+            std::make_unique<HookRegistry>(*backend, Attribution::PublishToCrashHandler).release();
         return *registry;
     }
 
