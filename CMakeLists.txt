@@ -22,6 +22,8 @@ option(CRABELOADER_AS_SHARED "Build CrabeLoader as a shared library (DLL)." OFF)
 option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
 option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
 option(CRABELOADER_BUILD_CLI "Build crabe-cli, the offline mod-authoring tool." OFF)
+option(CRABELOADER_BUILD_INSTALLER "Build CrabeInstaller.exe, the one-click installer." OFF)
+option(CRABELOADER_INSTALLER_EMBED_DLL "Embed bink2w32.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
 
 # The test suite exercises the real crabe-cli.exe (new-mod's scaffold is fed
 # straight into validate, end to end), so a test build needs it regardless of
@@ -87,6 +89,8 @@ set(CRABELOADER_CORE_SOURCES
     src/application/lua_natives.cpp
     src/application/multiplayer/multiplayer_manager.cpp
     src/application/multiplayer/multiplayer_natives.cpp
+    src/application/update_checker.cpp
+    src/application/update_launcher.cpp
 
     # Domain Layer
     src/domain/semver.cpp
@@ -98,6 +102,7 @@ set(CRABELOADER_CORE_SOURCES
     src/domain/mod_manager.cpp
     src/domain/reload_generation.cpp
     src/domain/config.cpp
+    src/domain/update_check.cpp
 
     # Infrastructure Layer
     src/infrastructure/crash_handler.cpp
@@ -120,6 +125,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/multiplayer/fallback_response_provider.cpp
     src/infrastructure/multiplayer/upnp_nat_service.cpp
     src/infrastructure/multiplayer/steamworks_service.cpp
+    src/infrastructure/update_services.cpp
 
     # Shared Layer
     src/shared/logger.cpp
@@ -383,6 +389,161 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# CrabeInstaller -- the one-click installer. It shares nothing with the loader
+# but include/shared/version.hpp: it is a plain Win32 program that decides what
+# it may do to a game folder (install_plan) and then does it (game_installer).
+# The same sources feed test_installer, which drives the real file operations
+# in a temporary folder.
+# ---------------------------------------------------------------------------
+set(CRABE_INSTALLER_CORE_SOURCES
+    src/installer/install_plan.cpp
+    src/installer/sha256.cpp
+    src/installer/game_installer.cpp
+    src/installer/mods_readme.cpp
+    src/installer/steam_locator.cpp
+)
+
+add_executable(test_installer
+    tests/cpp/test_installer.cpp
+    ${CRABE_INSTALLER_CORE_SOURCES}
+)
+target_include_directories(test_installer PRIVATE
+    include
+    include/shared
+    src
+)
+target_compile_definitions(test_installer PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+if(MSVC)
+    target_compile_options(test_installer PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_installer PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(CRABELOADER_BUILD_INSTALLER)
+    set(CRABE_INSTALLER_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/installer")
+    set(CRABE_INSTALLER_EMBED OFF)
+    if(CRABELOADER_INSTALLER_EMBED_DLL AND CRABELOADER_AS_SHARED)
+        set(CRABE_INSTALLER_EMBED ON)
+    endif()
+
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/installer/installer.rc.in"
+        "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
+        @ONLY
+    )
+    if(CRABE_INSTALLER_EMBED)
+        file(GENERATE
+            OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
+            CONTENT "101 RCDATA \"$<TARGET_FILE:${PROJECT_NAME}>\"\n"
+        )
+    else()
+        file(GENERATE
+            OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
+            CONTENT "/* no embedded payload: the installer looks for bink2w32.dll beside itself */\n"
+        )
+    endif()
+
+    add_executable(CrabeInstaller WIN32
+        src/installer/main.cpp
+        ${CRABE_INSTALLER_CORE_SOURCES}
+        src/installer/installer.manifest
+        "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
+    )
+    target_include_directories(CrabeInstaller PRIVATE
+        include
+        include/shared
+        src
+        "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>"
+    )
+    target_compile_definitions(CrabeInstaller PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        UNICODE
+        _UNICODE
+        _CRT_SECURE_NO_WARNINGS
+    )
+    if(MSVC)
+        target_compile_options(CrabeInstaller PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(CrabeInstaller PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    if(CRABE_INSTALLER_EMBED)
+        add_dependencies(CrabeInstaller ${PROJECT_NAME})
+        add_custom_command(TARGET CrabeInstaller PRE_BUILD
+            COMMAND ${CMAKE_COMMAND} -E touch "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
+            COMMENT "Refreshing the embedded bink2w32.dll"
+        )
+    endif()
+endif()
+
+add_executable(test_update_checker
+    tests/cpp/test_update_checker.cpp
+    src/application/update_checker.cpp
+    src/domain/update_check.cpp
+    src/domain/semver.cpp
+    src/domain/config.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+target_include_directories(test_update_checker PRIVATE
+    include
+    include/application
+    include/domain
+    include/shared
+    src
+)
+target_compile_definitions(test_update_checker PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_update_checker PRIVATE
+    nlohmann_json::nlohmann_json
+    tomlplusplus::tomlplusplus
+)
+if(MSVC)
+    target_compile_options(test_update_checker PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_update_checker PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(update_probe
+    tests/cpp/update_probe.cpp
+    src/application/update_checker.cpp
+    src/infrastructure/update_services.cpp
+    src/domain/update_check.cpp
+    src/domain/semver.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+target_include_directories(update_probe PRIVATE
+    include
+    include/application
+    include/domain
+    include/infrastructure
+    include/shared
+    src
+)
+target_compile_definitions(update_probe PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(update_probe PRIVATE
+    nlohmann_json::nlohmann_json
+)
+if(MSVC)
+    target_compile_options(update_probe PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(update_probe PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ---------------------------------------------------------------------------
 # crabe_lua -- standalone Lua 5.1.5 interpreter used to execute the Lua API
 # test suite (tests/lua/run_tests.lua) offline without requiring the game.
 # ---------------------------------------------------------------------------
@@ -423,6 +584,8 @@ endif()
 enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
 add_test(NAME test_telemetry COMMAND test_telemetry)
+add_test(NAME test_update_checker COMMAND test_update_checker)
+add_test(NAME test_installer COMMAND test_installer)
 add_test(NAME crabe_fate COMMAND crabe_fate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)

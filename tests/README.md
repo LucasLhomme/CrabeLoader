@@ -67,6 +67,19 @@ These tests run standalone without requiring the `DisneyInfinity3.exe` game proc
 
 ---
 
+### B2. Update Check (`test_update_checker.exe`) and Installer (`test_installer.exe`)
+* **Source files:** [`tests/cpp/test_update_checker.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_update_checker.cpp), [`tests/cpp/test_installer.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_installer.cpp)
+* **Purpose:** The update check runs against fake network, prompt and browser ports (up to date, offline, draft, declined, accepted, unreadable answer, `[updates]` config key). The installer suite drives the real file operations in a temporary folder: fresh install, update, every refusal leaving the folder untouched, a locked file, SHA-256 vectors, and the Steam library parser.
+* **Execution command:**
+  ```powershell
+  cmake --build build --config Release --target test_update_checker test_installer
+  .\build\Release\test_update_checker.exe
+  .\build\Release\test_installer.exe
+  ```
+* **Manual probe:** `update_probe.exe` runs the real check outside the game (see [`docs/guides/updates_and_installer.md`](file:///e:/Dev/DIM2/CrabeLoader/docs/guides/updates_and_installer.md)).
+
+---
+
 ### C. Dependency Graph & DAG Regression Suite (`crabe_fate.exe`)
 * **Source file:** [`tests/cpp/crabe_fate_main.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/crabe_fate_main.cpp)
 * **Test directories:** [`tests/fate/samples/`](file:///e:/Dev/DIM2/CrabeLoader/tests/fate/samples/) and [`tests/fate/ref/`](file:///e:/Dev/DIM2/CrabeLoader/tests/fate/ref/)

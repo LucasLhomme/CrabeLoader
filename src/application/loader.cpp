@@ -23,6 +23,7 @@
 
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "application/update_launcher.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/engine_free_camera.hpp"
@@ -554,7 +555,9 @@ bool Loader::initialize()
     }
     applyConfiguredLogLevel(config.logLevel());
 
-    auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
+    crabe::application::startUpdateCheckInBackground(config.updateCheckEnabled());
+
+    auto base =reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
     // Which build is this? Everything below turns on the answer. The
     // detection itself is cached, so MemoryPatcher -- which runs from

@@ -275,7 +275,7 @@ namespace Multiplayer::Application {
         if (redirector) {
             redirector->setDirectConnectPayload(friendName, location);
         }
-        Logger::getInstance().info("MultiplayerManager: primed Direct Connect target '{}' at {}:{}", friendName, ip, port);
+        Logger::getInstance().info("MultiplayerManager: primed Direct Connect target '{}' (port {}).", friendName, port);
     }
 
     bool MultiplayerManager::isSteamAvailable() const noexcept {

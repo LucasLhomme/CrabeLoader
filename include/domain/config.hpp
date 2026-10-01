@@ -154,6 +154,7 @@ namespace crabe::domain {
         [[nodiscard]] const std::string& logLevel() const noexcept { return _logLevel; }
         [[nodiscard]] ConfigWindowMode windowMode() const noexcept { return _windowMode; }
         [[nodiscard]] bool multiplayerEnabled() const noexcept { return _multiplayerEnabled; }
+        [[nodiscard]] bool updateCheckEnabled() const noexcept { return _updateCheckEnabled; }
 
         // Raw key names as written in [keybinds] ("F4", "Insert"), not yet
         // resolved to a virtual-key code -- that needs <windows.h>, which
@@ -199,6 +200,7 @@ namespace crabe::domain {
         std::string _logLevel{"info"};
         ConfigWindowMode _windowMode{ConfigWindowMode::Borderless};
         bool _multiplayerEnabled{false};
+        bool _updateCheckEnabled{true};
         std::string _hotReloadKeybind{"F4"};
         std::string _devOverlayKeybind{"Insert"};
 

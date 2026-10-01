@@ -196,6 +196,46 @@ happening. Check all four.
       frames the quarantine message must name your mod. If it names `core`, the
       ownership bracket is not taking effect in the shipped DLL.
 
+## Update check and installer
+
+Covered automatically: the version comparison, every outcome of the check against
+fake network, prompt and browser ports, and the `[updates]` config key in
+`tests/cpp/test_update_checker.cpp`; every install, update and refusal against a
+real temporary folder (including a locked file) in `tests/cpp/test_installer.cpp`.
+What those cannot reach is what a person sees: the dialogs, and the box above a
+running game.
+
+- [ ] **The update box appears above the game and "No" is the default.** With
+      the game running in borderless mode, then again in windowed mode, run
+      `update_probe.exe --current 0.1.0 --fake-latest v9.9.9 --no-open`. The
+      box must be visible and in front of the game, and Enter must answer No.
+      A failure is a box hidden behind the game or one that minimises it.
+- [ ] **Yes opens only the releases page.** Same command without `--no-open`,
+      answer Yes. The browser must open `.../CrabeLoader/releases/latest` and
+      nothing else.
+- [ ] **No network means no box.** Disable the network adapter and launch the
+      game. `loader.log` must hold one `UpdateChecker: could not reach the
+      release server` line and the game must start normally.
+- [ ] **The game never waits for the check.** Block `api.github.com` in the
+      hosts file, launch, and compare the time to the main menu with
+      `[updates] check = false`. A difference of more than a second means the
+      check is on the wrong thread.
+- [ ] **`check = false` makes no request at all.** With it set, `loader.log`
+      must say the check is disabled and a packet capture must show no traffic
+      to `api.github.com`.
+- [ ] **The installer finds the game and asks before touching it.** Run
+      `CrabeInstaller.exe` with Steam installed. The detected folder must be
+      the right one, and Cancel must leave every file untouched.
+- [ ] **A wrong folder is explained, not installed into.** Choose a folder
+      without `DisneyInfinity3.exe`. The message must name the missing file and
+      the dialog must open again.
+- [ ] **Both languages read correctly.** Run the installer on a French and on
+      an English Windows UI language. No `?` or mojibake in either, and the
+      readme in `mods/` must show its accents in Notepad.
+- [ ] **A running game blocks an update cleanly.** With the game open, run the
+      installer to update. It must say it cannot write, and `bink2w32.dll`,
+      `bink2w32_orig.dll` and the game must be exactly as before.
+
 ## Adding to this file
 
 New work orders append a section of their own, in the same shape:

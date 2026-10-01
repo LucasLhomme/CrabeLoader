@@ -14,6 +14,7 @@ This directory contains in-depth, structured guides in plain English covering ev
 | **[Skill Tree Modding Guide](skilltrees.md)** | Comprehensive breakdown of how character abilities and progression trees are loaded. Learn how to write chunk patches (`.patch`) and full source overrides (`.lua`) to customize combat stats, reduce costs, or build brand-new skill branches. | Intermediate Modders |
 | **[Character & Figurine Guide](characters.md)** | Master the game's figurine resolution pipeline (`SKU -> AvatarData -> Name -> ActorList -> DNA`). Learn how to expose unreleased figures (Mace Windu, Thanos) and register custom character variants using `Crabe.VirtualReader`. | All Modders & Roster Creators |
 | **[crabe-cli Reference](cli.md)** | Scaffold a new mod, validate a manifest, run the real dependency resolver, and catch Lua API typos -- all offline, without launching the game. | All Modders & CI Pipelines |
+| **[Update Check & CrabeInstaller](updates_and_installer.md)** | How the launch-time update prompt works and how to turn it off, plus the one-click installer and the rule that keeps the game's original `bink2w32.dll` safe. | Players & Maintainers |
 
 ---
 
