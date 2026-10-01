@@ -386,6 +386,68 @@ else()
     target_compile_options(test_telemetry PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(test_update_checker
+    tests/cpp/test_update_checker.cpp
+    src/application/update_checker.cpp
+    src/domain/update_check.cpp
+    src/domain/semver.cpp
+    src/domain/config.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+target_include_directories(test_update_checker PRIVATE
+    include
+    include/application
+    include/domain
+    include/shared
+    src
+)
+target_compile_definitions(test_update_checker PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_update_checker PRIVATE
+    nlohmann_json::nlohmann_json
+    tomlplusplus::tomlplusplus
+)
+if(MSVC)
+    target_compile_options(test_update_checker PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_update_checker PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(update_probe
+    tests/cpp/update_probe.cpp
+    src/application/update_checker.cpp
+    src/infrastructure/update_services.cpp
+    src/domain/update_check.cpp
+    src/domain/semver.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+target_include_directories(update_probe PRIVATE
+    include
+    include/application
+    include/domain
+    include/infrastructure
+    include/shared
+    src
+)
+target_compile_definitions(update_probe PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(update_probe PRIVATE
+    nlohmann_json::nlohmann_json
+)
+if(MSVC)
+    target_compile_options(update_probe PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(update_probe PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # ---------------------------------------------------------------------------
 # crabe_lua -- standalone Lua 5.1.5 interpreter used to execute the Lua API
 # test suite (tests/lua/run_tests.lua) offline without requiring the game.
@@ -427,6 +489,7 @@ endif()
 enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
 add_test(NAME test_telemetry COMMAND test_telemetry)
+add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME crabe_fate COMMAND crabe_fate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
