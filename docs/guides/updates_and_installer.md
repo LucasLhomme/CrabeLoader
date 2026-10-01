@@ -29,7 +29,14 @@ The only request is an HTTPS `GET` to `api.github.com` for this repository's lat
 
 ### Releasing
 
-The built loader reads its version from the `VERSION` file, and the check compares it with the release **tag**. The release workflow therefore refuses a tag that differs from `VERSION`; otherwise players of the new release would be offered that same release forever.
+`VERSION` is the single source of truth: the built loader reports it, and the release tag is derived from it (`v<VERSION>`), so a loader and its own release can never disagree. If they could, players of a release would be offered that same release forever.
+
+1. Merge into `main` with a new `VERSION` (plain `X.Y.Z`).
+2. The release workflow builds, runs the tests, creates the tag and publishes a **pre-release**.
+3. Test `CrabeInstaller.exe` from that page.
+4. Untick "Set as a pre-release". From then on the update check sees it and players are asked.
+
+The update check only sees stable releases, so nobody is prompted while a version is still a pre-release. A merge that leaves `VERSION` unchanged publishes nothing, because that version already has a release. A `VERSION` that is not plain `X.Y.Z` fails the run, since a suffix would hide the release from the update check. Releases are only ever cut from `main`.
 
 ### Turning it off
 
@@ -123,7 +130,7 @@ Tests: `tests/cpp/test_installer.cpp` drives the real file operations in a tempo
 
 ### Releases
 
-The release workflow attaches `CrabeInstaller.exe` (Option A), the raw `bink2w32.dll` (Option B), a zip with both plus the mod template, and `SHA256SUMS.txt`.
+Each release carries `CrabeInstaller.exe` (Option A), the raw `bink2w32.dll` (Option B), a zip with both plus the mod template, and `SHA256SUMS.txt`. GitHub adds the source archives itself.
 
 ### Limits worth knowing
 
