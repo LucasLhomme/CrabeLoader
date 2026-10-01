@@ -16,11 +16,11 @@
 
 namespace crabe::version {
 
-    constexpr uint32_t Major = 0;
-    constexpr uint32_t Minor = 2;
+    constexpr uint32_t Major = 1;
+    constexpr uint32_t Minor = 0;
     constexpr uint32_t Patch = 0;
 
-    constexpr std::string_view String = "0.2.0";
+    constexpr std::string_view String = "1.0.0";
     constexpr std::string_view BuildDate = __DATE__;
     constexpr std::string_view BuildTime = __TIME__;
 

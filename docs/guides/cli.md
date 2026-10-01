@@ -102,7 +102,7 @@ Three things keep this in step with the loader rather than merely resembling it:
 
 ```
 $ crabe-cli resolve ./mods
-resolve: ./mods (loader v0.2.0)
+resolve: ./mods (loader v1.0.0)
   2 to load, 1 rejected
   [1/2] com.example.core 1.0.0 in 'core'
   [2/2] com.example.app 1.0.0 in 'app'
@@ -114,7 +114,7 @@ resolve: ./mods (loader v0.2.0)
 ```json
 {
   "modsDir": "./mods",
-  "loaderVersion": "0.2.0",
+  "loaderVersion": "1.0.0",
   "exitCode": 1,
   "ok": false,
   "loadOrder": [ { "id": "com.example.core", "folder": "core", "version": "1.0.0" } ],
