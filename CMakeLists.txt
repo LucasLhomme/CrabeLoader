@@ -22,6 +22,8 @@ option(CRABELOADER_AS_SHARED "Build CrabeLoader as a shared library (DLL)." OFF)
 option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
 option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
 option(CRABELOADER_BUILD_CLI "Build crabe-cli, the offline mod-authoring tool." OFF)
+option(CRABELOADER_BUILD_INSTALLER "Build CrabeInstaller.exe, the one-click installer." OFF)
+option(CRABELOADER_INSTALLER_EMBED_DLL "Embed bink2w32.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
 
 # The test suite exercises the real crabe-cli.exe (new-mod's scaffold is fed
 # straight into validate, end to end), so a test build needs it regardless of
@@ -419,6 +421,64 @@ if(MSVC)
     target_compile_options(test_installer PRIVATE /W4 /utf-8)
 else()
     target_compile_options(test_installer PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(CRABELOADER_BUILD_INSTALLER)
+    set(CRABE_INSTALLER_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/installer")
+    set(CRABE_INSTALLER_EMBED OFF)
+    if(CRABELOADER_INSTALLER_EMBED_DLL AND CRABELOADER_AS_SHARED)
+        set(CRABE_INSTALLER_EMBED ON)
+    endif()
+
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/installer/installer.rc.in"
+        "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
+        @ONLY
+    )
+    if(CRABE_INSTALLER_EMBED)
+        file(GENERATE
+            OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
+            CONTENT "101 RCDATA \"$<TARGET_FILE:${PROJECT_NAME}>\"\n"
+        )
+    else()
+        file(GENERATE
+            OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
+            CONTENT "/* no embedded payload: the installer looks for bink2w32.dll beside itself */\n"
+        )
+    endif()
+
+    add_executable(CrabeInstaller WIN32
+        src/installer/main.cpp
+        ${CRABE_INSTALLER_CORE_SOURCES}
+        src/installer/installer.manifest
+        "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
+    )
+    target_include_directories(CrabeInstaller PRIVATE
+        include
+        include/shared
+        src
+        "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>"
+    )
+    target_compile_definitions(CrabeInstaller PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        UNICODE
+        _UNICODE
+        _CRT_SECURE_NO_WARNINGS
+    )
+    if(MSVC)
+        target_compile_options(CrabeInstaller PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(CrabeInstaller PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    if(CRABE_INSTALLER_EMBED)
+        add_dependencies(CrabeInstaller ${PROJECT_NAME})
+        add_custom_command(TARGET CrabeInstaller PRE_BUILD
+            COMMAND ${CMAKE_COMMAND} -E touch "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
+            COMMENT "Refreshing the embedded bink2w32.dll"
+        )
+    endif()
 endif()
 
 add_executable(test_update_checker
