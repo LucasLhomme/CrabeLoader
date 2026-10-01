@@ -23,6 +23,8 @@ jobs:
       - name: Resolve Version
         id: resolve_ver
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             RAW_TAG="${GITHUB_REF_NAME}"
@@ -34,6 +36,18 @@ jobs:
           FILE_VER=$(tr -d '[:space:]' < VERSION)
           if [[ "${VER}" != "${FILE_VER}" ]]; then
             echo "::error::Tag ${RAW_TAG} does not match the VERSION file (${FILE_VER}). The built loader would report the wrong version and offer its own release as an update."
+            exit 1
+          fi
+          AUTH=()
+          if [[ -n "${GH_TOKEN}" ]]; then AUTH=(-H "Authorization: Bearer ${GH_TOKEN}"); fi
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "${AUTH[@]}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${RAW_TAG}")
+          if [[ "${STATUS}" == "200" ]]; then
+            echo "::error::A release for ${RAW_TAG} already exists. Bump the VERSION file and use a new tag instead of publishing the same version twice."
+            exit 1
+          elif [[ "${STATUS}" != "404" ]]; then
+            echo "::error::Could not check whether ${RAW_TAG} is already released (HTTP ${STATUS})."
             exit 1
           fi
           echo "VERSION=${VER}" >> $GITHUB_OUTPUT
