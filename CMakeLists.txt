@@ -386,6 +386,41 @@ else()
     target_compile_options(test_telemetry PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# ---------------------------------------------------------------------------
+# CrabeInstaller -- the one-click installer. It shares nothing with the loader
+# but include/shared/version.hpp: it is a plain Win32 program that decides what
+# it may do to a game folder (install_plan) and then does it (game_installer).
+# The same sources feed test_installer, which drives the real file operations
+# in a temporary folder.
+# ---------------------------------------------------------------------------
+set(CRABE_INSTALLER_CORE_SOURCES
+    src/installer/install_plan.cpp
+    src/installer/sha256.cpp
+    src/installer/game_installer.cpp
+    src/installer/mods_readme.cpp
+    src/installer/steam_locator.cpp
+)
+
+add_executable(test_installer
+    tests/cpp/test_installer.cpp
+    ${CRABE_INSTALLER_CORE_SOURCES}
+)
+target_include_directories(test_installer PRIVATE
+    include
+    include/shared
+    src
+)
+target_compile_definitions(test_installer PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+if(MSVC)
+    target_compile_options(test_installer PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_installer PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(test_update_checker
     tests/cpp/test_update_checker.cpp
     src/application/update_checker.cpp
@@ -490,6 +525,7 @@ enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
+add_test(NAME test_installer COMMAND test_installer)
 add_test(NAME crabe_fate COMMAND crabe_fate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
