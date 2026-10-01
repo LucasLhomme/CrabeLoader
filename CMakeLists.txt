@@ -87,6 +87,8 @@ set(CRABELOADER_CORE_SOURCES
     src/application/lua_natives.cpp
     src/application/multiplayer/multiplayer_manager.cpp
     src/application/multiplayer/multiplayer_natives.cpp
+    src/application/update_checker.cpp
+    src/application/update_launcher.cpp
 
     # Domain Layer
     src/domain/semver.cpp
@@ -98,6 +100,7 @@ set(CRABELOADER_CORE_SOURCES
     src/domain/mod_manager.cpp
     src/domain/reload_generation.cpp
     src/domain/config.cpp
+    src/domain/update_check.cpp
 
     # Infrastructure Layer
     src/infrastructure/crash_handler.cpp
@@ -120,6 +123,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/multiplayer/fallback_response_provider.cpp
     src/infrastructure/multiplayer/upnp_nat_service.cpp
     src/infrastructure/multiplayer/steamworks_service.cpp
+    src/infrastructure/update_services.cpp
 
     # Shared Layer
     src/shared/logger.cpp
