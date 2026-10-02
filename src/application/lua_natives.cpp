@@ -576,6 +576,8 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_actorPlace",            &nativeActorPlace },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
+        { "_padState",              &crabe::input_natives::padState },
+        { "_setPadCaptured",        &crabe::input_natives::setPadCaptured },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },
         { "_messageWatch",          &nativeMessageWatch },
         { "_messageReport",         &nativeMessageReport },

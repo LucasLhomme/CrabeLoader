@@ -246,6 +246,23 @@ function Crabe.Input.bindKey(vk, callback) end
 ---@param vk number Virtual Key code.
 function Crabe.Input.unbindKey(vk) end
 
+--- XINPUT_GAMEPAD_* button bits (DPAD_UP, A, B, LB, RB, START, ...).
+Crabe.Input.PAD = {}
+
+--- Returns what the game last read from a controller slot, or nil when it is not connected.
+---@param slot? number Controller slot 0-3, 0 by default.
+---@return table|nil state { buttons, leftTrigger, rightTrigger, leftX, leftY, rightX, rightY }
+function Crabe.Input.padState(slot) end
+
+--- Reports whether one Crabe.Input.PAD bit is held in a padState().buttons value.
+---@param buttons number @param mask number
+---@return boolean
+function Crabe.Input.padHas(buttons, mask) end
+
+--- While true the game reads an idle gamepad; padState keeps reading the real one.
+---@param captured boolean
+function Crabe.Input.capturePad(captured) end
+
 --------------------------------------------------------------------------------
 -- Crabe.ImGui: Dear ImGui Rendering Primitives
 --------------------------------------------------------------------------------

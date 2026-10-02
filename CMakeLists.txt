@@ -78,6 +78,7 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/overlay.cpp
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
+    src/presentation/pad_state.cpp
     src/presentation/imgui_bindings.cpp
     src/presentation/draw_buffer.cpp
 
