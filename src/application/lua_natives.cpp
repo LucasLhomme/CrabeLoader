@@ -20,13 +20,19 @@
 #include "shared/version.hpp"
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/input_hook.hpp"
+#include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
+#include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/message_hook.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
+#if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_natives.hpp"
+#endif
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
 
@@ -95,6 +101,114 @@ namespace {
         if (!lua.hasReturnSupport()) return 0;
 
         lua.pushNumber(L, static_cast<double>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))));
+        return 1;
+    }
+
+    // Crabe._engineFreeCamera(playerId, skipNoControl) -> true/false (now on/off),
+    // or nil when this build does not carry the engine free camera.
+    int __cdecl nativeEngineFreeCamera(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const int playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+        const bool skipNoControl = lua.argToBoolean(L, 2);
+
+        const std::optional<bool> active = crabe::infrastructure::EngineFreeCamera::get().toggle(playerId, skipNoControl);
+        if (!lua.hasReturnSupport() || !active) return 0;
+
+        lua.pushBoolean(L, *active);
+        return 1;
+    }
+
+    // Crabe._engineSceneGeneration() -> how many times the engine has rebuilt its
+    // camera scenes, once per world load. A free camera belongs to one generation.
+    int __cdecl nativeEngineSceneGeneration(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushNumber(L, static_cast<double>(crabe::infrastructure::EngineFreeCamera::get().sceneGeneration()));
+        return 1;
+    }
+
+    // Crabe._cameraEye(playerId) -> x, y, z of that player's current camera (the free
+    // camera while it runs), or nothing when the player has no camera.
+    int __cdecl nativeCameraEye(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const int playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+
+        const auto eye = crabe::infrastructure::EngineKinematics::get().cameraEye(playerId);
+        if (!lua.hasReturnSupport() || !eye) return 0;
+
+        lua.pushNumber(L, (*eye)[0]);
+        lua.pushNumber(L, (*eye)[1]);
+        lua.pushNumber(L, (*eye)[2]);
+        return 3;
+    }
+
+    // Crabe._actorPlace(actorHandle, x, y, z) -> true when the engine placed the actor.
+    int __cdecl nativeActorPlace(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const crabe::infrastructure::EngineKinematics::Position position{
+            static_cast<float>(lua.argToNumber(L, 2, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 3, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 4, 0.0)),
+        };
+
+        const bool placed = crabe::infrastructure::EngineKinematics::get().placeActor(handle, position);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, placed);
+        return 1;
+    }
+
+    // Crabe._vfsGetOverrideCount() -> number of registered file overrides.
+    int __cdecl nativeVfsGetOverrideCount(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushNumber(L, static_cast<double>(crabe::infrastructure::VfsOverrideManager::get().getOverrideCount()));
+        return 1;
+    }
+
+    // Crabe._vfsResolve(virtualPath) -> resolved physical path or nil.
+    int __cdecl nativeVfsResolve(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* path = lua.argToString(L, 1);
+        if (!path || !lua.hasReturnSupport()) return 0;
+
+        std::filesystem::path resolved;
+        if (crabe::infrastructure::VfsOverrideManager::get().resolve(path, resolved)) {
+            lua.pushString(L, resolved.string());
+            return 1;
+        }
+        return 0;
+    }
+
+    // Crabe._vfsGetStats() -> totalOverrides, totalResolutions, totalHits.
+    int __cdecl nativeVfsGetStats(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        auto stats = crabe::infrastructure::VfsOverrideManager::get().getStats();
+        lua.pushNumber(L, static_cast<double>(stats.totalOverrides));
+        lua.pushNumber(L, static_cast<double>(stats.totalResolutions));
+        lua.pushNumber(L, static_cast<double>(stats.totalHits));
+        return 3;
+    }
+
+    // Crabe._vfsLastRedirected() -> path of most recently redirected asset.
+    int __cdecl nativeVfsLastRedirected(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushString(L, crabe::infrastructure::VfsOverrideManager::get().getLastRedirectedFile());
         return 1;
     }
 
@@ -246,6 +360,23 @@ namespace {
             return 1;
         }
         return 0;
+    }
+
+    // Crabe._sharedBlock(name, size) -> address of a zeroed block that survives hot reloads, or nil
+    int __cdecl nativeSharedBlock(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* name = lua.argToString(L, 1);
+        auto size = static_cast<size_t>(lua.argToNumber(L, 2));
+        if (!name) return 0;
+
+        uintptr_t address = crabe::infrastructure::acquireSharedBlock(name, size);
+        if (!address) return 0;
+
+        lua.pushNumber(L, static_cast<double>(address));
+        return 1;
     }
 
     // Crabe._installCodeCave(addr, "90 90 ...", [stolenLength = 0]) -> bool
@@ -413,6 +544,20 @@ namespace {
         return 0;
     }
 
+    // Crabe._allocateSku(name) -> deterministic string sku inside mod range
+    int __cdecl nativeAllocateSku(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* name = lua.argToString(L, 1);
+        if (!name) return 0;
+
+        std::string sku = crabe::application::gateway::allocateSku(name);
+        lua.pushString(L, sku);
+        return 1;
+    }
+
 } // namespace
 
 bool crabe::lua_runtime::registerNatives(void* L)
@@ -427,8 +572,14 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_getWindowModeNative",   &nativeGetWindowMode },
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
+        { "_engineFreeCamera",      &nativeEngineFreeCamera },
+        { "_engineSceneGeneration", &nativeEngineSceneGeneration },
+        { "_cameraEye",             &nativeCameraEye },
+        { "_actorPlace",            &nativeActorPlace },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
+        { "_padState",              &crabe::input_natives::padState },
+        { "_setPadCaptured",        &crabe::input_natives::setPadCaptured },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },
         { "_messageWatch",          &nativeMessageWatch },
         { "_messageReport",         &nativeMessageReport },
@@ -440,6 +591,8 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_readU32",               &nativeReadU32 },
         { "_writeU32",              &nativeWriteU32 },
         { "_installCodeCave",       &nativeInstallCodeCave },
+        { "_sharedBlock",           &nativeSharedBlock },
+        { "_allocateSku",           &nativeAllocateSku },
         { "_registerLoadOverride",  &nativeRegisterLoadOverride },
         { "_clearLoadOverrides",    &nativeClearLoadOverrides },
         { "_registerChunkPatch",    &nativeRegisterChunkPatch },
@@ -447,9 +600,17 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_storageSave",           &nativeStorageSave },
         { "_storageLoad",           &nativeStorageLoad },
         { "_fileLog",               &nativeFileLog },
+        { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
+        { "_vfsResolve",            &nativeVfsResolve },
+        { "_vfsGetStats",           &nativeVfsGetStats },
+        { "_vfsLastRedirected",     &nativeVfsLastRedirected },
     };
 
+#if CRABELOADER_WITH_MULTIPLAYER
     bool allOk = crabe::multiplayer::natives::registerAll(L);
+#else
+    bool allOk = true;
+#endif
     crabe::presentation::ImGuiBindings::registerBindings(L);
 
     crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(

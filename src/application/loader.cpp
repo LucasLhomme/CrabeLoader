@@ -23,14 +23,20 @@
 
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "application/update_launcher.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/crash_reporter.hpp"
+#include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "presentation/input_hook.hpp"
 #include "infrastructure/message_hook.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
+#include "infrastructure/vfs_hook.hpp"
+#if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_manager.hpp"
+#endif
 #include "presentation/render_hook.hpp"
 #include "domain/config.hpp"
 #include "domain/game_profile.hpp"
@@ -283,6 +289,7 @@ void Loader::runTicks(void* L)
     // asks the same question on its own thread. See domain/reload_generation.hpp.
     if (crabe::domain::ModManager::get().needsReload(L)) {
         crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
+        crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(std::filesystem::current_path() / "mods");
         crabe::domain::ModManager::get().reloadAllMods(L);
     }
 
@@ -321,7 +328,7 @@ void Loader::runTicks(void* L)
 // Emits every key press collected by the window thread since the last tick.
 void Loader::drainPendingKeyEvents(void* L)
 {
-    std::vector<int> pending;
+    std::vector<PendingKeyEvent> pending;
     {
         std::lock_guard<std::mutex> lock(_keyEventQueueMutex);
         if (_pendingKeyEvents.empty())
@@ -329,10 +336,12 @@ void Loader::drainPendingKeyEvents(void* L)
         pending.swap(_pendingKeyEvents);
     }
 
-    for (int virtualKey : pending) {
+    // The second argument tells a held key's auto-repeat apart from a press:
+    // scrolling wants the repeats, an action must run once per press.
+    for (const PendingKeyEvent& event : pending) {
         crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
-            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}) end",
-            virtualKey));
+            "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}, {}) end",
+            event.virtualKey, event.isRepeat ? "true" : "false"));
     }
 }
 
@@ -363,8 +372,25 @@ void Loader::drainPendingSnippets(void* L)
 
 void Loader::ensureRuntimeReady(void* L)
 {
-    if (isGameState(L) || _rejectedStates.count(L) != 0)
+    if (!L)
         return;
+
+    // Nothing observes lua_close, and the game opens a new state at the
+    // address of one it just closed (seen on a world load). A known address is
+    // only trusted while it still looks like the state it was: an injected one
+    // keeps its Crabe global, a rejected one still lacks the game's natives.
+    if (isGameState(L)) {
+        if (crabe::infrastructure::LuaCall::get().hasGlobal(L, "Crabe"))
+            return;
+        _initializedStates.erase(L);
+        crabe::shared::Logger::getInstance().info(
+            "Loader: Lua state 0x{:X} lost the API -- the game reused a closed state's address; injecting again.",
+            reinterpret_cast<uintptr_t>(L));
+    } else if (_rejectedStates.count(L) != 0) {
+        if (!crabe::infrastructure::LuaCall::get().hasGlobal(L, "UI_GetSparks"))
+            return;
+        _rejectedStates.erase(L);
+    }
     constexpr auto kInterval = std::chrono::milliseconds(250);
 
     auto now = std::chrono::steady_clock::now();
@@ -480,7 +506,7 @@ void Loader::registerDefaultKeybinds()
 }
 
 // Updates keybind states and executes callbacks on key-down transitions.
-void Loader::onKeyEvent(int virtualKey, bool isDown)
+void Loader::onKeyEvent(int virtualKey, bool isDown, bool isRepeat)
 {
     std::function<void()> callback;
     {
@@ -502,7 +528,7 @@ void Loader::onKeyEvent(int virtualKey, bool isDown)
     if (isDown && _runtimeReady) {
         std::lock_guard<std::mutex> lock(_keyEventQueueMutex);
         if (_pendingKeyEvents.size() < kMaxPendingKeyEvents)
-            _pendingKeyEvents.push_back(virtualKey);
+            _pendingKeyEvents.push_back({ virtualKey, isRepeat });
     }
 }
 
@@ -531,7 +557,9 @@ bool Loader::initialize()
     }
     applyConfiguredLogLevel(config.logLevel());
 
-    auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
+    crabe::application::startUpdateCheckInBackground(config.updateCheckEnabled());
+
+    auto base =reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
     // Which build is this? Everything below turns on the answer. The
     // detection itself is cached, so MemoryPatcher -- which runs from
@@ -598,12 +626,18 @@ bool Loader::initialize()
 
     crabe::presentation::InputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
+    crabe::infrastructure::EngineFreeCamera::get().initialize();
+    crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
+    crabe::infrastructure::VfsHook::get().initialize();
 
     // Two independent gates, and both must open. The config gate is the
     // player's stated preference; the profile gate is a safety property --
     // the multiplayer patches are known by address only, so applying them to
     // a build we did not measure corrupts code. Report whichever one closed,
     // so the log says something actionable rather than just "disabled".
+#if !CRABELOADER_WITH_MULTIPLAYER
+    logger.info("Loader: this build has no multiplayer (its sources were not present at compile time).");
+#else
     if (!config.multiplayerEnabled()) {
         logger.info("Loader: multiplayer disabled by crabe.toml ([multiplayer].enabled = false).");
     } else if (decision != crabe::domain::LoadDecision::Supported) {
@@ -613,14 +647,20 @@ bool Loader::initialize()
     } else {
         crabe::multiplayer::application::MultiplayerManager::getInstance().initialize();
     }
+#endif
 
     return true;
 }
 
 void Loader::uninitialize()
 {
+#if CRABELOADER_WITH_MULTIPLAYER
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
+#endif
+    crabe::infrastructure::VfsHook::get().uninitialize();
+    crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
+    crabe::infrastructure::EngineFreeCamera::get().uninitialize();
     crabe::infrastructure::MessageHook::get().uninitialize();
     crabe::presentation::RenderHook::get().uninitialize();
     crabe::infrastructure::LuaCall::get().uninitialize();

@@ -98,6 +98,10 @@ class LuaCall {
 
         bool callTick(void* L, double dt) const;
 
+        // Whether global `name` is set to anything but nil or false in `L`.
+        // Raw stack work, no chunk and no allocation: cheap enough for hkPcall.
+        [[nodiscard]] bool hasGlobal(void* L, const char* name) const;
+
         // Calls Crabe.Mod.dispatchDraw() natively. Script thread only: the Lua
         // VM is single-threaded (Architecture Blueprint, Rule 3).
         bool dispatchModDraw(void* L) const;

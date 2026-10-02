@@ -121,7 +121,7 @@ In mod menus such as **CrabeMenu**, characters can be spawned or swapped using t
 ## 7. Troubleshooting
 
 * **Missing 3D Mesh (Falling through the world):**  
-  Verify that the `Name` attribute matches the engine's internal actor ID. Case sensitivity matters in internal hash tables. Use `search_index.py` or the SQLite database to check `ActorList.lua`.
+  Verify that the `Name` attribute matches the engine's internal actor ID. Case sensitivity matters in internal hash tables. Look the actor up in `ActorList.lua` from the game's decrypted data files.
 * **Missing Icons in Selection Grid:**  
   If the `Icon` string is invalid, the engine falls back to a default silhouette icon.
 * **Skill Tree Not Loading:**  

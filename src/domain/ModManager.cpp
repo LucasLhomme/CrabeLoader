@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Loads each mod directory or standalone .lua script into its own Crabe.Sandbox environment.
+** Entry: mod.json "entry", else main.lua, else <name>.lua; a mod needing a newer loader is skipped.
+** Records draw commands only (DrawBuffer): RenderHook replays them in Present, never drawn here.
+**
+** Authors: @LucasLhomme
+*/
+
 #include "domain/ModManager.hpp"
 #include "domain/ModManifest.hpp"
 #include "application/loader.hpp"

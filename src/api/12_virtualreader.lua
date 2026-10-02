@@ -228,17 +228,77 @@ end
 -- can never disagree.
 function Crabe.VirtualReader.skuForName(name)
     local skus = Crabe.VirtualReader._skus
-    if not skus then return nil end
-    if skus[name] then return skus[name] end
-    if type(name) == "string" then
-        local lowerName = string.lower(name)
-        for k, v in pairs(skus) do
-            if type(k) == "string" and string.lower(k) == lowerName then
-                return v
+    if skus then
+        if skus[name] then return skus[name] end
+        if type(name) == "string" then
+            local lowerName = string.lower(name)
+            for k, v in pairs(skus) do
+                if type(k) == "string" and string.lower(k) == lowerName then
+                    return v
+                end
             end
         end
     end
+    -- Fallback: allocate deterministically on-the-fly!
+    if type(name) == "string" and name ~= "" then
+        local sku = nil
+        if type(Crabe._allocateSku) == "function" then
+            sku = Crabe._allocateSku(name)
+        else
+            local h = 0
+            for i = 1, #name do
+                local b = string.byte(name, i)
+                h = (h * 31 + b) % 2147483648
+            end
+            sku = tostring(1000340 + (h % 660))
+        end
+        Crabe.VirtualReader._skus = Crabe.VirtualReader._skus or {}
+        Crabe.VirtualReader._skus[name] = sku
+        return sku
+    end
     return nil
+end
+
+-- Returns a list of all custom/modded characters found in the roster.
+function Crabe.VirtualReader.getModdedCharacters()
+    local list = Crabe.VirtualReader.listCharacters()
+    local custom = {}
+    local seen = {}
+    if list then
+        for _, row in ipairs(list) do
+            local skuNum = tonumber(row.sku_id)
+            if skuNum and ((skuNum >= 1000340 and skuNum <= 1000999) or skuNum >= 2000000) then
+                table.insert(custom, row)
+                seen[row.Name] = true
+            end
+        end
+    end
+    -- Fallback from pendingAdds or known mod characters if this Lua state lacks VirtualReaderPC_Data
+    if pendingAdds then
+        for _, entry in ipairs(pendingAdds) do
+            if entry.Name and not seen[entry.Name] then
+                table.insert(custom, {
+                    Name = entry.Name,
+                    sku_id = entry.sku_id or Crabe.VirtualReader.skuForName(entry.Name),
+                    Icon = entry.Icon or "default",
+                })
+                seen[entry.Name] = true
+            end
+        end
+    end
+    if Crabe.VirtualReader._skus then
+        for name, sku in pairs(Crabe.VirtualReader._skus) do
+            if not seen[name] then
+                table.insert(custom, {
+                    Name = name,
+                    sku_id = sku,
+                    Icon = "default",
+                })
+                seen[name] = true
+            end
+        end
+    end
+    return custom
 end
 
 -- Surfaces a character the game ships in full -- actor row, .dnax, 3D assets
@@ -263,14 +323,9 @@ function Crabe.VirtualReader.exposeCharacter(entry)
     -- that is where the loader reads it from.
     if entry.sku_id == nil then
         entry.sku_id = Crabe.VirtualReader.skuForName(entry.Name)
-        -- No slot was built for this Name. The loader scans characters/*.lua
-        -- for literal exposeCharacter{ Name = "..." } calls, so a name it
-        -- could not read is a name with no figure behind it -- which the game
-        -- would report much later as "Figurine Disney Infinity manquante".
         if entry.sku_id == nil then
-            error("Crabe.VirtualReader.exposeCharacter: no figure registry slot was built for '" ..
-                entry.Name .. "'. Write the Name as a literal in characters/*.lua, or pass " ..
-                "sku_id explicitly", 2)
+            error("Crabe.VirtualReader.exposeCharacter: could not resolve sku_id for '" ..
+                tostring(entry.Name) .. "'", 2)
         end
     elseif type(entry.sku_id) ~= "string" or entry.sku_id == "" then
         error("Crabe.VirtualReader.exposeCharacter: entry.sku_id must be a non-empty string " ..

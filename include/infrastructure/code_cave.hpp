@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 namespace crabe::infrastructure {
@@ -46,6 +47,11 @@ constexpr bool isStolenLengthAcceptable(size_t stolenLength)
 {
     return stolenLength >= kJmpLength && stolenLength <= kMaxStolen;
 }
+
+// Zeroed data block shared between caves and scripts, owned for the process lifetime.
+// The same name always returns the same block, so a hot reload finds its state again;
+// 0 if `size` is 0 or larger than the block first created under that name.
+uintptr_t acquireSharedBlock(std::string_view name, size_t size);
 
 // A manual x86 code cave: `body` is executed, then the bytes stolen from the
 // site, then control jumps back just past them.

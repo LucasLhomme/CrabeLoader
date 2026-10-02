@@ -1,8 +1,8 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the XInput observer: which controller slots the game polls, and which answer.
-** Observer only: it always forwards to the real function and never fabricates a result.
+** Declares the XInput hook: which slots the game polls, and the last pad state each returned.
+** Forwards every call; while a mod captures the pad, the game gets a neutral (idle) gamepad.
 ** Hooks XINPUT9_1_0.dll specifically, the module this image actually imports.
 **
 ** Authors: @LucasLhomme
@@ -16,11 +16,13 @@
 #include <string>
 
 #include "infrastructure/hook.hpp"
+#include "presentation/pad_state.hpp"
 
 namespace crabe::presentation {
 
-// Counts which XInput slots the game polls, and which answer "connected".
-// Observer only: always forwards to the real function, never fakes a result.
+// Counts which XInput slots the game polls, and which answer "connected", and
+// keeps the last state each returned. Always forwards to the real function;
+// while captured, the game is handed an idle gamepad instead of the real one.
 class InputHook {
     public:
         static InputHook& get();
@@ -31,6 +33,12 @@ class InputHook {
 
         // "slot0=polled:N connected:N | slot1=..." since the hook went in.
         std::string report() const;
+
+        // Last state the game read from `slot`; disconnected until it polls it.
+        PadState pad(uint32_t slot) const;
+
+        // While true, the game sees an idle gamepad; mods still read the real one.
+        void setCaptured(bool captured);
 
     private:
         InputHook() = default;
@@ -48,6 +56,8 @@ class InputHook {
         static constexpr uint32_t kMaxSlots = 4;
         std::atomic<uint32_t> _polled[kMaxSlots] = {};
         std::atomic<uint32_t> _connected[kMaxSlots] = {};
+
+        PadStateStore _pads;
 };
 
 } // namespace crabe::presentation
@@ -60,6 +70,8 @@ class InputHook {
 // key state at tick time, and the engine never hands that to Lua.
 namespace crabe::input_natives {
     int __cdecl keyDown(void* L);
+    int __cdecl padState(void* L);
+    int __cdecl setPadCaptured(void* L);
 }
 
 #endif /* !INPUT_HOOK_HPP_ */

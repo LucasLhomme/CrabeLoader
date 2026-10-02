@@ -1,0 +1,171 @@
+﻿================================================================================
+                 CRABELOADER IN-GAME TEST BENCH AUDIT REPORT                    
+================================================================================
+Execution Date       : 2026-10-01 01:11:43
+Target Executable    : D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition\DisneyInfinity3.exe
+Process PID          : 32920
+Execution Mode       : Automated Soak
+Target Environment   : Standard Engine Environment
+Total Bench Runtime  : 298.9 seconds
+Warmup Duration      : 16 seconds
+Soak Duration        : 60.6 seconds
+Auto-Kill Process    : Yes
+
+================================================================================
+1. EXECUTIVE SUMMARY & VERDICT
+================================================================================
+Final Verdict        : [PASS] SYSTEM STABLE - ZERO LEAKS - SOLID ARCHITECTURE
+SEH Exceptions / Crashes : 0
+Overlay Opened Count     : 0
+F4 Hot-Reloads Recorded  : 50
+
+================================================================================
+2. MEMORY DIAGNOSTIC BREAKDOWN
+================================================================================
+* Process Spawn Working Set (Empty NT Stub)     : 3,39 MB
+* Steady-State Baseline (World / Engine Ready)  : 633,77 MB
+* Peak Observed Working Set                     : 636,14 MB
+* Final Working Set                             : 636,07 MB
+* Steady-State Memory Drift (True Leak Metric)  : 2,3 MB (Threshold: < 60.0 MB)
+
+================================================================================
+3. PERFORMANCE & FRAMETIME PACING TELEMETRY
+================================================================================
+Average Frametime    : 16.7 ms (~59.9 FPS)
+Min Observed Frame   : 15 ms
+Max Observed Frame   : 22 ms
+Micro-stutters >16ms : 2295 frames
+Stutters >33ms       : 0 frames
+Severe Drops >50ms   : 0 frames
+
+================================================================================
+4. CONCURRENT WORKLOADS & MULTI-MOD TELEMETRY
+================================================================================
+Primary Test Harness : crabe_test_bench (com.crabe.testbench v1.0.0)
+Companion Mod        : crabe_companion_bench (com.crabe.testbench.companion v1.0.0)
+Total Game Ticks     : 3780 frames
+Workload 1 (VFS)     : 15120 path resolutions
+Workload 2 (Events)  : 3780 pub/sub events emitted
+Workload 2 (Companion): 3780 pong responses received
+Workload 3 (Fibers)  : 252 scheduled fibers spawned
+Workload 3 (Resumes) : 251 fiber post-wait resumptions
+Workload 4 (Faults)  : 12 fault probes safely contained
+Lua VM Heap Size     : 2552.6 KB (Managed by Lua garbage collector)
+
+================================================================================
+5. HOT-RELOAD (F4) STABILITY AUDIT
+================================================================================
+Reload # | Timestamp    | Working Set | Lua Heap  | Status
+---------+--------------+-------------+-----------+-----------------------------
+F4 #1   | 01:07:46.395 |  634,04 MB  |      0 KB | Handlers revoked & reloaded
+F4 #2   | 01:07:49.978 |  634,03 MB  | 2498,2 KB | Handlers revoked & reloaded
+F4 #3   | 01:07:53.557 |  634,06 MB  | 2422,8 KB | Handlers revoked & reloaded
+F4 #4   | 01:07:57.116 |  634,09 MB  | 2916,3 KB | Handlers revoked & reloaded
+F4 #5   | 01:08:00.665 |  634,43 MB  | 2934,4 KB | Handlers revoked & reloaded
+F4 #6   | 01:08:04.231 |  634,43 MB  | 2948,7 KB | Handlers revoked & reloaded
+F4 #7   | 01:08:07.796 |  634,43 MB  | 2981,5 KB | Handlers revoked & reloaded
+F4 #8   | 01:08:11.365 |  634,48 MB  | 3002,8 KB | Handlers revoked & reloaded
+F4 #9   | 01:08:14.920 |  634,58 MB  | 3040,1 KB | Handlers revoked & reloaded
+F4 #10  | 01:08:18.483 |  634,62 MB  | 3060,5 KB | Handlers revoked & reloaded
+F4 #11  | 01:08:22.050 |  634,66 MB  | 3081,3 KB | Handlers revoked & reloaded
+F4 #12  | 01:08:25.607 |  634,69 MB  |   3128 KB | Handlers revoked & reloaded
+F4 #13  | 01:08:29.177 |  634,72 MB  | 3150,7 KB | Handlers revoked & reloaded
+F4 #14  | 01:08:32.737 |  635,14 MB  | 3176,1 KB | Handlers revoked & reloaded
+F4 #15  | 01:08:36.301 |  635,15 MB  |   3201 KB | Handlers revoked & reloaded
+F4 #16  | 01:08:39.864 |   635,2 MB  | 3225,9 KB | Handlers revoked & reloaded
+F4 #17  | 01:08:43.424 |  635,23 MB  | 3235,2 KB | Handlers revoked & reloaded
+F4 #18  | 01:08:47.000 |  635,24 MB  | 3274,4 KB | Handlers revoked & reloaded
+F4 #19  | 01:08:50.563 |  635,27 MB  | 3298,5 KB | Handlers revoked & reloaded
+F4 #20  | 01:08:54.127 |   635,3 MB  | 3323,2 KB | Handlers revoked & reloaded
+F4 #21  | 01:08:57.692 |  635,29 MB  | 3353,9 KB | Handlers revoked & reloaded
+F4 #22  | 01:09:01.241 |  635,21 MB  | 3421,5 KB | Handlers revoked & reloaded
+F4 #23  | 01:09:04.794 |  635,31 MB  | 3425,5 KB | Handlers revoked & reloaded
+F4 #24  | 01:09:08.351 |  635,31 MB  |   3475 KB | Handlers revoked & reloaded
+F4 #25  | 01:09:11.906 |  635,29 MB  | 3499,8 KB | Handlers revoked & reloaded
+F4 #26  | 01:09:15.467 |  635,38 MB  | 3511,2 KB | Handlers revoked & reloaded
+F4 #27  | 01:09:19.034 |  635,41 MB  | 3553,8 KB | Handlers revoked & reloaded
+F4 #28  | 01:09:22.601 |  635,45 MB  | 3579,3 KB | Handlers revoked & reloaded
+F4 #29  | 01:09:26.157 |  635,47 MB  | 3590,1 KB | Handlers revoked & reloaded
+F4 #30  | 01:09:29.732 |   635,5 MB  | 3631,9 KB | Handlers revoked & reloaded
+F4 #31  | 01:09:33.308 |  635,52 MB  | 3659,4 KB | Handlers revoked & reloaded
+F4 #32  | 01:09:36.870 |  635,56 MB  |   3685 KB | Handlers revoked & reloaded
+F4 #33  | 01:09:40.435 |  635,64 MB  | 3711,5 KB | Handlers revoked & reloaded
+F4 #34  | 01:09:44.006 |  635,64 MB  | 3739,1 KB | Handlers revoked & reloaded
+F4 #35  | 01:09:47.562 |  635,67 MB  | 3763,4 KB | Handlers revoked & reloaded
+F4 #36  | 01:09:51.131 |  635,75 MB  | 3790,3 KB | Handlers revoked & reloaded
+F4 #37  | 01:09:54.696 |  635,74 MB  | 3816,2 KB | Handlers revoked & reloaded
+F4 #38  | 01:09:58.251 |  635,79 MB  | 3841,4 KB | Handlers revoked & reloaded
+F4 #39  | 01:10:01.818 |  635,81 MB  | 3864,1 KB | Handlers revoked & reloaded
+F4 #40  | 01:10:05.373 |  635,79 MB  | 3895,1 KB | Handlers revoked & reloaded
+F4 #41  | 01:10:08.940 |  635,86 MB  | 3917,8 KB | Handlers revoked & reloaded
+F4 #42  | 01:10:12.504 |  635,84 MB  | 3947,2 KB | Handlers revoked & reloaded
+F4 #43  | 01:10:16.062 |  635,84 MB  | 3974,8 KB | Handlers revoked & reloaded
+F4 #44  | 01:10:19.620 |  635,94 MB  | 3995,4 KB | Handlers revoked & reloaded
+F4 #45  | 01:10:23.180 |  635,92 MB  | 4025,5 KB | Handlers revoked & reloaded
+F4 #46  | 01:10:26.734 |     636 MB  | 4052,7 KB | Handlers revoked & reloaded
+F4 #47  | 01:10:30.300 |  636,06 MB  | 4074,9 KB | Handlers revoked & reloaded
+F4 #48  | 01:10:33.860 |  636,07 MB  | 4106,1 KB | Handlers revoked & reloaded
+F4 #49  | 01:10:37.428 |  636,07 MB  | 4133,3 KB | Handlers revoked & reloaded
+F4 #50  | 01:10:40.976 |  636,14 MB  | 4157,7 KB | Handlers revoked & reloaded
+
+================================================================================
+6. CHRONOLOGICAL MONITORING DATA (TIME-SERIES SAMPLES)
+================================================================================
+Time         | Elapsed | Phase  | WorkingSet | PrivBytes  | Drift     | LuaMemKB | AvgFtMs  | Frames | VFS  | Events | Fibers
+-------------+---------+--------+------------+------------+-----------+----------+----------+--------+------+--------+-------
+01:06:43.912 |   1,2s  | Warmup |  266,68 MB  |  213,98 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:45.156 |   2,5s  | Warmup |  444,86 MB  |  425,48 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:46.462 |   3,8s  | Warmup |  477,72 MB  |  459,95 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:47.693 |     5s  | Warmup |  481,92 MB  |  459,76 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:48.907 |   6,2s  | Warmup |  481,92 MB  |  459,76 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:50.121 |   7,5s  | Warmup |  481,96 MB  |  459,34 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:51.338 |   8,7s  | Warmup |  481,96 MB  |  459,34 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:52.551 |   9,9s  | Warmup |  481,97 MB  |  459,33 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:53.771 |  11,1s  | Warmup |  481,77 MB  |  459,33 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:54.984 |  12,3s  | Warmup |  481,78 MB  |  459,33 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:56.205 |  13,5s  | Warmup |  481,78 MB  |  459,33 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:57.417 |  14,7s  | Warmup |  481,78 MB  |  459,33 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:06:58.627 |    16s  | Warmup |  481,79 MB  |  459,33 MB  |      +0 MB |      0 KB |      0 ms |      0 |    0 |      0 |      0
+01:10:42.489 | 239,8s  | Soak   |   636,1 MB  |  647,78 MB  |   +2.33 MB | 2447,6 KB |  16,76 ms |    240 |  960 |    240 |     16
+01:10:44.004 | 241,3s  | Soak   |  636,09 MB  |  647,76 MB  |   +2.32 MB | 2547,5 KB |  16,74 ms |    300 | 1200 |    300 |     20
+01:10:45.518 | 242,8s  | Soak   |   636,1 MB  |  647,78 MB  |   +2.33 MB | 2534,8 KB |  16,73 ms |    420 | 1680 |    420 |     28
+01:10:47.031 | 244,4s  | Soak   |  636,08 MB  |  647,75 MB  |   +2.31 MB | 2429,8 KB |  16,72 ms |    480 | 1920 |    480 |     32
+01:10:48.542 | 245,9s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2426,8 KB |  16,71 ms |    600 | 2400 |    600 |     40
+01:10:50.051 | 247,4s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2526,8 KB |  16,72 ms |    660 | 2640 |    660 |     44
+01:10:51.564 | 248,9s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2525,9 KB |  16,71 ms |    780 | 3120 |    780 |     52
+01:10:53.081 | 250,4s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2426,9 KB |  16,71 ms |    840 | 3360 |    840 |     56
+01:10:54.605 | 251,9s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2427,6 KB |  16,71 ms |    960 | 3840 |    960 |     64
+01:10:56.121 | 253,5s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2527,6 KB |  16,71 ms |   1020 | 4080 |   1020 |     68
+01:10:57.631 |   255s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2528,8 KB |  16,71 ms |   1140 | 4560 |   1140 |     76
+01:10:59.145 | 256,5s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2429,8 KB |   16,7 ms |   1200 | 4800 |   1200 |     80
+01:11:00.655 |   258s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2430,9 KB |  16,71 ms |   1320 | 5280 |   1320 |     88
+01:11:02.165 | 259,5s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2530,9 KB |  16,71 ms |   1380 | 5520 |   1380 |     92
+01:11:03.674 |   261s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2534,3 KB |   16,7 ms |   1500 | 6000 |   1500 |    100
+01:11:05.190 | 262,5s  | Soak   |  636,08 MB  |  647,75 MB  |   +2.31 MB |   2435 KB |   16,7 ms |   1560 | 6240 |   1560 |    104
+01:11:06.701 |   264s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2436,9 KB |   16,7 ms |   1680 | 6720 |   1680 |    112
+01:11:08.212 | 265,5s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2536,4 KB |   16,7 ms |   1740 | 6960 |   1740 |    116
+01:11:09.728 | 267,1s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2537,5 KB |   16,7 ms |   1860 | 7440 |   1860 |    124
+01:11:11.250 | 268,6s  | Soak   |  636,08 MB  |  647,75 MB  |   +2.31 MB | 2437,8 KB |   16,7 ms |   1920 | 7680 |   1920 |    128
+01:11:12.764 | 270,1s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2438,7 KB |   16,7 ms |   2040 | 8160 |   2040 |    136
+01:11:14.287 | 271,6s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2539,5 KB |   16,7 ms |   2100 | 8400 |   2100 |    140
+01:11:15.805 | 273,1s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2539,4 KB |   16,7 ms |   2220 | 8880 |   2220 |    148
+01:11:17.321 | 274,7s  | Soak   |  636,08 MB  |  647,75 MB  |   +2.31 MB | 2440,8 KB |   16,7 ms |   2280 | 9120 |   2280 |    152
+01:11:18.835 | 276,2s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2441,1 KB |   16,7 ms |   2400 | 9600 |   2400 |    160
+01:11:20.350 | 277,7s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB |   2541 KB |   16,7 ms |   2460 | 9840 |   2460 |    164
+01:11:21.872 | 279,2s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2542,6 KB |   16,7 ms |   2580 | 10320 |   2580 |    172
+01:11:23.391 | 280,7s  | Soak   |  636,08 MB  |  647,76 MB  |   +2.31 MB |   2444 KB |   16,7 ms |   2640 | 10560 |   2640 |    176
+01:11:24.903 | 282,2s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2445,4 KB |   16,7 ms |   2760 | 11040 |   2760 |    184
+01:11:26.413 | 283,7s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2545,5 KB |   16,7 ms |   2820 | 11280 |   2820 |    188
+01:11:27.931 | 285,3s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2546,2 KB |   16,7 ms |   2940 | 11760 |   2940 |    196
+01:11:29.457 | 286,8s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2446,9 KB |   16,7 ms |   3000 | 12000 |   3000 |    200
+01:11:30.972 | 288,3s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2449,3 KB |   16,7 ms |   3120 | 12480 |   3120 |    208
+01:11:32.481 | 289,8s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2549,4 KB |   16,7 ms |   3180 | 12720 |   3180 |    212
+01:11:33.999 | 291,3s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2550,8 KB |   16,7 ms |   3300 | 13200 |   3300 |    220
+01:11:35.520 | 292,8s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2451,1 KB |   16,7 ms |   3360 | 13440 |   3360 |    224
+01:11:37.043 | 294,4s  | Soak   |  636,07 MB  |  647,75 MB  |    +2.3 MB | 2451,7 KB |   16,7 ms |   3480 | 13920 |   3480 |    232
+01:11:38.553 | 295,9s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2452,1 KB |   16,7 ms |   3600 | 14400 |   3600 |    240
+01:11:40.070 | 297,4s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2551,7 KB |   16,7 ms |   3660 | 14640 |   3660 |    244
+01:11:41.583 | 298,9s  | Soak   |  636,07 MB  |  647,74 MB  |    +2.3 MB | 2552,6 KB |   16,7 ms |   3780 | 15120 |   3780 |    252
+================================================================================
+                              END OF REPORT                                     
+================================================================================

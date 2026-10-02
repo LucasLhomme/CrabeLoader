@@ -142,6 +142,19 @@ namespace {
         { "OctaneAppMutex",                 0x0003F0DE },
     };
 
+    // Engine entry points behind the Lua API. ActivateFreeCamera is the
+    // __thiscall at the start of the engine's free-camera state machine; s_Scenes
+    // is the static object the game itself passes as `this` (rva 0x2A7A30).
+    // CreateFreeCameras runs on every world load, from Players::InitializeScenes (rva 0xFA7F9A).
+    constexpr crabe::domain::SymbolRva kDi3GoldEngineSymbols[] = {
+        { "LoopScenes::ActivateFreeCamera", 0x002A1000 },
+        { "LoopScenes::CreateFreeCameras",  0x002A45C0 },
+        { "BaseLoop::s_Scenes",             0x01E02940 },
+        // Script VM natives the Lua state never sees; EngineKinematics reads its entry points off them.
+        { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
+        { "Script_CameraGetPosition",               0x00F7A4C0 },
+    };
+
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
         {
             .id = "di3-gold-steam-1.0",
@@ -169,6 +182,7 @@ namespace {
 
             .luaSymbols = kDi3GoldLuaSymbols,
             .patchSites = kDi3GoldPatchSites,
+            .engineSymbols = kDi3GoldEngineSymbols,
         },
     };
 
@@ -188,6 +202,15 @@ namespace crabe::domain {
     std::uint32_t GameProfile::luaSymbolRva(std::string_view name) const noexcept
     {
         for (const SymbolRva& entry : luaSymbols) {
+            if (entry.name == name)
+                return entry.rva;
+        }
+        return kUnmeasured;
+    }
+
+    std::uint32_t GameProfile::engineSymbolRva(std::string_view name) const noexcept
+    {
+        for (const SymbolRva& entry : engineSymbols) {
             if (entry.name == name)
                 return entry.rva;
         }

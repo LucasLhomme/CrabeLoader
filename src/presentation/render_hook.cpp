@@ -9,6 +9,7 @@
 */
 
 #include <atomic>
+#include <cfloat>
 #include <chrono>
 #include <dxgi.h>
 #include <filesystem>
@@ -538,6 +539,17 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
             ImGui_ImplDX11_NewFrame();
             ImGui_ImplWin32_NewFrame();
+
+            if (!self._menuOpen.load()) {
+                ImGuiIO& io = ImGui::GetIO();
+                io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
+                io.MouseDown[0] = false;
+                io.MouseDown[1] = false;
+                io.MouseDown[2] = false;
+                io.MouseWheel = 0.0f;
+                io.MouseWheelH = 0.0f;
+            }
+
             ImGui::NewFrame();
 
             if (self._menuOpen)
@@ -611,7 +623,9 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
-        crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+        const bool isDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        const bool isRepeat = isDown && (lParam & (1 << 30)) != 0;
+        crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), isDown, isRepeat);
     }
 
     if (msg == WM_WINDOWPOSCHANGING) {

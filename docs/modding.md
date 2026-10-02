@@ -4,6 +4,8 @@
 
 For dedicated, comprehensive topic guides:
 * [Mod Development Guide (Lifecycle, Sandbox, UI, Memory)](guides/mods.md)
+* [Step-by-Step Character Creation Tutorial (Zero to Hero)](guides/character_creation.md)
+* [Loose Texture Overrides & Virtual File System (VFS)](guides/vfs_textures.md)
 * [Skill Tree Modding (Overrides & Patches)](guides/skilltrees.md)
 * [Custom Characters & Figurines (Roster Expansion)](guides/characters.md)
 * [crabe-cli (Offline Scaffolding, Validation & Typo Checking)](guides/cli.md)
@@ -70,6 +72,7 @@ The engine registers ~900 plain C functions as globals (`UI_GetSparks`, `Players
 | `Crabe.Memory.patchBytes(addr, hex)` | Writes raw executable byte patches with automatic `VirtualProtect` and cache flush. |
 | `Crabe.Memory.readFloat(addr)` / `writeFloat(addr, val)` | Reads or writes floating point values in live RAM. |
 | `Crabe.Memory.readU32(addr)` / `writeU32(addr, val)` | Reads or writes unsigned 32-bit integers in live RAM. |
+| `Crabe.Memory.sharedBlock(name, size)` | Allocates or acquires a named, persistent inter-state shared memory bus surviving hot-reloads and Lua state transitions. |
 | `Crabe.Memory.installCodeCave(addr, hex, [len])` | Installs an x86 code cave with automatic instruction boundary calculation via **HDE32**. |
 | `Crabe.Hooks.patchChunk(match, luaCode)` | Runs a Lua patch immediately after a matching game chunk is executed. |
 | `Crabe.Hooks.overrideChunk(match, luaCode)` | Replaces an engine chunk source completely before compilation. |

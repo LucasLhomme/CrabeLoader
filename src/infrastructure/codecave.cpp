@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** codecave
+** Implements CodeCave: allocates body + stolen bytes + jmp-back and patches the site with a jmp.
+** A site gives up at least 5 bytes (E9 rel32); a stolen length of 0 is measured with HDE32.
+** Refuses over 32 stolen or 256 body bytes, and never frees the cave page (thread race).
+**
+** Authors: @LucasLhomme
 */
 
 #include "infrastructure/codecave.hpp"

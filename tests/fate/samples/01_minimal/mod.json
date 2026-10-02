@@ -1,0 +1,7 @@
+{
+  "manifestVersion": 1,
+  "id": "com.crabe.minimal",
+  "name": "Minimal Sample Mod",
+  "version": "1.0.0",
+  "entry": "main.lua"
+}

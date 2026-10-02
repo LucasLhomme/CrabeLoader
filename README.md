@@ -1,4 +1,4 @@
-# CrabeLoader v0.2.0
+# CrabeLoader v1.0.0
 
 [![CI - Build & Test](https://github.com/LucasLhomme/CrabeLoader/actions/workflows/ci.yml/badge.svg)](https://github.com/LucasLhomme/CrabeLoader/actions/workflows/ci.yml)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
@@ -13,7 +13,7 @@ CrabeLoader attaches as a proxy `bink2w32.dll`, intercepting DirectX 11 presenta
 
 ## Architecture Overview
 
-CrabeLoader v0.2.0 follows a strict **decoupled, layered architecture**:
+CrabeLoader v1.0.0 follows a strict **decoupled, layered architecture**:
 
 * **Core Platform (C++23):** Operates strictly as a neutral infrastructure layer. It contains **zero gameplay logic, zero cheats, and zero hardcoded menus**. Its responsibilities are limited to DirectX 11 hooks, Structured Exception Handling (SEH) crash guards, a multi-buffer UI command pipeline, and generic memory primitives.
 * **Modding Layer (Lua 5.1):** All gameplay mechanics, user interfaces (such as [CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)), camera modifications, custom characters, and skill trees execute as sandboxed Lua modules.
@@ -60,6 +60,7 @@ Comprehensive technical guides are available in the [`docs/`](docs/) directory:
 | **[Mod Development Guide](docs/guides/mods.md)** | Lifecycle hooks (`onInit`, `onUpdate`, `onDraw`, `onShutdown`), Dear ImGui widgets, and event dispatching. |
 | **[Skill Tree Guide](docs/guides/skilltrees.md)** | Progression tree overrides (`.lua`) and binary chunk patches (`.patch`). |
 | **[Character & Figurine Guide](docs/guides/characters.md)** | Figurine resolution pipeline, custom character registration, and costume variants. |
+| **[Update Check & Installer](docs/guides/updates_and_installer.md)** | The launch-time update prompt (and how to disable it), `CrabeInstaller.exe`, and what each sends or changes. |
 | **[API Type Definitions](docs/crabe_api.def.lua)** | EmmyLua annotations providing full IntelliSense and autocomplete for IDEs. |
 | **[Architecture Blueprint](docs/ARCHITECTURE_BLUEPRINT.md)** | Core architectural invariants, threading rules, and layer definitions. |
 
@@ -67,10 +68,22 @@ Comprehensive technical guides are available in the [`docs/`](docs/) directory:
 
 ## Installation
 
-1. In your game installation folder (e.g., `D:\SteamLibrary\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
+Each [release](https://github.com/LucasLhomme/CrabeLoader/releases/latest) offers two ways to install. Both end with the same result, and the release also lists SHA-256 checksums (`SHA256SUMS.txt`).
+
+### Option A: `CrabeInstaller.exe` (recommended)
+
+Run it and follow the prompts. It finds the game in your Steam libraries (or lets you pick the folder), installs the proxy, keeps the game's own `bink2w32.dll` as `bink2w32_orig.dll`, and creates the `mods/` folder with a short readme. Running it again updates CrabeLoader and leaves your mods and settings alone. It never overwrites a `bink2w32.dll` it does not recognise; see the [installer guide](docs/guides/updates_and_installer.md).
+
+### Option B: manual
+
+1. In your game installation folder (e.g., `<steam-library>\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
 2. Copy the release `bink2w32.dll` into the game root directory.
-3. Place your mods or packages into the `mods/` directory (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
-4. Launch `DisneyInfinity3.exe`.
+3. Create a `mods/` directory next to it.
+
+### Then
+
+1. Place your mods or packages into the `mods/` directory (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
+2. Launch `DisneyInfinity3.exe`.
    * **`Insert`**: Toggle developer debug overlay and log console.
    * **`F4`**: Hot-reload all active mods.
    * **`F5`**: Toggle in-game mod menu (optional, requires **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)**).
@@ -89,7 +102,7 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCRABELOADER_AS_SHARED=
 cmake --build build --config Release
 ```
 
-The compiled binary will be generated at `build/Release/bink2w32.dll`.
+The compiled binary will be generated at `build/Release/bink2w32.dll`. Add `-DCRABELOADER_BUILD_INSTALLER=ON` to also build `build/Release/CrabeInstaller.exe` with that DLL embedded.
 
 ## Contributing
 

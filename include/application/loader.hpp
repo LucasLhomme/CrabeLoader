@@ -35,7 +35,8 @@ class Loader {
         void onLuaState(void *L);
         void onLoadmods();
         void registerKeybind(int virtualKey, std::function<void()> onPress);
-        void onKeyEvent(int virtualKey, bool isDown);
+        // isRepeat: a key-down Windows generated because the key is held (lParam bit 30).
+        void onKeyEvent(int virtualKey, bool isDown, bool isRepeat = false);
 
         // Virtual keys the window procedure must swallow instead of forwarding
         // to the game. Which keys those are is the caller's business, so a mod
@@ -149,7 +150,11 @@ class Loader {
         // Bounded: a key held down while the script thread is stalled must not
         // grow this queue without limit.
         static constexpr std::size_t kMaxPendingKeyEvents = 64;
-        std::vector<int> _pendingKeyEvents;
+        struct PendingKeyEvent {
+            int virtualKey;
+            bool isRepeat;
+        };
+        std::vector<PendingKeyEvent> _pendingKeyEvents;
         std::mutex _keyEventQueueMutex;
         std::unordered_set<int> _capturedKeys;
         mutable std::mutex _capturedKeysMutex;
@@ -161,8 +166,9 @@ class Loader {
         std::atomic<bool> _runtimeReady{false};
         bool _sawForeignState = false;
         std::unordered_set<void*> _initializedStates;
-        // States that answered the probe and are not the game's. Their answer
-        // cannot change, so they are never probed again.
+        // States that answered the probe and are not the game's. They are not
+        // probed again unless the game's natives appear at that address, which
+        // means the game closed that state and opened its own in its place.
         std::unordered_set<void*> _rejectedStates;
 
         std::vector<ChunkRule> _loadOverrides;

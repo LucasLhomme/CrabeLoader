@@ -1,9 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Hooks XInputGetState to count which controller slots the game polls and which answer.
+** Hooks XInputGetState to count which controller slots the game polls and store what they return.
 ** The image imports XINPUT9_1_0.dll specifically, so that is the module hooked, not any other.
-** Fakes no result: every call forwards to the real function and returns its answer unchanged.
+** Every call is forwarded; PadStateStore keeps the state and blanks it while a mod captures it.
 **
 ** Authors: @LucasLhomme
 */
@@ -69,10 +69,20 @@ uint32_t __stdcall InputHook::hkXInputGetState(uint32_t userIndex, void* state)
 
     if (userIndex < kMaxSlots) {
         self._polled[userIndex].fetch_add(1, std::memory_order_relaxed);
-        if (result == 0) self._connected[userIndex].fetch_add(1, std::memory_order_relaxed);
+        if (result == ERROR_SUCCESS) self._connected[userIndex].fetch_add(1, std::memory_order_relaxed);
     }
-
+    self._pads.observe(userIndex, result, state);
     return result;
+}
+
+PadState InputHook::pad(uint32_t slot) const
+{
+    return _pads.pad(slot);
+}
+
+void InputHook::setCaptured(bool captured)
+{
+    _pads.setCaptured(captured);
 }
 
 std::string InputHook::report() const
@@ -110,4 +120,34 @@ int __cdecl crabe::input_natives::keyDown(void* L)
     const bool held = (GetAsyncKeyState(key) & 0x8000) != 0;
     lua.pushNumber(L, held ? 1.0 : 0.0);
     return 1;
+}
+
+// Crabe._padState([slot]) -> connected, buttons, leftTrigger, rightTrigger,
+// leftX, leftY, rightX, rightY: what the game last read from that slot (0-3).
+// buttons is the XINPUT_GAMEPAD_* bitmask; it reads the real pad while captured.
+int __cdecl crabe::input_natives::padState(void* L)
+{
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+    if (!lua.hasReturnSupport()) return 0;
+
+    auto slot = static_cast<uint32_t>(lua.argToNumber(L, 1, 0.0));
+    crabe::presentation::PadState pad = crabe::presentation::InputHook::get().pad(slot);
+
+    lua.pushBoolean(L, pad.connected);
+    lua.pushNumber(L, pad.buttons);
+    lua.pushNumber(L, pad.leftTrigger);
+    lua.pushNumber(L, pad.rightTrigger);
+    lua.pushNumber(L, pad.leftX);
+    lua.pushNumber(L, pad.leftY);
+    lua.pushNumber(L, pad.rightX);
+    lua.pushNumber(L, pad.rightY);
+    return 8;
+}
+
+// Crabe._setPadCaptured(on): while on, the game reads an idle gamepad.
+int __cdecl crabe::input_natives::setPadCaptured(void* L)
+{
+    bool captured = crabe::infrastructure::LuaCall::get().argToBoolean(L, 1, false);
+    crabe::presentation::InputHook::get().setCaptured(captured);
+    return 0;
 }

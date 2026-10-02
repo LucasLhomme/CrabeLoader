@@ -310,6 +310,21 @@ bool LuaCall::callTick(void* L, double dt) const
     return status == kLuaOk;
 }
 
+// Reads the global table only, which exists from lua_newstate on, so this is
+// safe in a state whose base library is not open yet.
+bool LuaCall::hasGlobal(void* L, const char* name) const
+{
+    if (!L || !name || !_getfield || !_gettop || !_settop || !_toboolean)
+        return false;
+
+    constexpr int kLuaGlobalsIndex = -10002;
+    const int savedTop = _gettop(L);
+    _getfield(L, kLuaGlobalsIndex, name);
+    const bool present = _toboolean(L, -1) != 0;
+    _settop(L, savedTop);
+    return present;
+}
+
 // Executes Crabe.Mod.dispatchDraw() natively without string compilation or GC overhead.
 bool LuaCall::dispatchModDraw(void* L) const
 {

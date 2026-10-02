@@ -139,10 +139,10 @@ return Tree
 ## 6. Discovering Target Chunks
 
 To find the matching keys and internal variable names for existing characters:
-1. Search the game asset database using our FTS5 tool:
+1. Search the game's decrypted data files with a plain-text search (any `grep`-like tool works):
    ```powershell
-   python search_index.py "SkillTree"
-   python search_index.py "tcw_ahsoka"
+   rg "SkillTree" <path-to-decrypted-game-data>
+   rg "tcw_ahsoka" <path-to-decrypted-game-data>
    ```
 2. Or use the CrabeLoader developer console (`Insert` in-game) to inspect active tables while a character is loaded:
    ```lua
