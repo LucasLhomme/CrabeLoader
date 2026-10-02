@@ -10,8 +10,13 @@ Crabe = Crabe or {}
 Crabe.Sandbox = Crabe.Sandbox or {}
 Crabe.Exports = Crabe.Exports or {}
 
---- Creates a read-only proxy table blocking writes with security logging.
---- Now uses deep proxying and a cache to preserve reference equality and prevent cyclic loops.
+--- Creates a read-only proxy over one shared namespace, blocking writes with security logging.
+--- Shallow on purpose: reads return the real nested tables. Lua 5.1 has no __len,
+--- and ipairs/pairs/next ignore __index, so a nested proxy is an empty table to
+--- `#`, ipairs and pairs -- `#Crabe.Menu.stack` read 0 and every mod saw an empty
+--- menu. What stays protected is the namespace itself: a mod cannot replace
+--- Crabe.Menu or Game.X, only use them. A nested value that is itself a protected
+--- namespace (_G.Crabe, _G.Game) comes back as its proxy, so _G is no way around it.
 local function makeReadOnlyProxy(realTable, tableName, modName, cache)
     if type(realTable) ~= "table" then return realTable end
     cache = cache or {}
@@ -19,14 +24,11 @@ local function makeReadOnlyProxy(realTable, tableName, modName, cache)
 
     local proxy = {}
     cache[realTable] = proxy
-    
+
     local mt = {
         __index = function(t, k)
             local v = realTable[k]
-            if type(v) == "table" then
-                return makeReadOnlyProxy(v, tableName .. "." .. tostring(k), modName, cache)
-            end
-            return v
+            return cache[v] or v
         end,
         __newindex = function(t, k, v)
             local msg = string.format(
@@ -46,7 +48,7 @@ local function makeReadOnlyProxy(realTable, tableName, modName, cache)
     return proxy
 end
 
---- Creates an isolated sandbox environment table for a mod with deep-frozen protection.
+--- Creates an isolated sandbox environment table for a mod with protected shared namespaces.
 --- Global reads fall back to _G while variable writes remain isolated.
 function Crabe.Sandbox.create(modName)
     local env = {}
@@ -65,6 +67,37 @@ function Crabe.Sandbox.create(modName)
     if os then env.os = makeReadOnlyProxy(os, "os", modName, proxyCache) end
     if debug then env.debug = makeReadOnlyProxy(debug, "debug", modName, proxyCache) end
     env._G = makeReadOnlyProxy(_G, "_G", modName, proxyCache)
+
+    -- The namespaces themselves are still proxies, and Lua 5.1 iteration never
+    -- consults a metatable: pairs(Crabe) or pairs(Game) saw no key at all.
+    -- The mod's pairs/ipairs/next walk the real table instead, handing back a
+    -- protected namespace met on the way as its proxy, as __index does.
+    local realOf = {}
+    for real, proxy in pairs(proxyCache) do
+        realOf[proxy] = real
+    end
+    local function nextOf(t, k)
+        local real = realOf[t]
+        if not real then return next(t, k) end
+        local key, value = next(real, k)
+        if key == nil then return nil end
+        return key, proxyCache[value] or value
+    end
+    env.next = nextOf
+    env.pairs = function(t)
+        if realOf[t] then return nextOf, t, nil end
+        return pairs(t)
+    end
+    env.ipairs = function(t)
+        local real = realOf[t]
+        if not real then return ipairs(t) end
+        return function(_, i)
+            i = i + 1
+            local value = real[i]
+            if value == nil then return nil end
+            return i, proxyCache[value] or value
+        end, t, 0
+    end
 
     setmetatable(env, {
         __index = function(t, k)

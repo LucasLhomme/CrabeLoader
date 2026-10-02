@@ -52,6 +52,10 @@ jobs:
         run: |
           .\build\Release\test_vfs_override.exe
 
+      - name: Run Draw Primitives & Pad Tests
+        run: |
+          .\build\Release\test_draw_primitives.exe
+
       - name: Run CRABE-FATE Regression Suite
         run: |
           .\build\Release\crabe_fate.exe
@@ -63,3 +67,7 @@ jobs:
       - name: Run Installer Tests
         run: |
           .\build\Release\test_installer.exe
+
+      - name: Run Lua API Suite
+        run: |
+          python tests/run_lua_tests.py

@@ -20,3 +20,12 @@ include/cli/embedded_api_def.hpp
 AUDIT_*.md
 DEVLOG_*.md
 telemetry_report.json
+
+# Multiplayer is work in progress and stays out of the repository for now.
+# CMake builds it only where these sources exist (CRABELOADER_WITH_MULTIPLAYER).
+include/application/multiplayer/
+include/domain/multiplayer/
+include/infrastructure/multiplayer/
+src/application/multiplayer/
+src/infrastructure/multiplayer/
+src/api/29_multiplayer.lua

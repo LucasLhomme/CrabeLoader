@@ -78,6 +78,7 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/overlay.cpp
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
+    src/presentation/pad_state.cpp
     src/presentation/imgui_bindings.cpp
     src/presentation/draw_buffer.cpp
 
@@ -87,8 +88,6 @@ set(CRABELOADER_CORE_SOURCES
     src/application/gateway.cpp
     src/application/lua_runtime.cpp
     src/application/lua_natives.cpp
-    src/application/multiplayer/multiplayer_manager.cpp
-    src/application/multiplayer/multiplayer_natives.cpp
     src/application/update_checker.cpp
     src/application/update_launcher.cpp
 
@@ -120,11 +119,6 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/lua_symbols.cpp
     src/infrastructure/vfs_override_manager.cpp
     src/infrastructure/vfs_hook.cpp
-    src/infrastructure/multiplayer/memory_patcher.cpp
-    src/infrastructure/multiplayer/winhttp_redirector.cpp
-    src/infrastructure/multiplayer/fallback_response_provider.cpp
-    src/infrastructure/multiplayer/upnp_nat_service.cpp
-    src/infrastructure/multiplayer/steamworks_service.cpp
     src/infrastructure/update_services.cpp
 
     # Shared Layer
@@ -151,6 +145,30 @@ if(CRABELOADER_BUILD_IMGUI)
         include/imgui/imgui_impl_win32.cpp
         include/imgui/imgui_impl_dx11.cpp
     )
+endif()
+
+# Multiplayer is work in progress and kept out of the repository (.gitignore):
+# it is built only where its sources are present, so a clean clone builds without it.
+set(CRABELOADER_MULTIPLAYER_SOURCES
+    src/application/multiplayer/multiplayer_manager.cpp
+    src/application/multiplayer/multiplayer_natives.cpp
+    src/infrastructure/multiplayer/memory_patcher.cpp
+    src/infrastructure/multiplayer/winhttp_redirector.cpp
+    src/infrastructure/multiplayer/fallback_response_provider.cpp
+    src/infrastructure/multiplayer/upnp_nat_service.cpp
+    src/infrastructure/multiplayer/steamworks_service.cpp
+)
+set(CRABELOADER_WITH_MULTIPLAYER ON)
+foreach(source IN LISTS CRABELOADER_MULTIPLAYER_SOURCES)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+        set(CRABELOADER_WITH_MULTIPLAYER OFF)
+    endif()
+endforeach()
+if(CRABELOADER_WITH_MULTIPLAYER)
+    list(APPEND CRABELOADER_CORE_SOURCES ${CRABELOADER_MULTIPLAYER_SOURCES})
+    message(STATUS "CrabeLoader: multiplayer sources found, building with multiplayer")
+else()
+    message(STATUS "CrabeLoader: multiplayer sources absent, building without multiplayer")
 endif()
 
 set(CRABELOADER_SOURCES
@@ -188,6 +206,9 @@ target_compile_definitions(${PROJECT_NAME}
         NOMINMAX
         _CRT_SECURE_NO_WARNINGS
 )
+if(CRABELOADER_WITH_MULTIPLAYER)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE CRABELOADER_WITH_MULTIPLAYER=1)
+endif()
 
 # Embedded Lua API generation
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -331,6 +352,28 @@ if(MSVC)
     target_compile_options(test_vfs_override PRIVATE /W4 /utf-8)
 else()
     target_compile_options(test_vfs_override PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(test_draw_primitives
+    tests/cpp/test_draw_primitives.cpp
+    src/presentation/draw_buffer.cpp
+    src/presentation/pad_state.cpp
+    include/imgui/imgui.cpp
+    include/imgui/imgui_draw.cpp
+    include/imgui/imgui_tables.cpp
+    include/imgui/imgui_widgets.cpp
+)
+target_include_directories(test_draw_primitives PRIVATE
+    include
+    include/imgui
+)
+target_compile_definitions(test_draw_primitives PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+if(MSVC)
+    target_compile_options(test_draw_primitives PRIVATE /utf-8)
 endif()
 
 add_executable(crabe_fate
@@ -583,6 +626,7 @@ endif()
 
 enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
+add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
