@@ -19,6 +19,7 @@
 #include "presentation/render_hook.hpp"
 
 #include <algorithm>
+#include "imgui/imgui_internal.h"
 #include "presentation/draw_buffer.hpp"
 #include "application/loader.hpp"
 #include "domain/config.hpp"
@@ -33,8 +34,16 @@ namespace crabe::presentation {
 namespace {
     constexpr int kPresentVtableIndex = 8;
     constexpr int kSetFullscreenStateVtableIndex = 10;
+    constexpr int kGetFullscreenStateVtableIndex = 11;
     constexpr int kResizeBuffersVtableIndex = 13;
+    constexpr int kResizeTargetVtableIndex = 14;
     constexpr wchar_t kDummyClassName[] = L"CrabeLoaderDummyWindow";
+
+    // Window styles the loader owns. Clip bits are carried over from whatever
+    // the game set; every other bit is decided here.
+    constexpr LONG kClipStyles = WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+    constexpr LONG kBorderlessStyle = WS_POPUP | WS_VISIBLE;
+    constexpr LONG kWindowedStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
 }
 
 // Returns the singleton instance of RenderHook.
@@ -68,11 +77,15 @@ void RenderHook::saveWindowModeConfig(WindowMode mode)
 // Resolves swapchain vtable function pointers using a temporary dummy device.
 bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
                                           uintptr_t& outResizeBuffers,
-                                          uintptr_t& outSetFullscreenState)
+                                          uintptr_t& outSetFullscreenState,
+                                          uintptr_t& outGetFullscreenState,
+                                          uintptr_t& outResizeTarget)
 {
     outPresent = 0;
     outResizeBuffers = 0;
     outSetFullscreenState = 0;
+    outGetFullscreenState = 0;
+    outResizeTarget = 0;
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -114,7 +127,9 @@ bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
         void** vtable = *reinterpret_cast<void***>(swapChain);
         outPresent = reinterpret_cast<uintptr_t>(vtable[kPresentVtableIndex]);
         outSetFullscreenState = reinterpret_cast<uintptr_t>(vtable[kSetFullscreenStateVtableIndex]);
+        outGetFullscreenState = reinterpret_cast<uintptr_t>(vtable[kGetFullscreenStateVtableIndex]);
         outResizeBuffers = reinterpret_cast<uintptr_t>(vtable[kResizeBuffersVtableIndex]);
+        outResizeTarget = reinterpret_cast<uintptr_t>(vtable[kResizeTargetVtableIndex]);
         ok = true;
     } else {
         crabe::shared::Logger::getInstance().error("RenderHook: D3D11CreateDeviceAndSwapChain failed (0x{:X}).",
@@ -130,14 +145,17 @@ bool RenderHook::resolveSwapChainFunctions(uintptr_t& outPresent,
     return ok;
 }
 
-// Installs MinHook hooks on DXGI Present, ResizeBuffers, and SetFullscreenState.
+// Installs MinHook hooks on DXGI Present, ResizeBuffers, SetFullscreenState and ResizeTarget.
 bool RenderHook::initialize()
 {
     uintptr_t presentAddr = 0;
     uintptr_t resizeBuffersAddr = 0;
     uintptr_t setFullscreenStateAddr = 0;
+    uintptr_t getFullscreenStateAddr = 0;
+    uintptr_t resizeTargetAddr = 0;
 
-    if (!resolveSwapChainFunctions(presentAddr, resizeBuffersAddr, setFullscreenStateAddr)) {
+    if (!resolveSwapChainFunctions(presentAddr, resizeBuffersAddr, setFullscreenStateAddr,
+                                   getFullscreenStateAddr, resizeTargetAddr)) {
         crabe::shared::Logger::getInstance().error("RenderHook: failed to resolve swapchain vtable.");
         return false;
     }
@@ -149,6 +167,24 @@ bool RenderHook::initialize()
     allInstalled &= _hookResizeBuffers.installLogged(resizeBuffersAddr,
                             reinterpret_cast<void*>(&RenderHook::hkResizeBuffers),
                             "RenderHook", "IDXGISwapChain::ResizeBuffers");
+
+    // Without these the game owns the display: the retail exe puts its swap
+    // chain in exclusive fullscreen on its own (the window then carries DXGI's
+    // WS_EX_TOPMOST and no frame), and every window style set below is
+    // ignored. Their absence is not fatal -- applyPendingWindowMode still
+    // drops an exclusive swap chain at the first Present -- so they are not
+    // counted in allInstalled. Set and Get go together: refusing fullscreen
+    // without reporting it as granted freezes the game (it waits for
+    // GetFullscreenState to agree, calling ResizeTarget in a loop).
+    _hookSetFullscreenState.installLogged(setFullscreenStateAddr,
+                            reinterpret_cast<void*>(&RenderHook::hkSetFullscreenState),
+                            "RenderHook", "IDXGISwapChain::SetFullscreenState");
+    _hookGetFullscreenState.installLogged(getFullscreenStateAddr,
+                            reinterpret_cast<void*>(&RenderHook::hkGetFullscreenState),
+                            "RenderHook", "IDXGISwapChain::GetFullscreenState");
+    _hookResizeTarget.installLogged(resizeTargetAddr,
+                            reinterpret_cast<void*>(&RenderHook::hkResizeTarget),
+                            "RenderHook", "IDXGISwapChain::ResizeTarget");
 
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     if (user32) {
@@ -166,8 +202,12 @@ bool RenderHook::initialize()
         }
     }
 
+    // Applied at the first Present, once the game's window is known. It used
+    // to start clean, so the configured mode was never applied at startup and
+    // the game simply stayed in whatever display mode it chose for itself.
     _requestedWindowMode = loadWindowModeConfig();
-    _windowModeDirty = false;
+    _persistWindowMode = false;
+    _windowModeDirty = true;
 
     return allInstalled;
 }
@@ -184,6 +224,8 @@ void RenderHook::uninitialize()
 
     _hookPresent.remove();
     _hookSetFullscreenState.remove();
+    _hookGetFullscreenState.remove();
+    _hookResizeTarget.remove();
     _hookResizeBuffers.remove();
     _hookSetCursorPos.remove();
     _hookShowWindow.remove();
@@ -231,32 +273,24 @@ bool RenderHook::isMenuOpen() const
     return _menuOpen;
 }
 
-// Enqueues a window mode change to be applied on the render thread.
+// Enqueues a window mode change to be applied, and saved, on the render thread.
 void RenderHook::requestWindowMode(WindowMode mode)
 {
     _requestedWindowMode = mode;
+    _persistWindowMode = true;
     _windowModeDirty = true;
 }
 
-// A windowed rect for this monitor, sized from the swap chain's back buffer and
-// centred on the work area.
-//
-// Computed rather than restored. _originalRect is whatever the window happened
-// to be at the first Present, and by then hkSetFullscreenState may already have
-// forced the game out of exclusive fullscreen and into a borderless popup
-// covering the monitor -- so "restore the original" restored the borderless
-// geometry and changed nothing on screen, while the log below still claimed the
-// mode had been set.
-static RECT windowedRectFor(HWND hwnd, IDXGISwapChain* swapChain, LONG style)
+// A windowed rect for the window's monitor, sized from the back buffer and
+// centred on the work area. Used when there is no remembered windowed rect
+// (first switch to windowed, or the remembered one is off every monitor).
+static RECT windowedRectFor(HWND hwnd, UINT backBufferWidth, UINT backBufferHeight, LONG style)
 {
     UINT clientWidth = 1280;
     UINT clientHeight = 720;
-
-    DXGI_SWAP_CHAIN_DESC desc{};
-    if (swapChain && SUCCEEDED(swapChain->GetDesc(&desc)) && desc.BufferDesc.Width > 100
-        && desc.BufferDesc.Height > 100) {
-        clientWidth = desc.BufferDesc.Width;
-        clientHeight = desc.BufferDesc.Height;
+    if (backBufferWidth > 100 && backBufferHeight > 100) {
+        clientWidth = backBufferWidth;
+        clientHeight = backBufferHeight;
     }
 
     MONITORINFO monitorInfo{};
@@ -268,11 +302,10 @@ static RECT windowedRectFor(HWND hwnd, IDXGISwapChain* swapChain, LONG style)
     const LONG workWidth = work.right - work.left;
     const LONG workHeight = work.bottom - work.top;
 
-    // The back buffer is usually the whole monitor, because that is what a
-    // borderless window asked for. A window that size plus a title bar does not
-    // fit on the screen it came from, so it is scaled down to leave the taskbar
-    // and the frame visible -- otherwise "windowed" looks identical to
-    // borderless and the toggle appears to do nothing.
+    // The back buffer is usually the whole monitor. A window that size plus a
+    // title bar does not fit on the screen it came from, so it is scaled down,
+    // keeping the aspect ratio, to leave the taskbar and the frame visible --
+    // otherwise "windowed" looks identical to borderless.
     RECT frame{ 0, 0, static_cast<LONG>(clientWidth), static_cast<LONG>(clientHeight) };
     AdjustWindowRect(&frame, static_cast<DWORD>(style & ~WS_VISIBLE), FALSE);
     LONG outerWidth = frame.right - frame.left;
@@ -293,76 +326,159 @@ static RECT windowedRectFor(HWND hwnd, IDXGISwapChain* swapChain, LONG style)
     return out;
 }
 
-// Changes window style and dimensions and updates swapchain buffers if needed.
+// Calls SetFullscreenState(FALSE) through the trampoline when the swap chain is
+// in exclusive fullscreen. The game gets there on its own, possibly before the
+// hook was installed, so the state is checked rather than assumed.
+bool RenderHook::leaveExclusiveFullscreen(IDXGISwapChain* swapChain)
+{
+    // The real state, not the one hkGetFullscreenState reports to the game.
+    if (!swapChain)
+        return false;
+    BOOL fullscreen = FALSE;
+    const HRESULT state = _hookGetFullscreenState.isInstalled()
+        ? originalGetFullscreenState()(swapChain, &fullscreen, nullptr)
+        : swapChain->GetFullscreenState(&fullscreen, nullptr);
+    if (FAILED(state) || !fullscreen)
+        return false;
+
+    // An exclusive swap chain is one the game asked for, possibly before the
+    // hooks existed: from here on it must keep seeing it as granted.
+    _gameWantsFullscreen = true;
+
+    const HRESULT hr = _hookSetFullscreenState.isInstalled()
+        ? originalSetFullscreenState()(swapChain, FALSE, nullptr)
+        : swapChain->SetFullscreenState(FALSE, nullptr);
+    crabe::shared::Logger::getInstance().info("RenderHook: left exclusive fullscreen (0x{:X}).",
+                                              static_cast<uint32_t>(hr));
+    return SUCCEEDED(hr);
+}
+
+// Puts the window in the requested mode. Idempotent: it compares the window's
+// actual style and rect with the target and touches nothing when they already
+// match, so re-asserting the mode (the game asking for fullscreen again, a
+// display change) costs nothing and never moves the window.
 void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
 {
-    if (!_windowModeDirty.exchange(false) || !_hwnd) {
+    // The flag is kept until the window is known, so a request made before the
+    // first Present (the configured mode, at startup) is not lost.
+    if (!_hwnd || !_windowModeDirty.exchange(false))
         return;
+
+    leaveExclusiveFullscreen(swapChain);
+
+    const WindowMode mode = _requestedWindowMode.load();
+    const bool persist = _persistWindowMode.exchange(false);
+
+    const LONG currentStyle = static_cast<LONG>(GetWindowLongPtrW(_hwnd, GWL_STYLE));
+    const LONG currentExStyle = static_cast<LONG>(GetWindowLongPtrW(_hwnd, GWL_EXSTYLE));
+    RECT currentRect{};
+    GetWindowRect(_hwnd, &currentRect);
+    const bool decorated = (currentStyle & WS_CAPTION) == WS_CAPTION;
+    const bool wasOurWindowed = _hasAppliedWindowMode && _appliedWindowMode == WindowMode::Windowed && decorated;
+
+    // Remember where the user left the decorated window before taking it
+    // borderless, so the next switch back puts it there. Not when maximized:
+    // that rect is the monitor, not a placement anyone chose.
+    if (mode == WindowMode::BorderlessWindowed && wasOurWindowed && !IsZoomed(_hwnd) && !IsIconic(_hwnd)) {
+        _windowedRect = currentRect;
+        _hasWindowedRect = true;
     }
 
+    LONG targetStyle = 0;
     RECT targetRect{};
-    WindowMode currentMode = _requestedWindowMode.load();
-
-    if (currentMode == WindowMode::BorderlessWindowed) {
-        HMONITOR monitor = MonitorFromWindow(_hwnd, MONITOR_DEFAULTTONEAREST);
+    if (mode == WindowMode::BorderlessWindowed) {
         MONITORINFO monitorInfo{};
         monitorInfo.cbSize = sizeof(monitorInfo);
-        if (!GetMonitorInfoW(monitor, &monitorInfo)) {
+        if (!GetMonitorInfoW(MonitorFromWindow(_hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo)) {
+            crabe::shared::Logger::getInstance().error("RenderHook: no monitor for the game window; mode not applied.");
             return;
         }
-
+        targetStyle = kBorderlessStyle | (currentStyle & kClipStyles);
         targetRect = monitorInfo.rcMonitor;
-
-        // Force WS_EX_APPWINDOW and ensure WS_EX_TOPMOST is removed so other windows can appear in front on Alt+Tab
-        LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
-        exStyle |= WS_EX_APPWINDOW;
-        exStyle &= ~WS_EX_TOOLWINDOW;
-        exStyle &= ~WS_EX_TOPMOST;
-        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
-
-        SetWindowLongPtrW(_hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
-        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
-                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
-                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     } else {
-        // The style the window had before anything touched it, when that is a
-        // real decorated window; a plain overlapped window otherwise, since
-        // _originalStyle may have been captured while the game was already
-        // borderless and WS_POPUP would leave it borderless.
-        LONG style = static_cast<LONG>(_originalStyle);
-        if ((style & WS_CAPTION) != WS_CAPTION)
-            style = WS_OVERLAPPEDWINDOW;
-        style |= WS_VISIBLE;
-
-        targetRect = windowedRectFor(_hwnd, swapChain, style);
-
-        LONG_PTR exStyle = GetWindowLongPtrW(_hwnd, GWL_EXSTYLE);
-        exStyle |= WS_EX_APPWINDOW;
-        exStyle &= ~WS_EX_TOOLWINDOW;
-        exStyle &= ~WS_EX_TOPMOST;
-        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, exStyle);
-
-        SetWindowLongPtrW(_hwnd, GWL_STYLE, style);
-        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
-                    targetRect.right - targetRect.left, targetRect.bottom - targetRect.top,
-                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        targetStyle = kWindowedStyle | (currentStyle & kClipStyles);
+        if (wasOurWindowed) {
+            // Already windowed by us: the user may have moved, resized or
+            // maximized it since, and a re-assert must not undo that.
+            targetStyle |= currentStyle & WS_MAXIMIZE;
+            targetRect = currentRect;
+        } else if (_hasWindowedRect && MonitorFromRect(&_windowedRect, MONITOR_DEFAULTTONULL)) {
+            targetRect = _windowedRect;
+        } else {
+            targetRect = windowedRectFor(_hwnd, _backBufferWidth, _backBufferHeight, targetStyle);
+        }
     }
 
-    ShowWindow(_hwnd, SW_SHOW);
-    BringWindowToTop(_hwnd);
-    SetForegroundWindow(_hwnd);
-    saveWindowModeConfig(currentMode);
+    // TOPMOST is what DXGI leaves behind after exclusive fullscreen; it keeps
+    // every other window (and the Alt+Tab switcher) behind the game.
+    const LONG targetExStyle = (currentExStyle | WS_EX_APPWINDOW) & ~(WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
 
-    // The rect the window actually ended up with, not the one that was asked
-    // for. The previous version logged success unconditionally, including when
-    // a guard above had skipped every call that changes anything -- which is
-    // how a toggle that did nothing on screen still read as working.
+    const bool unchanged = targetStyle == currentStyle && targetExStyle == currentExStyle
+        && EqualRect(&targetRect, &currentRect);
+    if (!unchanged) {
+        SetWindowLongPtrW(_hwnd, GWL_EXSTYLE, targetExStyle);
+        SetWindowLongPtrW(_hwnd, GWL_STYLE, targetStyle);
+
+        // Activating is only right when the game already had the foreground;
+        // otherwise a re-assert while the user is in another app would pull
+        // the game back in front of them.
+        UINT flags = SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER;
+        if (GetForegroundWindow() != _hwnd)
+            flags |= SWP_NOACTIVATE;
+        SetWindowPos(_hwnd, HWND_NOTOPMOST, targetRect.left, targetRect.top,
+                     targetRect.right - targetRect.left, targetRect.bottom - targetRect.top, flags);
+    }
+
+    _appliedWindowMode = mode;
+    _hasAppliedWindowMode = true;
+    if (persist)
+        saveWindowModeConfig(mode);
+
+    if (unchanged)
+        return;
+
+    // The rect the window actually ended up with, not the one that was asked for.
     RECT applied{};
     GetWindowRect(_hwnd, &applied);
     crabe::shared::Logger::getInstance().info(
-        "RenderHook: window mode set to {} ({}x{} at {},{}).",
-        currentMode == WindowMode::BorderlessWindowed ? "borderless" : "windowed",
-        applied.right - applied.left, applied.bottom - applied.top, applied.left, applied.top);
+        "RenderHook: window mode set to {} ({}x{} at {},{}, back buffer {}x{}).",
+        mode == WindowMode::BorderlessWindowed ? "borderless" : "windowed",
+        applied.right - applied.left, applied.bottom - applied.top, applied.left, applied.top,
+        _backBufferWidth, _backBufferHeight);
+}
+
+// Scales this frame's queued mouse positions from client to back-buffer pixels
+// and makes DisplaySize the back buffer. The game does not resize its buffers
+// in a smaller window (it still believes it is fullscreen), DXGI stretches the
+// back buffer into the client area, and ImGui must draw in back-buffer pixels
+// to be stretched along with it -- otherwise the overlay shrinks into the
+// top-left corner and clicks land in the wrong place. Identity when the two
+// sizes match, which is the borderless case.
+void RenderHook::mapImGuiToBackBuffer()
+{
+    if (_backBufferWidth == 0 || _backBufferHeight == 0)
+        return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 client = io.DisplaySize;
+    io.DisplaySize = ImVec2(static_cast<float>(_backBufferWidth), static_cast<float>(_backBufferHeight));
+    if (client.x <= 0.0f || client.y <= 0.0f)
+        return;
+
+    const float scaleX = io.DisplaySize.x / client.x;
+    const float scaleY = io.DisplaySize.y / client.y;
+    if (scaleX == 1.0f && scaleY == 1.0f)
+        return;
+
+    // Every queued event is from this frame: ConfigInputTrickleEventQueue is
+    // off (ensureBackendInit), so NewFrame drains the queue completely and no
+    // position can be scaled twice.
+    for (ImGuiInputEvent& event : GImGui->InputEventsQueue) {
+        if (event.Type != ImGuiInputEventType_MousePos || event.MousePos.PosX == -FLT_MAX)
+            continue;
+        event.MousePos.PosX *= scaleX;
+        event.MousePos.PosY *= scaleY;
+    }
 }
 
 // Returns the trampoline to the original Present method.
@@ -381,6 +497,18 @@ RenderHook::t_ResizeBuffers RenderHook::originalResizeBuffers() const
 RenderHook::t_SetFullscreenState RenderHook::originalSetFullscreenState() const
 {
     return reinterpret_cast<t_SetFullscreenState>(_hookSetFullscreenState.getOriginal());
+}
+
+// Returns the trampoline to the original GetFullscreenState method.
+RenderHook::t_GetFullscreenState RenderHook::originalGetFullscreenState() const
+{
+    return reinterpret_cast<t_GetFullscreenState>(_hookGetFullscreenState.getOriginal());
+}
+
+// Returns the trampoline to the original ResizeTarget method.
+RenderHook::t_ResizeTarget RenderHook::originalResizeTarget() const
+{
+    return reinterpret_cast<t_ResizeTarget>(_hookResizeTarget.getOriginal());
 }
 
 // Returns the trampoline to the original SetCursorPos function.
@@ -418,6 +546,10 @@ void RenderHook::createRenderTarget(IDXGISwapChain* swapChain)
 
     ID3D11Texture2D* backBuffer = nullptr;
     if (SUCCEEDED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBuffer)))) {
+        D3D11_TEXTURE2D_DESC backBufferDesc{};
+        backBuffer->GetDesc(&backBufferDesc);
+        _backBufferWidth = backBufferDesc.Width;
+        _backBufferHeight = backBufferDesc.Height;
         _device->CreateRenderTargetView(backBuffer, nullptr, &_renderTargetView);
         backBuffer->Release();
     }
@@ -435,9 +567,6 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     DXGI_SWAP_CHAIN_DESC desc{};
     swapChain->GetDesc(&desc);
     _hwnd = desc.OutputWindow;
-
-    _originalStyle = GetWindowLongPtrW(_hwnd, GWL_STYLE);
-    GetWindowRect(_hwnd, &_originalRect);
 
     // Prevent DXGI from altering window styles or intercepting Alt+Enter/Alt+Tab
     IDXGIFactory* factory = nullptr;
@@ -458,6 +587,9 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
     ImGui_ImplDX11_Init(_device, _context);
 
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    // mapImGuiToBackBuffer rescales the queued mouse events once per frame,
+    // which is only safe if NewFrame consumes the whole queue every frame.
+    ImGui::GetIO().ConfigInputTrickleEventQueue = false;
 
     _originalWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrW(_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&RenderHook::hkWndProc)));
@@ -469,19 +601,61 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
                                 reinterpret_cast<uintptr_t>(_hwnd));
 }
 
-// Intercepts fullscreen toggles and enforces windowed mode for borderless display.
+// Refuses exclusive fullscreen. Both loader modes are DXGI-windowed, so a
+// request to enter fullscreen is answered S_OK without entering it (the game
+// may retry on every refocus; that path is a single GetFullscreenState).
+// Leaving fullscreen is always passed through.
 HRESULT __stdcall RenderHook::hkSetFullscreenState(IDXGISwapChain* swapChain, BOOL fullscreen,
                                                   IDXGIOutput* target)
 {
     RenderHook& self = RenderHook::get();
-    if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
-        self.requestWindowMode(WindowMode::BorderlessWindowed);
-        return self.originalSetFullscreenState()(swapChain, FALSE, nullptr);
+    self._gameWantsFullscreen = fullscreen != FALSE;
+    if (!fullscreen)
+        return self.originalSetFullscreenState()(swapChain, FALSE, target);
+
+    static std::atomic<bool> announced{false};
+    if (!announced.exchange(true))
+        crabe::shared::Logger::getInstance().info("RenderHook: game asked for exclusive fullscreen; kept windowed.");
+
+    // Only when the swap chain really was exclusive (entered before the hook
+    // existed) is there anything to undo, and the window to re-apply.
+    if (self.leaveExclusiveFullscreen(swapChain))
+        self._windowModeDirty = true;
+    return S_OK;
+}
+
+// Reports fullscreen while the game believes it asked for (and got) it. The
+// retail exe checks this when it handles window messages and, finding the swap
+// chain windowed, retries SetFullscreenState and ResizeTarget without ever
+// rendering again: the game froze on its first frame. The swap chain stays
+// windowed; only the answer changes, and the output handed back is the one the
+// window is on, so a caller that uses it gets a real, AddRef'd object.
+HRESULT __stdcall RenderHook::hkGetFullscreenState(IDXGISwapChain* swapChain, BOOL* fullscreen,
+                                                  IDXGIOutput** target)
+{
+    RenderHook& self = RenderHook::get();
+    const HRESULT hr = self.originalGetFullscreenState()(swapChain, fullscreen, target);
+    if (FAILED(hr) || !self._gameWantsFullscreen.load())
+        return hr;
+
+    if (fullscreen)
+        *fullscreen = TRUE;
+    if (target && !*target)
+        swapChain->GetContainingOutput(target);
+    return hr;
+}
+
+// The loader owns the window size; in a DXGI-windowed swap chain ResizeTarget
+// would resize the window to the game's render resolution, so it is swallowed.
+// The back buffer still follows the game's ResizeBuffers and is stretched.
+HRESULT __stdcall RenderHook::hkResizeTarget(IDXGISwapChain* swapChain, const DXGI_MODE_DESC* newTargetParameters)
+{
+    (void)swapChain;
+    if (newTargetParameters) {
+        crabe::shared::Logger::getInstance().debug("RenderHook: ignored ResizeTarget({}x{}).",
+                                                   newTargetParameters->Width, newTargetParameters->Height);
     }
-    if (self._requestedWindowMode.load() == WindowMode::Windowed) {
-        return self.originalSetFullscreenState()(swapChain, FALSE, nullptr);
-    }
-    return self.originalSetFullscreenState()(swapChain, fullscreen, target);
+    return S_OK;
 }
 
 // Intercepts SetCursorPos calls from the game to suppress cursor centering while overlay is open.
@@ -539,6 +713,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
             ImGui_ImplDX11_NewFrame();
             ImGui_ImplWin32_NewFrame();
+            self.mapImGuiToBackBuffer();
 
             if (!self._menuOpen.load()) {
                 ImGuiIO& io = ImGui::GetIO();
@@ -628,14 +803,17 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         crabe::application::Loader::get().onKeyEvent(static_cast<int>(wParam), isDown, isRepeat);
     }
 
+    // The loader owns the window in both modes, and neither is topmost.
     if (msg == WM_WINDOWPOSCHANGING) {
         auto* pos = reinterpret_cast<WINDOWPOS*>(lParam);
-        if (pos && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
-            if (pos->hwndInsertAfter == HWND_TOPMOST) {
-                pos->hwndInsertAfter = HWND_NOTOPMOST;
-            }
-        }
+        if (pos && pos->hwndInsertAfter == HWND_TOPMOST && !(pos->flags & SWP_NOZORDER))
+            pos->hwndInsertAfter = HWND_NOTOPMOST;
     }
+
+    // A resolution or monitor layout change: borderless must re-fit the
+    // monitor. Re-asserting is idempotent, so this is harmless in windowed.
+    if (msg == WM_DISPLAYCHANGE)
+        self._windowModeDirty = true;
 
     if (msg == WM_ACTIVATE) {
         const bool active = (LOWORD(wParam) != WA_INACTIVE);
@@ -704,6 +882,9 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     if (msg == WM_SYSKEYDOWN) {
         if (wParam == VK_RETURN && (lParam & (1 << 29))) {
+            // Held Alt+Enter auto-repeats; one press is one toggle.
+            if (lParam & (1 << 30))
+                return 0;
             WindowMode next = (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed)
                 ? WindowMode::Windowed : WindowMode::BorderlessWindowed;
             self.requestWindowMode(next);

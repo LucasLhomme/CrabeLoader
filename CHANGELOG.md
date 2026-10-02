@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Window mode actually applies:** the `SetFullscreenState` hook was declared but never installed, and the configured mode was never applied at startup, so the game stayed in its own exclusive fullscreen (topmost, frameless) whatever `[display].windowMode` said. `SetFullscreenState` now refuses exclusive fullscreen and `GetFullscreenState` reports it as granted (the game otherwise retries forever and never renders), `ResizeTarget` is swallowed, an exclusive swap chain is dropped at the first Present, and the configured mode is applied there.
+- **Window mode application is idempotent:** re-asserting the mode (the game asking for fullscreen again, `WM_DISPLAYCHANGE`) touches nothing when the window already matches, never steals focus, and never moves a windowed game the user placed. Windowed placement is remembered across a round trip through borderless.
+- **Overlay in windowed mode:** ImGui now draws in back-buffer pixels, so the console and the menu are no longer shrunk into the top-left corner (and clicks no longer offset) when the window is smaller than the render resolution.
+- **Alt+Enter** no longer toggles repeatedly while held, and the config file is only rewritten on an explicit mode change.
+
 ## [1.0.0] - 2026-10-01
 
 ### Added
