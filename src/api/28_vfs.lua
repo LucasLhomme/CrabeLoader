@@ -26,6 +26,22 @@ function Crabe.Vfs.resolve(path)
     return nil
 end
 
+-- Every override whose virtual path starts with `prefix` (all of them when
+-- absent), as { path = "characters/tcw_enemies/x.zip", mod = "<mod folder>" }.
+-- Paths are normalized: lowercase, forward slashes. Empty on a loader that
+-- predates the native.
+function Crabe.Vfs.list(prefix)
+    local rows = {}
+    if not Crabe._vfsList then
+        return rows
+    end
+    local text = Crabe._vfsList(type(prefix) == "string" and prefix or nil) or ""
+    for path, mod in string.gmatch(text, "([^\t\n]+)\t([^\n]*)\n") do
+        rows[#rows + 1] = { path = path, mod = mod }
+    end
+    return rows
+end
+
 function Crabe.Vfs.stats()
     if Crabe._vfsGetStats then
         local overrides, resolutions, hits = Crabe._vfsGetStats()
