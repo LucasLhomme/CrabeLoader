@@ -15,6 +15,7 @@
 #include "imgui/imgui.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string>
 
@@ -398,6 +399,126 @@ int __cdecl luaIsItemClicked(void* L)
     return 1;
 }
 
+/// Reads argument `idx` as a packed 0xAABBGGRR colour, the layout ImGui uses.
+std::uint32_t argColor(void* L, int idx)
+{
+    double value = crabe::infrastructure::LuaCall::get().argToNumber(L, idx, 0.0);
+    if (value <= 0.0)
+        return 0;
+    if (value >= 4294967295.0)
+        return 0xFFFFFFFFu;
+    return static_cast<std::uint32_t>(static_cast<std::int64_t>(value));
+}
+
+float argFloat(void* L, int idx, double fallback = 0.0)
+{
+    return static_cast<float>(crabe::infrastructure::LuaCall::get().argToNumber(L, idx, fallback));
+}
+
+/// Queues keyboard focus for the next widget, or `offset` widgets further on.
+int __cdecl luaSetKeyboardFocusHere(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::SetKeyboardFocusHere;
+    command.i0 = static_cast<int>(argFloat(L, 1));
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// DrawRect(x, y, w, h, color [, rounding [, thickness]]): filled, or an
+/// outline when thickness is above zero. Drawn behind every ImGui window.
+int __cdecl luaDrawRect(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::ShapeRect;
+    command.f0 = argFloat(L, 1);
+    command.f1 = argFloat(L, 2);
+    command.f2 = argFloat(L, 3);
+    command.f3 = argFloat(L, 4);
+    command.c0 = argColor(L, 5);
+    command.f4 = argFloat(L, 6);
+    command.i0 = static_cast<int>(argFloat(L, 7));
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// DrawGradient(x, y, w, h, colorA, colorB [, horizontal]): colorA at the top
+/// (or the left edge when horizontal) fading into colorB.
+int __cdecl luaDrawGradient(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::ShapeGradient;
+    command.f0 = argFloat(L, 1);
+    command.f1 = argFloat(L, 2);
+    command.f2 = argFloat(L, 3);
+    command.f3 = argFloat(L, 4);
+    command.c0 = argColor(L, 5);
+    command.c1 = argColor(L, 6);
+    command.b0 = crabe::infrastructure::LuaCall::get().argToBoolean(L, 7, false);
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// DrawLine(x1, y1, x2, y2, color [, thickness]).
+int __cdecl luaDrawLine(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::ShapeLine;
+    command.f0 = argFloat(L, 1);
+    command.f1 = argFloat(L, 2);
+    command.f2 = argFloat(L, 3);
+    command.f3 = argFloat(L, 4);
+    command.c0 = argColor(L, 5);
+    command.f4 = argFloat(L, 6, 1.0);
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// DrawCircle(x, y, radius, color [, thickness]): filled unless thickness > 0.
+int __cdecl luaDrawCircle(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::ShapeCircle;
+    command.f0 = argFloat(L, 1);
+    command.f1 = argFloat(L, 2);
+    command.f2 = argFloat(L, 3);
+    command.c0 = argColor(L, 4);
+    command.f4 = argFloat(L, 5);
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// DrawText(x, y, text, color [, size [, font [, align [, width [, shadow]]]]]).
+/// font: 0 default, 1 body, 2 display. align: 0 left, 1 centre, 2 right inside width.
+int __cdecl luaDrawText(void* L)
+{
+    DrawCommand command;
+    command.op = DrawOp::ShapeText;
+    command.f0 = argFloat(L, 1);
+    command.f1 = argFloat(L, 2);
+    command.text = argText(L, 3);
+    command.c0 = argColor(L, 4);
+    command.f3 = argFloat(L, 5);
+    command.i1 = static_cast<int>(argFloat(L, 6));
+    command.i0 = static_cast<int>(argFloat(L, 7));
+    command.f2 = argFloat(L, 8);
+    command.c1 = argColor(L, 9);
+    recordOnly(std::move(command));
+    return 0;
+}
+
+/// Pushes the width and height the render thread saw last frame (0, 0 before it ran).
+int __cdecl luaGetDisplaySize(void* L)
+{
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+    float width = 0.0f;
+    float height = 0.0f;
+    DrawBuffer::get().displaySize(width, height);
+    lua.pushNumber(L, width);
+    lua.pushNumber(L, height);
+    return 2;
+}
+
 }
 
 /// Registers all ImGui bindings to global ImGui and Crabe.ImGui tables.
@@ -438,7 +559,14 @@ void ImGuiBindings::registerBindings(void* L)
         { "EndTabItem", &luaEndTabItem },
         { "SetNextWindowPos", &luaSetNextWindowPos },
         { "SetNextWindowSize", &luaSetNextWindowSize },
-        { "IsItemClicked", &luaIsItemClicked }
+        { "IsItemClicked", &luaIsItemClicked },
+        { "SetKeyboardFocusHere", &luaSetKeyboardFocusHere },
+        { "DrawRect", &luaDrawRect },
+        { "DrawGradient", &luaDrawGradient },
+        { "DrawLine", &luaDrawLine },
+        { "DrawCircle", &luaDrawCircle },
+        { "DrawText", &luaDrawText },
+        { "GetDisplaySize", &luaGetDisplaySize }
     };
 
     for (const auto& entry : kEntries) {

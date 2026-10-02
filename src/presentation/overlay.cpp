@@ -161,6 +161,47 @@ void Overlay::renderOverlay()
     ImGui::End();
 }
 
+namespace {
+
+    // Latin-1 plus the punctuation, arrows and geometric shapes menus use for
+    // bullets, chevrons and the infinity sign. Must outlive the atlas build.
+    constexpr ImWchar kUiGlyphRanges[] = {
+        0x0020, 0x00FF,
+        0x2000, 0x206F,
+        0x2190, 0x21FF,
+        0x2200, 0x22FF,
+        0x25A0, 0x25FF,
+        0x2600, 0x26FF,
+        0,
+    };
+
+    // Adds a face from the Windows font folder, or a default-font placeholder
+    // when it is missing, so the DrawFont indices never shift.
+    void addSystemFont(ImGuiIO& io, const char* fileName, float size)
+    {
+        char windows[MAX_PATH] = {};
+        UINT length = GetWindowsDirectoryA(windows, MAX_PATH);
+        std::string path = std::string(windows, length) + "\\Fonts\\" + fileName;
+
+        if (GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES
+            && io.Fonts->AddFontFromFileTTF(path.c_str(), size, nullptr, kUiGlyphRanges)) {
+            return;
+        }
+        crabe::shared::Logger::getInstance().warning("Overlay: font '{}' not found, mods get the default font.", path);
+        io.Fonts->AddFontDefault();
+    }
+
+}
+
+// Index 0 stays ProggyClean for the console; 1 and 2 are the DrawFont::Body
+// and DrawFont::Display faces mods draw with through ImGui.DrawText.
+void Overlay::loadFonts(ImGuiIO& io)
+{
+    io.Fonts->AddFontDefault();
+    addSystemFont(io, "seguisb.ttf", 26.0f);
+    addSystemFont(io, "seguibl.ttf", 52.0f);
+}
+
 void Overlay::initialize()
 {
     IMGUI_CHECKVERSION();
@@ -173,6 +214,7 @@ void Overlay::initialize()
     io.LogFilename = nullptr; // Do not litter game root with imgui_log.txt
 
     ImGui::StyleColorsDark();
+    loadFonts(io);
 
     ImGuiStyle& style = ImGui::GetStyle();
     style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);

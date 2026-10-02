@@ -31,6 +31,7 @@ class Overlay {
 
     protected:
     private:
+        static void loadFonts(ImGuiIO& io);
         void drawConsoleTab();
         void drawVfsTab();
         void submitConsoleInput();

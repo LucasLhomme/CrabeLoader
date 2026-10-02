@@ -11,6 +11,7 @@
 #ifndef DRAW_BUFFER_HPP_
 #define DRAW_BUFFER_HPP_
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -44,6 +45,20 @@ namespace crabe::presentation {
         SetNextWindowPos,
         SetNextWindowSize,
         IsItemClicked,
+        SetKeyboardFocusHere,
+        ShapeRect,
+        ShapeGradient,
+        ShapeLine,
+        ShapeCircle,
+        ShapeText,
+    };
+
+    // Fonts a draw command can ask for: the atlas default plus the two UI faces
+    // the overlay loads at startup. A missing face falls back to Default.
+    enum class DrawFont : std::uint8_t {
+        Default = 0,
+        Body = 1,
+        Display = 2,
     };
 
     // One recorded ImGui call. The numeric slots and `b0` are op-specific, but
@@ -57,7 +72,11 @@ namespace crabe::presentation {
         float f1 = 0.0f;
         float f2 = 0.0f;
         float f3 = 0.0f;
+        float f4 = 0.0f;
+        std::uint32_t c0 = 0;
+        std::uint32_t c1 = 0;
         int i0 = 0;
+        int i1 = 0;
         bool b0 = false;
         bool b1 = false;
     };
@@ -101,6 +120,10 @@ namespace crabe::presentation {
         // Publishing an empty frame is what resets stale widget state.
         void replay();
 
+        // Script thread: the display size the render thread saw on its last
+        // frame, or 0x0 before the first one.
+        void displaySize(float& width, float& height) const;
+
     private:
         DrawBuffer() = default;
         ~DrawBuffer() = default;
@@ -119,6 +142,9 @@ namespace crabe::presentation {
 
         std::unordered_map<std::uint32_t, WidgetResult> _results;
         mutable std::mutex _resultsMutex;
+
+        std::atomic<float> _displayWidth{ 0.0f };
+        std::atomic<float> _displayHeight{ 0.0f };
     };
 
 } // namespace crabe::presentation
