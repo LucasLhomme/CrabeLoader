@@ -30,7 +30,9 @@
 #include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
+#if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_natives.hpp"
+#endif
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
 
@@ -604,7 +606,11 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
     };
 
+#if CRABELOADER_WITH_MULTIPLAYER
     bool allOk = crabe::multiplayer::natives::registerAll(L);
+#else
+    bool allOk = true;
+#endif
     crabe::presentation::ImGuiBindings::registerBindings(L);
 
     crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(

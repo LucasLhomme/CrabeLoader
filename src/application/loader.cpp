@@ -34,7 +34,9 @@
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
 #include "infrastructure/vfs_hook.hpp"
+#if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_manager.hpp"
+#endif
 #include "presentation/render_hook.hpp"
 #include "domain/config.hpp"
 #include "domain/game_profile.hpp"
@@ -633,6 +635,9 @@ bool Loader::initialize()
     // the multiplayer patches are known by address only, so applying them to
     // a build we did not measure corrupts code. Report whichever one closed,
     // so the log says something actionable rather than just "disabled".
+#if !CRABELOADER_WITH_MULTIPLAYER
+    logger.info("Loader: this build has no multiplayer (its sources were not present at compile time).");
+#else
     if (!config.multiplayerEnabled()) {
         logger.info("Loader: multiplayer disabled by crabe.toml ([multiplayer].enabled = false).");
     } else if (decision != crabe::domain::LoadDecision::Supported) {
@@ -642,13 +647,16 @@ bool Loader::initialize()
     } else {
         crabe::multiplayer::application::MultiplayerManager::getInstance().initialize();
     }
+#endif
 
     return true;
 }
 
 void Loader::uninitialize()
 {
+#if CRABELOADER_WITH_MULTIPLAYER
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
+#endif
     crabe::infrastructure::VfsHook::get().uninitialize();
     crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
