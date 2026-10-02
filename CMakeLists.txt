@@ -334,6 +334,28 @@ else()
     target_compile_options(test_vfs_override PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(test_draw_primitives
+    tests/cpp/test_draw_primitives.cpp
+    src/presentation/draw_buffer.cpp
+    src/presentation/pad_state.cpp
+    include/imgui/imgui.cpp
+    include/imgui/imgui_draw.cpp
+    include/imgui/imgui_tables.cpp
+    include/imgui/imgui_widgets.cpp
+)
+target_include_directories(test_draw_primitives PRIVATE
+    include
+    include/imgui
+)
+target_compile_definitions(test_draw_primitives PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+if(MSVC)
+    target_compile_options(test_draw_primitives PRIVATE /utf-8)
+endif()
+
 add_executable(crabe_fate
     tests/cpp/crabe_fate_main.cpp
     src/infrastructure/vfs_override_manager.cpp
@@ -584,6 +606,7 @@ endif()
 
 enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
+add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
