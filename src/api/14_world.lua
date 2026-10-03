@@ -51,6 +51,18 @@ function Game.PlaceActor(handle, x, y, z)
     return Crabe._actorPlace(handle, x, y, z) == true
 end
 
+-- x, y, z of the actor behind `handle`, y being height, or nil when it names
+-- no kinematic actor. Read the way the script VM's KinematicStateGetActualPosition does.
+function Game.ActorPosition(handle)
+    if type(Crabe._actorPosition) ~= "function" then
+        error("Game.ActorPosition: this loader has no actor position native", 2)
+    end
+    if type(handle) ~= "number" then
+        error("Game.ActorPosition: expected an actor handle (number)", 2)
+    end
+    return Crabe._actorPosition(handle)
+end
+
 -- ---------------------------------------------------------------------------
 -- Where am I
 -- ---------------------------------------------------------------------------

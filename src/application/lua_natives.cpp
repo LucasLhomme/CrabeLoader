@@ -146,6 +146,22 @@ namespace {
         return 3;
     }
 
+    // Crabe._actorPosition(actorHandle) -> x, y, z of that actor, or nothing when the
+    // handle names no kinematic actor.
+    int __cdecl nativeActorPosition(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+
+        const auto position = crabe::infrastructure::EngineKinematics::get().actorPosition(handle);
+        if (!lua.hasReturnSupport() || !position) return 0;
+
+        lua.pushNumber(L, (*position)[0]);
+        lua.pushNumber(L, (*position)[1]);
+        lua.pushNumber(L, (*position)[2]);
+        return 3;
+    }
+
     // Crabe._actorPlace(actorHandle, x, y, z) -> true when the engine placed the actor.
     int __cdecl nativeActorPlace(void* L)
     {
@@ -576,6 +592,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_engineSceneGeneration", &nativeEngineSceneGeneration },
         { "_cameraEye",             &nativeCameraEye },
         { "_actorPlace",            &nativeActorPlace },
+        { "_actorPosition",         &nativeActorPosition },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },

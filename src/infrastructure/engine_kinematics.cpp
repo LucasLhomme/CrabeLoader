@@ -1,25 +1,26 @@
 /*
 ** CrabeLoader
 ** File description:
-** Resolves the engine's camera eye and actor placement from the script natives that use them.
-** The natives register as `push handler; push "Name"; call RegisterFunction`, so each name leads
-** to a handler whose body is checked byte by byte; under a matched profile it must land on its RVA.
+** Resolves the engine's camera eye, actor position and actor placement from the script natives
+** that use them. Each name leads to a handler (see script_natives.hpp) whose body is checked
+** byte by byte; under a matched profile it must land on its RVA.
 **
 ** Authors: @LucasLhomme
 */
 
 #include "infrastructure/engine_kinematics.hpp"
 
-#include <cstdio>
-#include <cstring>
 #include <windows.h>
 
-#include "domain/game_profile.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/memory.hpp"
+#include "infrastructure/script_natives.hpp"
 #include "shared/logger.hpp"
 
 namespace {
+
+    using crabe::infrastructure::script_natives::bytesAt;
+    using crabe::infrastructure::script_natives::readAt;
 
     // Script_KinematicStatePlaceWithPosition, measured on di3-gold-steam-1.0 (rva 0x14A23F0):
     //   +0x60  mov ecx, [g_agentStateManager]
@@ -32,6 +33,19 @@ namespace {
     constexpr std::uintptr_t kPlaceLookupCallOffset = 0x6A;
     constexpr std::uintptr_t kPlaceTypeOffset = 0x8B;
     constexpr std::uintptr_t kPlaceCallOffset = 0x9B;
+
+    // Script_KinematicStateGetActualPosition (rva 0x1490200), the same lookup, then for a
+    // full kinematic state:
+    //   +0x52  test byte [state+0x51], 1     -- position stale
+    //   +0x5A  call FullKinematicStateData::<refresh>
+    //   +0x5F  lea eax, [state+0x268]         -- the actual position
+    constexpr const char* kPositionNative = "KinematicStateGetActualPosition";
+    constexpr const char* kPositionSymbol = "Script_KinematicStateGetActualPosition";
+    constexpr std::uintptr_t kPositionManagerOffset = 0x26;
+    constexpr std::uintptr_t kPositionLookupCallOffset = 0x2D;
+    constexpr std::uintptr_t kPositionStaleTestOffset = 0x52;
+    constexpr std::uintptr_t kPositionRefreshCallOffset = 0x5A;
+    constexpr std::uintptr_t kPositionLeaOffset = 0x5F;
 
     // Script_CameraGetPosition (rva 0xF7A4C0): `mov ecx, [g_Players]`, the virtual
     // GetCamera(playerId, 0) at vtable +0x28, then Camera::m_Eye read at +0x3C.
@@ -46,53 +60,12 @@ namespace {
     constexpr std::uintptr_t kStateEntryData = 0x08;
     constexpr std::uintptr_t kStateDataType = 0x06;
     constexpr std::uint16_t kStateDataTypeMask = 0x3FF;
+    constexpr std::uintptr_t kStateStaleFlags = 0x51;
 
     using LookupStateFn = void*(__thiscall*)(void* manager, std::uint32_t* outIndex, const std::uint32_t* handle);
     using PlaceFn = void(__thiscall*)(void* state, const float* position, std::uint32_t flags);
+    using RefreshFn = void(__thiscall*)(void* state);
     using GetCameraFn = void*(__thiscall*)(void* players, int playerId, int flags);
-
-    template <typename T>
-    T readAt(std::uintptr_t address)
-    {
-        return *reinterpret_cast<const T*>(address);
-    }
-
-    bool bytesAt(std::uintptr_t address, std::initializer_list<std::uint8_t> expected)
-    {
-        if (!crabe::memory::isReadable(address, expected.size()))
-            return false;
-        return std::memcmp(reinterpret_cast<const void*>(address), expected.begin(), expected.size()) == 0;
-    }
-
-    // The handler registered under `name`: the `push imm32` right before `push "name"`.
-    std::uintptr_t findScriptNative(const char* name)
-    {
-        const std::size_t length = std::strlen(name);
-        for (std::uintptr_t text = crabe::memory::findString(name); text; text = crabe::memory::findString(name, text)) {
-            if (!crabe::memory::isReadable(text - 1, length + 2) || readAt<char>(text - 1) != '\0')
-                continue;
-
-            char pattern[32];
-            std::snprintf(pattern, sizeof(pattern), "68 %02X %02X %02X %02X",
-                          static_cast<unsigned>(text & 0xFF), static_cast<unsigned>((text >> 8) & 0xFF),
-                          static_cast<unsigned>((text >> 16) & 0xFF), static_cast<unsigned>((text >> 24) & 0xFF));
-            for (std::uintptr_t push = crabe::memory::patternScan(pattern); push;
-                 push = crabe::memory::patternScan(pattern, nullptr, push)) {
-                if (readAt<std::uint8_t>(push - 5) == 0x68)
-                    return readAt<std::uint32_t>(push - 4);
-            }
-        }
-        return 0;
-    }
-
-    bool matchesProfile(const crabe::domain::GameProfile* profile, std::uintptr_t base,
-                        const char* symbol, std::uintptr_t address)
-    {
-        if (!profile)
-            return true;
-        const std::uint32_t rva = profile->engineSymbolRva(symbol);
-        return rva != crabe::domain::kUnmeasured && base + rva == address;
-    }
 
 } // namespace
 
@@ -112,16 +85,38 @@ void EngineKinematics::resolveOnce()
 
     const auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
     const bool place = resolvePlace(base);
+    const bool position = place && resolvePosition(base);
     const bool camera = resolveCamera(base);
-    crabe::shared::Logger::getInstance().info("EngineKinematics: actor placement {}, camera eye {}.",
-                                              place ? "resolved" : "unavailable", camera ? "resolved" : "unavailable");
+    crabe::shared::Logger::getInstance().info("EngineKinematics: actor placement {}, actor position {}, camera eye {}.",
+                                              place ? "resolved" : "unavailable",
+                                              position ? "resolved" : "unavailable",
+                                              camera ? "resolved" : "unavailable");
+}
+
+// The full kinematic state behind `actorHandle`, or 0. Shared by placement and
+// position, which both reach it the way the script natives do.
+std::uintptr_t EngineKinematics::fullKinematicState(std::uint32_t actorHandle) const
+{
+    void* manager = readAt<void*>(_agentStateManager);
+    if (!manager)
+        return 0;
+    std::uint32_t index = 0;
+    const auto entry = reinterpret_cast<std::uintptr_t>(
+        reinterpret_cast<LookupStateFn>(_lookupState)(manager, &index, &actorHandle));
+    if (!entry)
+        return 0;
+    const auto state = readAt<std::uintptr_t>(entry + kStateEntryData);
+    if (!state)
+        return 0;
+    const std::uint16_t type = readAt<std::uint16_t>(state + kStateDataType) & kStateDataTypeMask;
+    return type == readAt<std::uint16_t>(_fullKinematicType) ? state : 0;
 }
 
 bool EngineKinematics::resolvePlace(std::uintptr_t base)
 {
     auto& logger = crabe::shared::Logger::getInstance();
-    const std::uintptr_t handler = findScriptNative(kPlaceNative);
-    if (!handler || !matchesProfile(crabe::domain::activeProfile(), base, kPlaceSymbol, handler)) {
+    const std::uintptr_t handler = script_natives::find(kPlaceNative);
+    if (!handler || !script_natives::matchesProfile(base, kPlaceSymbol, handler)) {
         logger.error("EngineKinematics: native '{}' not found or off profile (rva 0x{:X}).",
                      kPlaceNative, handler ? handler - base : 0);
         return false;
@@ -143,11 +138,39 @@ bool EngineKinematics::resolvePlace(std::uintptr_t base)
     return true;
 }
 
+// Needs resolvePlace first: it must use the same manager and lookup, which is
+// checked rather than assumed.
+bool EngineKinematics::resolvePosition(std::uintptr_t base)
+{
+    auto& logger = crabe::shared::Logger::getInstance();
+    const std::uintptr_t handler = script_natives::find(kPositionNative);
+    if (!handler || !script_natives::matchesProfile(base, kPositionSymbol, handler)) {
+        logger.error("EngineKinematics: native '{}' not found or off profile (rva 0x{:X}).",
+                     kPositionNative, handler ? handler - base : 0);
+        return false;
+    }
+
+    const std::uintptr_t refresh = crabe::memory::resolveCall(handler + kPositionRefreshCallOffset);
+    if (!bytesAt(handler + kPositionManagerOffset, { 0x8B, 0x0D })
+        || readAt<std::uint32_t>(handler + kPositionManagerOffset + 2) != _agentStateManager
+        || crabe::memory::resolveCall(handler + kPositionLookupCallOffset) != _lookupState
+        || !bytesAt(handler + kPositionStaleTestOffset, { 0xF6, 0x46, static_cast<std::uint8_t>(kStateStaleFlags), 0x01 })
+        || !bytesAt(handler + kPositionLeaOffset, { 0x8D, 0x86 }) || !refresh) {
+        logger.error("EngineKinematics: '{}' at rva 0x{:X} does not have the measured shape; refusing.",
+                     kPositionNative, handler - base);
+        return false;
+    }
+
+    _refreshState = refresh;
+    _statePosition = readAt<std::uint32_t>(handler + kPositionLeaOffset + 2);
+    return true;
+}
+
 bool EngineKinematics::resolveCamera(std::uintptr_t base)
 {
     auto& logger = crabe::shared::Logger::getInstance();
-    const std::uintptr_t handler = findScriptNative(kCameraNative);
-    if (!handler || !matchesProfile(crabe::domain::activeProfile(), base, kCameraSymbol, handler)) {
+    const std::uintptr_t handler = script_natives::find(kCameraNative);
+    if (!handler || !script_natives::matchesProfile(base, kCameraSymbol, handler)) {
         logger.error("EngineKinematics: native '{}' not found or off profile (rva 0x{:X}).",
                      kCameraNative, handler ? handler - base : 0);
         return false;
@@ -190,6 +213,28 @@ std::optional<EngineKinematics::Position> EngineKinematics::cameraEye(int player
     return completed ? eye : std::nullopt;
 }
 
+std::optional<EngineKinematics::Position> EngineKinematics::actorPosition(std::uint32_t actorHandle)
+{
+    resolveOnce();
+    if (!_statePosition || !actorHandle)
+        return std::nullopt;
+
+    std::optional<Position> position;
+    const bool completed = CrashHandler::runGuarded(
+        [&] {
+            const std::uintptr_t state = fullKinematicState(actorHandle);
+            if (!state)
+                return;
+            // A stale position is recomputed first, exactly as the script native does.
+            if (readAt<std::uint8_t>(state + kStateStaleFlags) & 0x01)
+                reinterpret_cast<RefreshFn>(_refreshState)(reinterpret_cast<void*>(state));
+            const std::uintptr_t at = state + _statePosition;
+            position = Position{ readAt<float>(at), readAt<float>(at + 4), readAt<float>(at + 8) };
+        },
+        "EngineKinematics::actorPosition");
+    return completed ? position : std::nullopt;
+}
+
 bool EngineKinematics::placeActor(std::uint32_t actorHandle, const Position& position)
 {
     resolveOnce();
@@ -199,22 +244,9 @@ bool EngineKinematics::placeActor(std::uint32_t actorHandle, const Position& pos
     bool placed = false;
     const bool completed = CrashHandler::runGuarded(
         [&] {
-            void* manager = readAt<void*>(_agentStateManager);
-            if (!manager)
-                return;
-            std::uint32_t index = 0;
-            const auto entry = reinterpret_cast<std::uintptr_t>(
-                reinterpret_cast<LookupStateFn>(_lookupState)(manager, &index, &actorHandle));
-            if (!entry)
-                return;
-            const auto state = readAt<std::uintptr_t>(entry + kStateEntryData);
+            const std::uintptr_t state = fullKinematicState(actorHandle);
             if (!state)
                 return;
-            // Only a full kinematic state carries Place; the script native checks the same.
-            const std::uint16_t type = readAt<std::uint16_t>(state + kStateDataType) & kStateDataTypeMask;
-            if (type != readAt<std::uint16_t>(_fullKinematicType))
-                return;
-
             // Padded and aligned like the engine's Vector3d, in case Place loads it whole.
             alignas(16) const float padded[4] = { position[0], position[1], position[2], 0.0f };
             reinterpret_cast<PlaceFn>(_place)(reinterpret_cast<void*>(state), padded, 0);

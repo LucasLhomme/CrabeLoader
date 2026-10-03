@@ -153,6 +153,7 @@ namespace {
         // Script VM natives the Lua state never sees; EngineKinematics reads its entry points off them.
         { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
         { "Script_CameraGetPosition",               0x00F7A4C0 },
+        { "Script_KinematicStateGetActualPosition", 0x01490200 },
     };
 
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
