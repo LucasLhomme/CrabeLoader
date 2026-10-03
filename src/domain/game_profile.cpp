@@ -153,6 +153,10 @@ namespace {
         // Script VM natives the Lua state never sees; EngineKinematics reads its entry points off them.
         { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
         { "Script_CameraGetPosition",               0x00F7A4C0 },
+        // EngineShaders hooks this one to supply fallback shaders for missing hashes.
+        { "Shader_LookupCrc",                       0x000509D0 },
+        // EngineShaders hooks this one to validate material parameter binding indices.
+        { "Shader_ParseBindings",                   0x0005D5C0 },
     };
 
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
