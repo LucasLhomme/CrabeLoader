@@ -27,6 +27,7 @@
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_actors.hpp"
 #include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
@@ -160,6 +161,61 @@ namespace {
         lua.pushNumber(L, (*position)[1]);
         lua.pushNumber(L, (*position)[2]);
         return 3;
+    }
+
+    // Crabe._actorCreate(parameters, x, y, z, heading) -> the new actor's handle, or
+    // nothing when the engine built none. `parameters` is an engine parameter string,
+    // "DNAFile=characters/X.dnax" for an actor list entry's Parms.
+    int __cdecl nativeActorCreate(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* parameters = lua.argToString(L, 1);
+        const crabe::infrastructure::EngineActors::Position position{
+            static_cast<float>(lua.argToNumber(L, 2, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 3, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 4, 0.0)),
+        };
+        const auto heading = static_cast<float>(lua.argToNumber(L, 5, 0.0));
+        if (!parameters) return 0;
+
+        const std::uint32_t handle =
+            crabe::infrastructure::EngineActors::get().createActor(parameters, position, heading);
+        if (!lua.hasReturnSupport() || !handle) return 0;
+
+        lua.pushNumber(L, static_cast<double>(handle));
+        return 1;
+    }
+
+    // Crabe._actorSetState(actorHandle, stateName, on) -> true when the ActorState bit
+    // was set (on) or cleared. Combat teams are ActorState bits: "CombatTeam1".."4".
+    int __cdecl nativeActorSetState(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const char* state = lua.argToString(L, 2);
+        const bool on = lua.argToBoolean(L, 3, true);
+
+        const bool applied = state && crabe::infrastructure::EngineActors::get().setActorState(handle, state, on);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, applied);
+        return 1;
+    }
+
+    // Crabe._actorTestState(actorHandle, stateName) -> whether the actor carries that
+    // ActorState bit, or nothing when it cannot be read.
+    int __cdecl nativeActorTestState(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const char* state = lua.argToString(L, 2);
+        if (!state || !lua.hasReturnSupport()) return 0;
+
+        const auto result = crabe::infrastructure::EngineActors::get().testActorState(handle, state);
+        if (!result) return 0;
+
+        lua.pushBoolean(L, *result);
+        return 1;
     }
 
     // Crabe._actorPlace(actorHandle, x, y, z) -> true when the engine placed the actor.
@@ -593,6 +649,9 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_cameraEye",             &nativeCameraEye },
         { "_actorPlace",            &nativeActorPlace },
         { "_actorPosition",         &nativeActorPosition },
+        { "_actorCreate",           &nativeActorCreate },
+        { "_actorSetState",         &nativeActorSetState },
+        { "_actorTestState",        &nativeActorTestState },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },

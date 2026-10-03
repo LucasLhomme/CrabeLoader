@@ -64,6 +64,90 @@ function Game.ActorPosition(handle)
 end
 
 -- ---------------------------------------------------------------------------
+-- Creating an actor
+-- ---------------------------------------------------------------------------
+
+-- Creates an actor from an engine parameter string at x, y, z facing `heading`
+-- radians, and returns its handle (nil when the engine built nothing). The
+-- string is an actor list entry's Parms, e.g. "DNAFile=characters/X.dnax".
+--
+-- This is CActorCreator::CreateActor, what the script VM's CreateFromInitString
+-- calls. Unlike Game.SpawnItemMany it does not go through the Toy Box editor,
+-- so it also works in the playsets -- where the Rumpus placer refuses to build
+-- anything. The actor's assets load on the spot, which can hitch the game.
+function Game.CreateActor(parameters, x, y, z, heading)
+    if type(Crabe._actorCreate) ~= "function" then
+        error("Game.CreateActor: this loader has no actor creation native", 2)
+    end
+    if type(parameters) ~= "string" or parameters == "" then
+        error("Game.CreateActor: parameters must be a non-empty string", 2)
+    end
+    if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+        error("Game.CreateActor: expected x, y, z as numbers", 2)
+    end
+    return Crabe._actorCreate(parameters, x, y, z, heading or 0)
+end
+
+-- Sets (on, the default) or clears a named ActorState bit on an actor. Combat
+-- teams are such bits -- "StartTeamNeutral", "CombatTeam1".."CombatTeam4", as
+-- the Toy Box's Team property lists them -- and an actor only fights actors of
+-- another team. True when the engine applied it.
+function Game.SetActorState(handle, state, on)
+    if type(Crabe._actorSetState) ~= "function" then
+        error("Game.SetActorState: this loader has no actor state native", 2)
+    end
+    if type(handle) ~= "number" or type(state) ~= "string" then
+        error("Game.SetActorState: expected an actor handle and a state name", 2)
+    end
+    return Crabe._actorSetState(handle, state, on ~= false) == true
+end
+
+-- Whether an actor carries a named ActorState bit; nil when it cannot be read.
+function Game.ActorHasState(handle, state)
+    if type(Crabe._actorTestState) ~= "function" then
+        error("Game.ActorHasState: this loader has no actor state native", 2)
+    end
+    if type(handle) ~= "number" or type(state) ~= "string" then
+        error("Game.ActorHasState: expected an actor handle and a state name", 2)
+    end
+    return Crabe._actorTestState(handle, state)
+end
+
+-- Creates `count` actors (1 by default) `distance` units (4 by default) in front
+-- of a player, spread side by side and facing them. "In front" is away from
+-- that player's camera, which is the direction they are looking. Returns how
+-- many the engine built; raises when the player or the camera cannot be read.
+function Game.SpawnActorNearPlayer(parameters, count, distance, playerId)
+    count = count or 1
+    distance = distance or 4
+    local handle = Game.GetAvatarHandle(playerId)
+    local px, py, pz = Game.ActorPosition(handle)
+    if not px then
+        error("Game.SpawnActorNearPlayer: the player's position cannot be read", 2)
+    end
+    local cx, _, cz = Crabe._cameraEye(Crabe.hostPlayer(playerId))
+    if not cx then
+        error("Game.SpawnActorNearPlayer: the player's camera cannot be read", 2)
+    end
+
+    -- Horizontal camera-to-player direction; straight down the camera falls back to +z.
+    local dx, dz = px - cx, pz - cz
+    local length = math.sqrt(dx * dx + dz * dz)
+    if length < 0.001 then dx, dz, length = 0, 1, 1 end
+    dx, dz = dx / length, dz / length
+    local heading = math.atan2(-dx, -dz)
+
+    local built = 0
+    for index = 1, count do
+        local side = (index - (count + 1) / 2) * 1.5
+        local x = px + dx * distance - dz * side
+        local z = pz + dz * distance + dx * side
+        if Game.CreateActor(parameters, x, py, z, heading) then built = built + 1 end
+    end
+    return built
+end
+
+-- ---------------------------------------------------------------------------
 -- Where am I
 -- ---------------------------------------------------------------------------
 
