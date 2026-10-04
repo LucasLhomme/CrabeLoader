@@ -1,18 +1,23 @@
 -- CrabeLoader
 -- File description:
--- Camera control: the editor camera, free camera, movement and speed.
--- Free camera is the engine editor state, so it suspends whatever was driving the camera.
--- Moves no player -- position is read through src/api/14_world.lua and owned by the engine.
+-- Camera control: the engine free camera, the Toy Box editor camera and the customize camera.
+-- The free camera is the engine's own; its flight and controls never pass through Lua.
+-- Moves a player only on request, to the camera, through Game.PlaceActor in src/api/14_world.lua.
 --
 -- Authors: @LucasLhomme
 
 -- Camera control.
 --
--- Read this before adding anything here: Disney Infinity 3.0 exposes NO free
+-- Read this before adding anything here: the shipped scripts call NO free
 -- camera, debug camera, photo mode, or field-of-view native. An exhaustive
 -- sweep of the 1811 shipped scripts found exactly twelve identifiers with
 -- "cam" in the name that are ever called, and the 902-native runtime dump has
 -- no camera entry point beyond the Customize_* group below.
+--
+-- The engine itself still carries a real free camera: every player gets a
+-- "FreeCam" camera at startup, and only the debug shortcuts that switch to it
+-- were stripped. Crabe._engineFreeCamera reaches its state machine directly,
+-- which is what Camera.StartFreeCam below uses.
 --
 -- Two traps that look like the answer and are not:
 --
@@ -22,9 +27,9 @@
 --   RBN_TB_CAMERA_DIST_TOGGLE and friends are keymap constants the shipped
 --   handlers repurpose -- one of them deletes an object.
 --
--- So what is here is the customize camera, which is the only thing in the game
--- that takes camera motion from Lua, plus the Toy Box editor camera, which is
--- the only shipped camera genuinely detached from the avatar.
+-- The Toy Box editor camera and the customize camera stay here for what they
+-- are: an editor mode and an orbit rig around one object. Neither is a free
+-- camera, and the free camera no longer borrows either.
 
 Crabe = Crabe or {}
 Crabe.Camera = Crabe.Camera or {}
@@ -40,8 +45,8 @@ local Camera = Crabe.Camera
 Camera.EDITOR_STATES = { "Editor::IdleMode", "Editor::ObjectMode", "Editor::SparkMode" }
 
 -- Puts the player into a Toy Box editor mode. In editor modes the camera is
--- detached from the avatar, which is the closest thing to a free camera that
--- the game ships and reaches in a single confirmed call.
+-- detached from the avatar, but the player is editing the Toy Box, not flying:
+-- for a free camera use Camera.StartFreeCam.
 function Camera.SetEditorState(state, playerId)
     local known = false
     for _, name in ipairs(Camera.EDITOR_STATES) do
@@ -64,9 +69,8 @@ end
 -- Shape taken from customizebase.lua:148.
 --
 -- This is the only shipped source of an actor handle that
--- StartCustomizeCamera is known to accept, which is why the free camera below
--- refuses to start without it. Feeding that native a handle from somewhere
--- else is untested and can take the process down.
+-- StartCustomizeCamera is known to accept. Feeding that native a handle from
+-- somewhere else is untested and can take the process down.
 function Camera.StartupData(playerId)
     return Crabe.native("Customize_GetStartupData", "Crabe.Camera.StartupData")(Crabe.hostPlayer(playerId))
 end
@@ -97,93 +101,154 @@ function Camera.Move(dx, dy, playerId)
 end
 
 -- ---------------------------------------------------------------------------
--- Free camera
+-- Free camera -- the engine's own
 -- ---------------------------------------------------------------------------
 
--- Virtual-key codes, so the bindings below read as names.
-local KEY = {
-    LEFT = 0x25, UP = 0x26, RIGHT = 0x27, DOWN = 0x28,
-    SHIFT = 0x10,
-}
+-- Controls are the engine's, on the player's controller: left stick flies,
+-- right stick looks, R1 and R2 raise and lower. While it runs, the engine
+-- turns the avatar's controls off, and turns them back on when it stops.
 
-Camera.freeCam = { active = false, speed = 1.0, playerId = nil }
+Camera.freeCam = { active = false, playerId = nil, generation = nil }
 
-local function keyDown(vk)
-    return Crabe._keyDown and Crabe._keyDown(vk) == 1
+-- The engine rebuilds its camera scenes on every world load. A free camera
+-- switched on in an earlier world went away with it, whatever `active` says.
+local function sceneGeneration()
+    if type(Crabe._engineSceneGeneration) ~= "function" then return nil end
+    return Crabe._engineSceneGeneration()
 end
 
--- Steers the customize camera from the arrow keys, once per tick.
---
--- Held-key state has to come from the loader rather than the engine: the game
--- never hands key state to Lua, and while the menu is open the overlay owns
--- the keyboard anyway.
-local function driveFreeCam()
-    if not Camera.freeCam.active then return end
-
-    local dx, dy = 0, 0
-    if keyDown(KEY.LEFT) then dx = dx - 1 end
-    if keyDown(KEY.RIGHT) then dx = dx + 1 end
-    if keyDown(KEY.UP) then dy = dy + 1 end
-    if keyDown(KEY.DOWN) then dy = dy - 1 end
-
-    if dx == 0 and dy == 0 then return end
-
-    local speed = Camera.freeCam.speed
-    if keyDown(KEY.SHIFT) then speed = speed * 3 end
-
-    Camera.Move(dx * speed, dy * speed, Camera.freeCam.playerId)
+-- Clears a free camera left over from an earlier world, so the next start
+-- asks the engine instead of trusting the flag. Calls no native: this can run
+-- from a tick in the middle of a world load.
+local function forgetStaleFreeCam()
+    local freeCam = Camera.freeCam
+    if not freeCam.active or freeCam.generation == sceneGeneration() then return end
+    freeCam.active = false
+    freeCam.playerId = nil
+    freeCam.generation = nil
 end
 
--- Starts the free camera on whatever the customize screen is currently holding.
---
--- EXPERIMENTAL, and honestly so: the rig this borrows is an orbit camera built
--- for inspecting one object. Whether it can be flown, and whether it clamps to
--- a distance around its target, is unverified -- no shipped script uses it for
--- anything but customization.
-function Camera.StartFreeCam(playerId)
-    if Camera.freeCam.active then return true end
+-- What the engine says: true/false when `playerId` has a camera scene, nil
+-- otherwise (front end, mid-load) or when the loader lacks the native.
+local function engineFreeCamOn(playerId)
+    if type(Crabe._engineFreeCameraActive) ~= "function" then return nil end
+    return Crabe._engineFreeCameraActive(playerId)
+end
 
-    local handle, name, thrown, isRumpus = Camera.StartupData(playerId)
-    if handle == nil then
-        error("Crabe.Camera.StartFreeCam: no actor handle is available -- this " ..
-              "camera can only attach to what the customize screen is holding", 2)
+-- One step of the engine state machine. true/false is the state it is now
+-- in; nil means the native is missing or refused (loader.log says why).
+local function stepEngineFreeCam(playerId)
+    if type(Crabe._engineFreeCamera) ~= "function" then
+        error("Crabe.Camera: this loader has no engine free camera native", 3)
     end
+    return Crabe._engineFreeCamera(playerId, true)
+end
 
-    Camera.StartCustomizeCamera(handle, isRumpus, playerId)
+-- Drives the engine free camera to `wanted`. The engine only toggles, so a
+-- step that lands on the wrong state is followed by a second one; false on
+-- both means the player has no active camera scene, as in the front end.
+local function setEngineFreeCam(wanted, playerId)
+    local state = stepEngineFreeCam(playerId)
+    if state == nil then return nil end
+    if state ~= wanted then
+        state = stepEngineFreeCam(playerId)
+    end
+    return state
+end
+
+local function adopt(playerId)
     Camera.freeCam.active = true
     Camera.freeCam.playerId = playerId
+    Camera.freeCam.generation = sceneGeneration()
+end
 
+-- Switches `playerId` (default: the host) to the engine free camera.
+-- Returns true when it is on, false when the player has no camera to switch.
+function Camera.StartFreeCam(playerId)
+    playerId = Crabe.hostPlayer(playerId)
+    forgetStaleFreeCam()
+    if Camera.freeCam.active then return true end
+    -- Already flying, but forgotten by a scene rebuild: toggling would stop it.
+    if engineFreeCamOn(playerId) == true then
+        adopt(playerId)
+        return true
+    end
+
+    local state = setEngineFreeCam(true, playerId)
+    if state == nil then
+        error("Crabe.Camera.StartFreeCam: the engine free camera is unavailable (see loader.log)", 2)
+    end
+    if state ~= true then return false end
+
+    adopt(playerId)
     if type(Game) == "table" and type(Game.SuppressHud) == "function" then
         Game.SuppressHud(true, playerId)
     end
-    return true, name, thrown
+    return true
 end
 
+-- Returns the view to the avatar camera. false when nothing was running.
+-- The engine is asked as well as the flag: a scene rebuild clears the flag,
+-- and some rebuilds (a master zone streaming its children) keep the camera.
 function Camera.StopFreeCam()
-    if not Camera.freeCam.active then return false end
+    forgetStaleFreeCam()
+    local playerId = Camera.freeCam.playerId or Crabe.hostPlayer()
+    if not Camera.freeCam.active and engineFreeCamOn(playerId) ~= true then return false end
 
-    local playerId = Camera.freeCam.playerId
     Camera.freeCam.active = false
     Camera.freeCam.playerId = nil
+    Camera.freeCam.generation = nil
 
-    Camera.StopCustomizeCamera(playerId)
+    setEngineFreeCam(false, playerId)
     if type(Game) == "table" and type(Game.SuppressHud) == "function" then
         Game.SuppressHud(false, playerId)
     end
     return true
 end
 
-function Camera.SetSpeed(value)
-    Camera.freeCam.speed = tonumber(value) or 1.0
-    return Camera.freeCam.speed
+function Camera.IsFreeCamActive()
+    forgetStaleFreeCam()
+    local engine = engineFreeCamOn(Camera.freeCam.playerId or Crabe.hostPlayer())
+    if engine ~= nil then return engine end
+    return Camera.freeCam.active
 end
 
--- The tick hook is registered from a mod, not here: this file is injected
--- before Game.onTick exists.
-function Camera.arm()
-    if type(Game) ~= "table" or type(Game.onTick) ~= "function" then
-        error("Crabe.Camera.arm: Game.onTick is not available yet", 2)
+function Camera.ToggleFreeCam(playerId)
+    if Camera.IsFreeCamActive() then
+        Camera.StopFreeCam()
+        return false
     end
-    Game.onTick(driveFreeCam)
+    return Camera.StartFreeCam(playerId)
+end
+
+-- ---------------------------------------------------------------------------
+-- Camera position
+-- ---------------------------------------------------------------------------
+
+-- x, y, z of `playerId`'s current camera -- the free camera while it runs --
+-- y being height. nil when the player has no camera, as in the front end.
+function Camera.GetPosition(playerId)
+    if type(Crabe._cameraEye) ~= "function" then
+        error("Crabe.Camera.GetPosition: this loader has no camera position native", 2)
+    end
+    return Crabe._cameraEye(Crabe.hostPlayer(playerId))
+end
+
+-- Drops `playerId`'s avatar where their camera is, then hands the view back
+-- to it if the free camera was running. The avatar falls from there. Returns
+-- true when it was placed, or false and a reason.
+function Camera.MovePlayerToCamera(playerId)
+    playerId = Crabe.hostPlayer(playerId)
+
+    local x, y, z = Camera.GetPosition(playerId)
+    if not x then return false, "no camera" end
+
+    local handle = Game.GetAvatarHandle(playerId)
+    if type(handle) ~= "number" or handle == 0 then return false, "no avatar" end
+    if not Game.PlaceActor(handle, x, y, z) then return false, "the engine refused" end
+
+    if Camera.IsFreeCamActive() then
+        Camera.StopFreeCam()
+    end
     return true
 end

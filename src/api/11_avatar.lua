@@ -167,6 +167,30 @@ function Game.SetCharacter(sku, method, playerId)
     if sku == nil then
         error("Game.SetCharacter: a sku_id is required", 2)
     end
+
+    -- Support passing character name directly (e.g. "SOR_Sora", "Luke Skywalker")
+    if type(sku) == "string" and not tonumber(sku) then
+        local foundSku = nil
+        if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.skuForName then
+            foundSku = Crabe.VirtualReader.skuForName(sku)
+        end
+        if not foundSku then
+            local lowerName = string.lower(sku)
+            for _, list in pairs(Game.CHARACTER_ROSTER) do
+                for _, c in ipairs(list) do
+                    if string.lower(c.name) == lowerName then
+                        foundSku = c.sku
+                        break
+                    end
+                end
+                if foundSku then break end
+            end
+        end
+        if foundSku then
+            sku = foundSku
+        end
+    end
+
     playerId = hostPlayer(playerId)
     method = method or "loadout"
 
@@ -298,107 +322,141 @@ function Game.GetAvatarInfo(playerId)
 end
 
 -- ---------------------------------------------------------------------------
--- Master Character Roster (104 Characters)
+-- Master Character Roster (official SKUs from virtualreaderdata.lua bytecode)
 -- ---------------------------------------------------------------------------
 
 Game.CHARACTER_ROSTER = {
+    -- ----------------------------------------------------------------
+    -- Star Wars — verified against virtualreaderdata.lua sku_id fields
+    -- ----------------------------------------------------------------
     starwars = {
-        { name = "Anakin Skywalker", sku = 1000200 },
-        { name = "Ahsoka Tano", sku = 1000201 },
-        { name = "Obi-Wan Kenobi", sku = 1000202 },
-        { name = "Yoda", sku = 1000203 },
-        { name = "Luke Skywalker", sku = 1000204 },
-        { name = "Princess Leia", sku = 1000205 },
-        { name = "Han Solo", sku = 1000206 },
-        { name = "Chewbacca", sku = 1000207 },
-        { name = "Darth Vader", sku = 1000208 },
-        { name = "Darth Maul", sku = 1000209 },
-        { name = "Boba Fett", sku = 1000210 },
-        { name = "Ezra Bridger", sku = 1000211 },
-        { name = "Kanan Jarrus", sku = 1000212 },
-        { name = "Sabine Wren", sku = 1000213 },
-        { name = "Zeb Orrelios", sku = 1000214 },
-        { name = "Kylo Ren", sku = 1000215 },
-        { name = "Rey", sku = 1000216 },
-        { name = "Finn", sku = 1000217 },
-        { name = "Poe Dameron", sku = 1000218 },
-        { name = "Mace Windu", sku = 1000444 },
+        -- The Clone Wars
+        { name = "Anakin Skywalker",  sku = 1000200 },   -- TCW_Anakin
+        { name = "Obi-Wan Kenobi",    sku = 1000201 },   -- TCW_ObiWan
+        { name = "Yoda",              sku = 1000202 },   -- TCW_Yoda
+        { name = "Ahsoka Tano",       sku = 1000203 },   -- TCW_Ahsoka
+        { name = "Darth Maul",        sku = 1000204 },   -- TCW_DarthMaul
+        -- The Empire Strikes Back
+        { name = "Luke Skywalker",    sku = 1000206 },   -- EMP_Luke
+        { name = "Han Solo",          sku = 1000207 },   -- EMP_HanSolo
+        { name = "Princess Leia",     sku = 1000208 },   -- EMP_Leia
+        { name = "Chewbacca",         sku = 1000209 },   -- EMP_Chewbacca
+        { name = "Darth Vader",       sku = 1000210 },   -- EMP_DarthVader
+        { name = "Boba Fett",         sku = 1000211 },   -- EMP_BobaFett
+        -- Star Wars Rebels
+        { name = "Ezra Bridger",      sku = 1000212 },   -- REB_Ezra
+        { name = "Kanan Jarrus",      sku = 1000213 },   -- REB_Kanan
+        { name = "Sabine Wren",       sku = 1000214 },   -- REB_Sabine
+        { name = "Zeb Orrelios",      sku = 1000215 },   -- REB_Zeb
     },
+    -- ----------------------------------------------------------------
+    -- Marvel — verified against virtualreaderdata.lua sku_id fields
+    -- ----------------------------------------------------------------
     marvel = {
-        { name = "Iron Man", sku = 1000100 },
-        { name = "Thor", sku = 1000103 },
-        { name = "Captain America", sku = 1000104 },
-        { name = "Hulk", sku = 1000105 },
-        { name = "Hawkeye", sku = 1000106 },
-        { name = "Black Widow", sku = 1000107 },
-        { name = "Spider-Man", sku = 1000108 },
-        { name = "Venom", sku = 1000109 },
-        { name = "Star-Lord", sku = 1000110 },
-        { name = "Gamora", sku = 1000111 },
-        { name = "Drax", sku = 1000112 },
-        { name = "Rocket Raccoon", sku = 1000113 },
-        { name = "Groot", sku = 1000114 },
-        { name = "Loki", sku = 1000115 },
-        { name = "Ronan the Accuser", sku = 1000116 },
-        { name = "Green Goblin", sku = 1000117 },
-        { name = "Nick Fury", sku = 1000118 },
-        { name = "Iron Fist", sku = 1000119 },
-        { name = "Nova", sku = 1000120 },
-        { name = "Falcon", sku = 1000121 },
-        { name = "Yondu", sku = 1000122 },
-        { name = "Ultron", sku = 1000123 },
-        { name = "Hulkbuster", sku = 1000124 },
-        { name = "Black Suit Spider-Man", sku = 1000125 },
-        { name = "Vision", sku = 1000126 },
-        { name = "Ant-Man", sku = 1000127 },
-        { name = "Black Panther", sku = 1000128 },
-        { name = "Cap First Avenger", sku = 1000129 },
+        -- Avengers / Marvel 2
+        { name = "Captain America",         sku = 1000100 },  -- AVG_CaptainAmerica
+        { name = "Hulk",                    sku = 1000101 },  -- AVG_Hulk
+        { name = "Iron Man",                sku = 1000102 },  -- AVG_IronMan
+        { name = "Thor",                    sku = 1000103 },  -- AVG_Thor
+        -- Guardians of the Galaxy
+        { name = "Groot",                   sku = 1000104 },  -- GOG_Groot
+        { name = "Rocket Raccoon",          sku = 1000105 },  -- GOG_RocketRaccoon
+        { name = "Star-Lord",               sku = 1000106 },  -- GOG_StarLord
+        -- Spider-Man / Marvel 1
+        { name = "Spider-Man",              sku = 1000107 },  -- SPD_Spiderman
+        { name = "Nick Fury",               sku = 1000108 },  -- SPD_NickFury
+        { name = "Black Widow",             sku = 1000109 },  -- AVG_BlackWidow
+        { name = "Hawkeye",                 sku = 1000110 },  -- AVG_Hawkeye
+        { name = "Drax",                    sku = 1000111 },  -- GOG_Drax
+        { name = "Gamora",                  sku = 1000112 },  -- GOG_Gamora
+        { name = "Iron Fist",               sku = 1000113 },  -- SPD_IronFist
+        { name = "Nova",                    sku = 1000114 },  -- SPD_Nova
+        { name = "Venom",                   sku = 1000115 },  -- SPD_Venom
+        { name = "Ronan the Accuser",       sku = 1000125 },  -- GOG_Ronan
+        { name = "Green Goblin",            sku = 1000126 },  -- SPD_GreenGoblin
+        { name = "Loki",                    sku = 1000124 },  -- AVG_Loki
+        { name = "Falcon",                  sku = 1000127 },  -- AVG_Falcon
+        { name = "Yondu",                   sku = 1000128 },  -- GOG_Yondu
+        { name = "Jasmine",                 sku = 1000129 },  -- AL_Jasmine (mis-categorized in game, leaving as-is)
+        { name = "Black Suit Spider-Man",   sku = 1000134 },  -- SPD_Spiderman_Black
+        { name = "Vision",                  sku = 1000225 },  -- AVG_Vision
+        { name = "Ultron",                  sku = 1000226 },  -- AVG_Ultron
+        { name = "Ant-Man",                 sku = 1000227 },  -- AVG_Antman
+        { name = "Hulkbuster",              sku = 1000238 },  -- AVG_HulkBuster
     },
+    -- ----------------------------------------------------------------
+    -- Disney & Pixar — verified against virtualreaderdata.lua sku_id fields
+    -- ----------------------------------------------------------------
     disney = {
-        { name = "Mickey Mouse", sku = 1000001 },
-        { name = "Minnie Mouse", sku = 1000002 },
-        { name = "Donald Duck", sku = 1000003 },
-        { name = "Olaf", sku = 1000004 },
-        { name = "Mulan", sku = 1000005 },
-        { name = "Sam Flynn", sku = 1000006 },
-        { name = "Quorra", sku = 1000007 },
-        { name = "Joy", sku = 1000008 },
-        { name = "Sadness", sku = 1000009 },
-        { name = "Anger", sku = 1000010 },
-        { name = "Disgust", sku = 1000011 },
-        { name = "Fear", sku = 1000012 },
-        { name = "Spot", sku = 1000013 },
-        { name = "Judy Hopps", sku = 1000014 },
-        { name = "Nick Wilde", sku = 1000015 },
-        { name = "Baloo", sku = 1000016 },
-        { name = "Mad Hatter", sku = 1000017 },
-        { name = "Alice", sku = 1000018 },
-        { name = "Time", sku = 1000019 },
-        { name = "Jack Skellington", sku = 1000020 },
-        { name = "Rapunzel", sku = 1000021 },
-        { name = "Wreck-It Ralph", sku = 1000022 },
-        { name = "Vanellope", sku = 1000023 },
-        { name = "Elsa", sku = 1000024 },
-        { name = "Anna", sku = 1000025 },
-        { name = "Hiro Hamada", sku = 1000026 },
-        { name = "Baymax", sku = 1000027 },
-        { name = "Aladdin", sku = 1000028 },
-        { name = "Jasmine", sku = 1000029 },
-        { name = "Tinker Bell", sku = 1000030 },
-        { name = "Merida", sku = 1000031 },
-        { name = "Maleficent", sku = 1000032 },
-        { name = "Stitch", sku = 1000033 },
-    }
+        -- Inside Out
+        { name = "Joy",               sku = 1000216 },   -- OUT_Joy
+        { name = "Anger",             sku = 1000217 },   -- OUT_Anger
+        { name = "Fear",              sku = 1000218 },   -- OUT_Fear
+        { name = "Sadness",           sku = 1000219 },   -- OUT_Sadness
+        { name = "Disgust",           sku = 1000220 },   -- OUT_Disgust
+        -- Toy Box Classic
+        { name = "Mickey Mouse",      sku = 1000221 },   -- TBX_ClassicMickey
+        { name = "Minnie Mouse",      sku = 1000222 },   -- TBX_Minnie
+        { name = "Mulan",             sku = 1000223 },   -- TBX_Mulan
+        { name = "Olaf",              sku = 1000224 },   -- FRO_Olaf
+        -- Tron
+        { name = "Sam Flynn",         sku = 1000150 },   -- TRN_Sam
+        { name = "Quorra",            sku = 1000151 },   -- TRN_Quorra
+        -- Aladdin
+        { name = "Aladdin",           sku = 1000117 },   -- AL_Aladdin
+        -- Lilo & Stitch
+        { name = "Stitch",            sku = 1000118 },   -- LAS_Stitch
+        -- Brave
+        { name = "Merida",            sku = 1000119 },   -- BRV_Merida
+        -- Tinker Bell
+        { name = "Tinker Bell",       sku = 1000120 },   -- TB_Tinkerbell
+        -- Maleficent
+        { name = "Maleficent",        sku = 1000121 },   -- MAL_Maleficent
+        -- Big Hero 6
+        { name = "Hiro Hamada",       sku = 1000122 },   -- BHS_Hiro
+        { name = "Baymax",            sku = 1000123 },   -- BHS_Baymax
+        -- Frozen
+        { name = "Anna",              sku = 1000024 },   -- FRO_Anna
+        { name = "Elsa",              sku = 1000025 },   -- FRO_Elsa
+        -- Tangled
+        { name = "Rapunzel",          sku = 1000023 },   -- TAN_Rapunzel
+        -- Toy Box Mickey
+        { name = "Mickey (TB 1.0)",   sku = 1000021 },   -- TB_MickeyMouse
+        -- Nightmare Before Christmas
+        { name = "Jack Skellington",  sku = 1000022 },   -- NBC_JackSkellington
+        -- The Good Dinosaur
+        { name = "Spot",              sku = 1000235 },   -- DNO_Spot
+        -- Zootopia
+        { name = "Nick Wilde",        sku = 1000236 },   -- TBX_NickWilde
+        { name = "Judy Hopps",        sku = 1000237 },   -- TBX_JudyHopps
+    },
 }
+
 
 function Game.ListCharacters(franchise)
     if franchise then
-        return Game.CHARACTER_ROSTER[string.lower(franchise)] or {}
+        local f = string.lower(franchise)
+        if f == "custom" or f == "mods" then
+            if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.getModdedCharacters then
+                local res = {}
+                for _, row in ipairs(Crabe.VirtualReader.getModdedCharacters()) do
+                    table.insert(res, { name = row.Name, sku = tonumber(row.sku_id) or row.sku_id, icon = row.Icon })
+                end
+                return res
+            end
+            return {}
+        end
+        return Game.CHARACTER_ROSTER[f] or {}
     end
     local all = {}
     for _, list in pairs(Game.CHARACTER_ROSTER) do
         for _, c in ipairs(list) do
             all[#all + 1] = c
+        end
+    end
+    if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.getModdedCharacters then
+        for _, row in ipairs(Crabe.VirtualReader.getModdedCharacters()) do
+            all[#all + 1] = { name = row.Name, sku = tonumber(row.sku_id) or row.sku_id, icon = row.Icon }
         end
     end
     return all

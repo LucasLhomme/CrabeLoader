@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "com.crabe.ui-addon",
+  "name": "UI Addon",
+  "version": "1.5.0",
+  "entry": "ui.lua",
+  "dependencies": [
+    {
+      "id": "com.crabe.gameplay",
+      "version": ">=2.0.0"
+    }
+  ],
+  "loadAfter": [
+    "com.crabe.core-lib"
+  ]
+}

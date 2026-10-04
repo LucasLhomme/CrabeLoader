@@ -201,7 +201,43 @@ function Crabe.Hooks.overrideChunk(matchPattern, luaCode) end
 ---@param shellcodeBytes number[] Assembly payload bytes.
 ---@param stolenLen? number Optional manual stolen byte count override.
 ---@return number trampolineAddress Address of allocated trampoline, or 0 on failure.
-function Crabe.Hooks.installCodeCave(address, shellcodeBytes, stolenLen) end
+--------------------------------------------------------------------------------
+-- Crabe.Vfs: Virtual File System & Zero-Touch Modding
+--------------------------------------------------------------------------------
+
+---@class CrabeVfsStats
+---@field totalOverrides number
+---@field totalResolutions number
+---@field totalHits number
+
+---@class CrabeVfs
+Crabe.Vfs = {}
+
+--- Returns the total number of active virtual file overrides.
+---@return number count
+function Crabe.Vfs.count() end
+
+--- Resolves a virtual asset path to its loose file location on disk.
+---@param path string Virtual path (e.g. "characters/sora.p3d").
+---@return string? resolved Physical file path or nil if not overridden.
+function Crabe.Vfs.resolve(path) end
+
+---@class CrabeVfsEntry
+---@field path string Normalized virtual path (lowercase, forward slashes).
+---@field mod string Folder name of the mod that provides the file.
+
+--- Lists the active overrides whose virtual path starts with prefix (all when nil).
+---@param prefix? string Virtual path prefix, e.g. "characters/".
+---@return CrabeVfsEntry[] entries
+function Crabe.Vfs.list(prefix) end
+
+--- Returns operational lookup and hit statistics for the VFS.
+---@return CrabeVfsStats stats
+function Crabe.Vfs.stats() end
+
+--- Returns the virtual path of the most recently redirected file.
+---@return string lastPath
+function Crabe.Vfs.lastRedirected() end
 
 --------------------------------------------------------------------------------
 -- Crabe.Input: Keybinding Management
@@ -218,6 +254,23 @@ function Crabe.Input.bindKey(vk, callback) end
 --- Unbinds a previously registered virtual key callback.
 ---@param vk number Virtual Key code.
 function Crabe.Input.unbindKey(vk) end
+
+--- XINPUT_GAMEPAD_* button bits (DPAD_UP, A, B, LB, RB, START, ...).
+Crabe.Input.PAD = {}
+
+--- Returns what the game last read from a controller slot, or nil when it is not connected.
+---@param slot? number Controller slot 0-3, 0 by default.
+---@return table|nil state { buttons, leftTrigger, rightTrigger, leftX, leftY, rightX, rightY }
+function Crabe.Input.padState(slot) end
+
+--- Reports whether one Crabe.Input.PAD bit is held in a padState().buttons value.
+---@param buttons number @param mask number
+---@return boolean
+function Crabe.Input.padHas(buttons, mask) end
+
+--- While true the game reads an idle gamepad; padState keeps reading the real one.
+---@param captured boolean
+function Crabe.Input.capturePad(captured) end
 
 --------------------------------------------------------------------------------
 -- Crabe.ImGui: Dear ImGui Rendering Primitives
@@ -274,6 +327,45 @@ function Crabe.ImGui.separator() end
 
 --- Places the next widget on the same line as the previous widget.
 function Crabe.ImGui.sameLine() end
+
+-- Screen-space drawing. Shapes go to the background draw list (behind every
+-- ImGui window) in pixels. Colours are packed 0xAABBGGRR integers, which is
+-- (((a * 256 + b) * 256 + g) * 256 + r) in Lua 5.1.
+
+--- Draws a filled rectangle, or its outline when thickness is above zero.
+---@param x number @param y number @param w number @param h number
+---@param color number Packed colour.
+---@param rounding? number Corner radius in pixels.
+---@param thickness? number Outline width; 0 fills.
+function Crabe.ImGui.DrawRect(x, y, w, h, color, rounding, thickness) end
+
+--- Draws a rectangle fading from colorA (top, or left when horizontal) to colorB.
+---@param horizontal? boolean
+function Crabe.ImGui.DrawGradient(x, y, w, h, colorA, colorB, horizontal) end
+
+--- Draws a line segment.
+function Crabe.ImGui.DrawLine(x1, y1, x2, y2, color, thickness) end
+
+--- Draws a filled circle, or its outline when thickness is above zero.
+function Crabe.ImGui.DrawCircle(x, y, radius, color, thickness) end
+
+--- Draws text whose top-left is (x, y), or aligned inside a box `width` wide;
+--- text wider than the box ends with "...".
+---@param size? number Pixel height; the font's own size when 0 or absent.
+---@param font? number 0 default (ProggyClean), 1 body (Segoe UI Semibold), 2 display (Segoe UI Black).
+---@param align? number 0 left, 1 centre, 2 right (inside width).
+---@param width? number Box width in pixels; 0 draws unclipped.
+---@param shadow? number Packed colour of a one-pixel drop shadow; 0 for none.
+function Crabe.ImGui.DrawText(x, y, text, color, size, font, align, width, shadow) end
+
+--- Returns the display size the render thread saw last frame (0, 0 before it ran).
+---@return number width
+---@return number height
+function Crabe.ImGui.GetDisplaySize() end
+
+--- Gives keyboard focus to the next widget (or `offset` widgets further on).
+---@param offset? number
+function Crabe.ImGui.SetKeyboardFocusHere(offset) end
 
 --------------------------------------------------------------------------------
 -- Crabe.Menu: In-Game ImGui Mod Menu (F5)

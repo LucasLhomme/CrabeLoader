@@ -11,6 +11,8 @@
 #include "presentation/draw_buffer.hpp"
 #include "imgui/imgui.h"
 
+#include <cfloat>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <utility>
@@ -62,6 +64,90 @@ namespace {
             case ScopeKind::TabBar:  ImGui::EndTabBar(); break;
             case ScopeKind::TabItem: ImGui::EndTabItem(); break;
         }
+    }
+
+    ImFont* fontFor(int index)
+    {
+        ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+        if (index > 0 && index < atlas->Fonts.Size)
+            return atlas->Fonts[index];
+        return atlas->Fonts.Size > 0 ? atlas->Fonts[0] : ImGui::GetFont();
+    }
+
+    void popCodepoint(std::string& text)
+    {
+        while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xC0) == 0x80)
+            text.pop_back();
+        if (!text.empty())
+            text.pop_back();
+    }
+
+    // Text in the box that starts at (f0, f1) and is f2 wide, aligned left (0),
+    // centred (1) or right (2). Text wider than the box is cut with "...", and
+    // a non-zero c1 draws a one-pixel drop shadow in that colour first.
+    void drawShapeText(const DrawCommand& command)
+    {
+        ImFont* font = fontFor(command.i1);
+        const float size = command.f3 > 0.0f ? command.f3 : font->FontSize;
+        const float boxWidth = command.f2;
+
+        std::string text = command.text;
+        float width = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text.c_str()).x;
+        if (boxWidth > 0.0f && width > boxWidth) {
+            const float ellipsis = font->CalcTextSizeA(size, FLT_MAX, 0.0f, "...").x;
+            while (!text.empty() && width + ellipsis > boxWidth) {
+                popCodepoint(text);
+                width = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text.c_str()).x;
+            }
+            text += "...";
+            width += ellipsis;
+        }
+
+        float x = command.f0;
+        if (boxWidth > 0.0f && command.i0 == 1)
+            x += (boxWidth - width) * 0.5f;
+        else if (boxWidth > 0.0f && command.i0 == 2)
+            x += boxWidth - width;
+        const ImVec2 position(std::floor(x), std::floor(command.f1));
+
+        ImDrawList* list = ImGui::GetBackgroundDrawList();
+        if (command.c1 != 0)
+            list->AddText(font, size, ImVec2(position.x + 1.0f, position.y + 1.0f), command.c1, text.c_str());
+        list->AddText(font, size, position, command.c0, text.c_str());
+    }
+
+    void drawShapeRect(const DrawCommand& command)
+    {
+        const ImVec2 from(command.f0, command.f1);
+        const ImVec2 to(command.f0 + command.f2, command.f1 + command.f3);
+        ImDrawList* list = ImGui::GetBackgroundDrawList();
+
+        if (command.i0 > 0)
+            list->AddRect(from, to, command.c0, command.f4, 0, static_cast<float>(command.i0));
+        else
+            list->AddRectFilled(from, to, command.c0, command.f4);
+    }
+
+    // c0 is the top (or left, when b0 is set) colour and c1 the opposite edge.
+    void drawShapeGradient(const DrawCommand& command)
+    {
+        const ImVec2 from(command.f0, command.f1);
+        const ImVec2 to(command.f0 + command.f2, command.f1 + command.f3);
+        const ImU32 topRight = command.b0 ? command.c1 : command.c0;
+        const ImU32 bottomLeft = command.b0 ? command.c0 : command.c1;
+        ImGui::GetBackgroundDrawList()->AddRectFilledMultiColor(from, to, command.c0, topRight,
+                                                                command.c1, bottomLeft);
+    }
+
+    void drawShapeCircle(const DrawCommand& command)
+    {
+        const ImVec2 centre(command.f0, command.f1);
+        ImDrawList* list = ImGui::GetBackgroundDrawList();
+
+        if (command.f4 > 0.0f)
+            list->AddCircle(centre, command.f2, command.c0, 0, command.f4);
+        else
+            list->AddCircleFilled(centre, command.f2, command.c0);
     }
 
     // FNV-1a over the label, mixed with the call index. A widget keeps its id
@@ -142,6 +228,10 @@ bool DrawBuffer::tryResult(std::uint32_t id, WidgetResult& out) const
 // so that replaying a list twice does not undo what the user just did.
 void DrawBuffer::replay()
 {
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    _displayWidth.store(display.x, std::memory_order_relaxed);
+    _displayHeight.store(display.y, std::memory_order_relaxed);
+
     bool freshList = false;
 
     {
@@ -342,6 +432,25 @@ void DrawBuffer::replay()
             case DrawOp::IsItemClicked:
                 accumulated[command.id].flag |= ImGui::IsItemClicked(static_cast<ImGuiMouseButton>(command.i0));
                 break;
+            case DrawOp::SetKeyboardFocusHere:
+                ImGui::SetKeyboardFocusHere(command.i0);
+                break;
+            case DrawOp::ShapeRect:
+                drawShapeRect(command);
+                break;
+            case DrawOp::ShapeGradient:
+                drawShapeGradient(command);
+                break;
+            case DrawOp::ShapeLine:
+                ImGui::GetBackgroundDrawList()->AddLine(ImVec2(command.f0, command.f1), ImVec2(command.f2, command.f3),
+                                                        command.c0, command.f4 > 0.0f ? command.f4 : 1.0f);
+                break;
+            case DrawOp::ShapeCircle:
+                drawShapeCircle(command);
+                break;
+            case DrawOp::ShapeText:
+                drawShapeText(command);
+                break;
         }
     }
 
@@ -354,6 +463,12 @@ void DrawBuffer::replay()
         std::lock_guard<std::mutex> lock(_resultsMutex);
         _results = accumulated;
     }
+}
+
+void DrawBuffer::displaySize(float& width, float& height) const
+{
+    width = _displayWidth.load(std::memory_order_relaxed);
+    height = _displayHeight.load(std::memory_order_relaxed);
 }
 
 } // namespace crabe::presentation

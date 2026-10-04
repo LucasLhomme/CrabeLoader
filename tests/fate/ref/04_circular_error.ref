@@ -1,0 +1,6 @@
+TEST: 04_circular_error
+LOAD_ORDER_COUNT: 0
+REJECTED_COUNT: 2
+REJECTIONS:
+  - id: com.crabe.alpha, reason: CyclicDependency
+  - id: com.crabe.beta, reason: CyclicDependency

@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the singleton that discovers, loads and reloads the mods of the mods folder.
+** Hot reload is a flag only: the caller polls isHotReloadRequested() then runs reloadAllMods().
+** Owns no Lua state: each call receives L, and script execution is delegated to LuaCall.
+**
+** Authors: @LucasLhomme
+*/
+
 #ifndef CRABELOADER_DOMAIN_MOD_MANAGER_HPP_
 #define CRABELOADER_DOMAIN_MOD_MANAGER_HPP_
 

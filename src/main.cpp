@@ -15,7 +15,9 @@
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 #include "application/loader.hpp"
+#if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_manager.hpp"
+#endif
 #include "domain/game_profile.hpp"
 #include "infrastructure/crash_reporter.hpp"
 
@@ -97,7 +99,9 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             "CrabeLoader: crash reports and minidumps will be written to '{}'.", crashFolder);
 
         crabe::shared::Logger::getInstance().debug("CrabeLoader DLL loaded.");
+#if CRABELOADER_WITH_MULTIPLAYER
         crabe::multiplayer::application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
+#endif
         std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {

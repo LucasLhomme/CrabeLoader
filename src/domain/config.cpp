@@ -29,8 +29,9 @@ namespace crabe::domain {
         constexpr std::array<std::string_view, 1> kKnownDisplayKeys = {"windowMode"};
         constexpr std::array<std::string_view, 2> kKnownKeybindKeys = {"hotReload", "devOverlay"};
         constexpr std::array<std::string_view, 1> kKnownMultiplayerKeys = {"enabled"};
-        constexpr std::array<std::string_view, 6> kKnownTopLevelKeys = {
-            "general", "display", "keybinds", "multiplayer", "profiles", "quarantine",
+        constexpr std::array<std::string_view, 1> kKnownUpdatesKeys = {"check"};
+        constexpr std::array<std::string_view, 7> kKnownTopLevelKeys = {
+            "general", "display", "keybinds", "multiplayer", "updates", "profiles", "quarantine",
         };
 
         [[nodiscard]] ConfigDiagnostic makeDiagnostic(ConfigError code, const std::filesystem::path& file,
@@ -334,6 +335,12 @@ namespace crabe::domain {
             collectIgnored(*multiplayer, kKnownMultiplayerKeys, "multiplayer", config._ignoredKeys);
         }
 
+        if (const auto* updates = root["updates"].as_table()) {
+            if (auto value = (*updates)["check"].value<bool>())
+                config._updateCheckEnabled = *value;
+            collectIgnored(*updates, kKnownUpdatesKeys, "updates", config._ignoredKeys);
+        }
+
         if (const auto* profiles = root["profiles"].as_table()) {
             for (auto&& entry : *profiles) {
                 const auto* profileTable = entry.second.as_table();
@@ -545,6 +552,9 @@ devOverlay = "Insert"  # toggles the debug overlay / console
 [multiplayer]
 enabled = false
 
+[updates]
+check = true           # ask GitHub at launch whether a newer CrabeLoader exists; false = never connect
+
 # A profile's "enabled" list decides which mods discoverAndLoadMods() even
 # considers -- filtering happens before dependency resolution, so a disabled
 # mod is simply not a candidate, never a rejection. "*" means every mod;
@@ -553,6 +563,9 @@ enabled = false
 [profiles.default]
 enabled = ["*"]
 
+# EXAMPLE ONLY: this profile is not used unless [general].profile is set to
+# "speedrun". "com.example.crabemenu" is a placeholder id; replace it with a
+# real mod id (or "local.<folder-name>") first, or no mod will load.
 [profiles.speedrun]
 enabled = ["com.example.crabemenu"]
 

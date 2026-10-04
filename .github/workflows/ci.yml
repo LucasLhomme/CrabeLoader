@@ -22,9 +22,13 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Check file headers
+        run: |
+          python tools/check_headers.py
+
       - name: Configure CMake
         run: |
-          cmake -B build -S . -A Win32 -DCRABELOADER_AS_SHARED=ON -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -S . -A Win32 -DCRABELOADER_AS_SHARED=ON -DCRABELOADER_BUILD_INSTALLER=ON -DCMAKE_BUILD_TYPE=Release
 
       - name: Build CrabeLoader
         run: |
@@ -39,3 +43,31 @@ jobs:
             echo "Error: bink2w32.dll not produced."
             exit 1
           fi
+          if [ ! -f build/Release/CrabeInstaller.exe ]; then
+            echo "Error: CrabeInstaller.exe not produced."
+            exit 1
+          fi
+
+      - name: Run VFS Override Tests
+        run: |
+          .\build\Release\test_vfs_override.exe
+
+      - name: Run Draw Primitives & Pad Tests
+        run: |
+          .\build\Release\test_draw_primitives.exe
+
+      - name: Run CRABE-FATE Regression Suite
+        run: |
+          .\build\Release\crabe_fate.exe
+
+      - name: Run Update Check Tests
+        run: |
+          .\build\Release\test_update_checker.exe
+
+      - name: Run Installer Tests
+        run: |
+          .\build\Release\test_installer.exe
+
+      - name: Run Lua API Suite
+        run: |
+          python tests/run_lua_tests.py

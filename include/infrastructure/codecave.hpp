@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** codecave
+** Declares CodeCave, a manual x86 code cave for mid-function sites: body, stolen bytes, jump back.
+** Stolen bytes are copied verbatim, never relocated, where MinHook's trampoline would be corrupt.
+** Not for function entries (use Hook); remove() deliberately leaks the cave page.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef CODECAVE_HPP_

@@ -1,0 +1,7 @@
+# Every change to main and dev needs an approval from a code owner. This is
+# enforced by the branch ruleset ("Require review from Code Owners").
+#
+# Owners are the people allowed to validate pull requests. List GitHub usernames
+# only, and only people with write access to the repository: an owner without it
+# is ignored. To add a maintainer, append their handle to the line below.
+*  @LucasLhomme

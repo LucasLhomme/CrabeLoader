@@ -15,6 +15,8 @@
 #include "presentation/overlay.hpp"
 #include "application/loader.hpp"
 #include "domain/config.hpp"
+#include "infrastructure/vfs_override_manager.hpp"
+#include "infrastructure/vfs_hook.hpp"
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 
@@ -92,6 +94,45 @@ void Overlay::submitConsoleInput()
     crabe::application::Loader::get().queueConsoleSnippet(_consoleInputBuffer);
 }
 
+void Overlay::drawVfsTab()
+{
+    using crabe::infrastructure::VfsOverrideManager;
+    using crabe::infrastructure::VfsHook;
+
+    const bool isHooked = VfsHook::get().isHooked();
+    if (isHooked)
+        ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "VFS Status: Active (Win32 Detours Installed)");
+    else
+        ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.2f, 1.0f), "VFS Status: Inactive");
+
+    const auto stats = VfsOverrideManager::get().getStats();
+    ImGui::Text("Overrides: %zu | Resolutions: %zu | Hits: %zu",
+                stats.totalOverrides, stats.totalResolutions, stats.totalHits);
+
+    const std::string last = VfsOverrideManager::get().getLastRedirectedFile();
+    ImGui::Text("Last Redirected: %s", last.empty() ? "(none)" : last.c_str());
+
+    ImGui::Separator();
+    ImGui::InputText("Filter", _vfsFilterBuffer, sizeof(_vfsFilterBuffer));
+
+    std::string filter = _vfsFilterBuffer;
+    for (char& c : filter)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    ImGui::BeginChild("VfsList", ImVec2(0.0f, 0.0f), true);
+    for (const auto& [virtualPath, entry] : VfsOverrideManager::get().getActiveOverrides()) {
+        if (!filter.empty() && virtualPath.find(filter) == std::string::npos &&
+            entry.originMod.find(filter) == std::string::npos)
+            continue;
+
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[%s]", entry.originMod.c_str());
+        ImGui::SameLine();
+        ImGui::Text("%s", virtualPath.c_str());
+        ImGui::TextDisabled("  -> %s (hits: %zu)", entry.physicalPath.string().c_str(), entry.hitCount);
+    }
+    ImGui::EndChild();
+}
+
 void Overlay::renderOverlay()
 {
     Overlay::defaultSettings();
@@ -110,10 +151,55 @@ void Overlay::renderOverlay()
             drawConsoleTab();
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("VFS")) {
+            drawVfsTab();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
 
     ImGui::End();
+}
+
+namespace {
+
+    // Latin-1 plus the punctuation, arrows and geometric shapes menus use for
+    // bullets, chevrons and the infinity sign. Must outlive the atlas build.
+    constexpr ImWchar kUiGlyphRanges[] = {
+        0x0020, 0x00FF,
+        0x2000, 0x206F,
+        0x2190, 0x21FF,
+        0x2200, 0x22FF,
+        0x25A0, 0x25FF,
+        0x2600, 0x26FF,
+        0,
+    };
+
+    // Adds a face from the Windows font folder, or a default-font placeholder
+    // when it is missing, so the DrawFont indices never shift.
+    void addSystemFont(ImGuiIO& io, const char* fileName, float size)
+    {
+        char windows[MAX_PATH] = {};
+        UINT length = GetWindowsDirectoryA(windows, MAX_PATH);
+        std::string path = std::string(windows, length) + "\\Fonts\\" + fileName;
+
+        if (GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES
+            && io.Fonts->AddFontFromFileTTF(path.c_str(), size, nullptr, kUiGlyphRanges)) {
+            return;
+        }
+        crabe::shared::Logger::getInstance().warning("Overlay: font '{}' not found, mods get the default font.", path);
+        io.Fonts->AddFontDefault();
+    }
+
+}
+
+// Index 0 stays ProggyClean for the console; 1 and 2 are the DrawFont::Body
+// and DrawFont::Display faces mods draw with through ImGui.DrawText.
+void Overlay::loadFonts(ImGuiIO& io)
+{
+    io.Fonts->AddFontDefault();
+    addSystemFont(io, "seguisb.ttf", 26.0f);
+    addSystemFont(io, "seguibl.ttf", 52.0f);
 }
 
 void Overlay::initialize()
@@ -122,12 +208,20 @@ void Overlay::initialize()
     ImGui::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
     io.IniFilename = nullptr; // Do not litter game root with imgui.ini
     io.LogFilename = nullptr; // Do not litter game root with imgui_log.txt
 
     ImGui::StyleColorsDark();
+    loadFonts(io);
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_HeaderActive] = style.Colors[ImGuiCol_Header];
+    style.Colors[ImGuiCol_NavHighlight] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 }
 
 void Overlay::uninitialize()

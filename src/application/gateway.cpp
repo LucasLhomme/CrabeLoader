@@ -10,13 +10,19 @@
 
 #include "application/gateway.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <regex>
+#include <set>
 #include <string>
 #include <vector>
+
+#include "third_party/json.hpp"
 
 namespace {
 
@@ -253,6 +259,90 @@ std::string allocateSku(const std::string& name)
     return std::to_string(sku);
 }
 
+namespace {
+
+// Name as the ActorList and the catalog compare it: case-insensitively.
+std::string lowered(std::string s)
+{
+    std::ranges::transform(s, s.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+// First declaration of each Name, in order; a later one is reported and dropped.
+std::vector<Entry> firstDeclarations(std::vector<Entry> entries, std::vector<std::string>& issues)
+{
+    std::vector<Entry> unique;
+    std::set<std::string> names;
+    for (Entry& entry : entries) {
+        if (names.insert(lowered(entry.name)).second) {
+            unique.push_back(std::move(entry));
+        } else {
+            issues.push_back("'" + entry.name + "' declared again in " + entry.origin +
+                             " -- the first declaration is kept, this one is ignored");
+        }
+    }
+    return unique;
+}
+
+// The modder's own sku_id, unless another mod character already holds it.
+std::optional<std::string> claimExplicit(const Entry& entry, std::set<std::string>& taken,
+                                         std::vector<std::string>& issues)
+{
+    if (taken.insert(entry.sku).second)
+        return entry.sku;
+    issues.push_back("sku_id " + entry.sku + " of '" + entry.name + "' (" + entry.origin +
+                     ") is already used by another mod character -- no registry slot "
+                     "written; remove sku_id to get a free one");
+    return std::nullopt;
+}
+
+// The id derived from Name, moved up by one inside the mod range until free.
+std::optional<std::string> claimDerived(const Entry& entry, std::set<std::string>& taken,
+                                        std::vector<std::string>& issues)
+{
+    const uint32_t start = static_cast<uint32_t>(std::stoul(allocateSku(entry.name)));
+    uint32_t sku = start;
+    for (uint32_t step = 0; step < kSkuSpan && taken.contains(std::to_string(sku)); ++step)
+        sku = kSkuBase + (sku - kSkuBase + 1) % kSkuSpan;
+
+    if (!taken.insert(std::to_string(sku)).second) {
+        issues.push_back("no free sku_id left in the mod range for '" + entry.name + "' (" +
+                         entry.origin + ")");
+        return std::nullopt;
+    }
+    if (sku != start) {
+        issues.push_back("derived sku_id " + std::to_string(start) + " of '" + entry.name +
+                         "' was taken, moved to " + std::to_string(sku));
+    }
+    return std::to_string(sku);
+}
+
+} // namespace
+
+std::vector<std::string> resolveSkus(std::vector<Entry>& entries)
+{
+    std::vector<std::string> issues;
+    std::vector<Entry> unique = firstDeclarations(std::move(entries), issues);
+
+    auto derived = std::ranges::stable_partition(unique, [](const Entry& e) { return !e.sku.empty(); });
+    std::ranges::sort(derived, {}, &Entry::name);
+
+    std::set<std::string> taken;
+    std::vector<Entry> resolved;
+    for (Entry& entry : unique) {
+        std::optional<std::string> sku = entry.sku.empty() ? claimDerived(entry, taken, issues)
+                                                           : claimExplicit(entry, taken, issues);
+        if (!sku)
+            continue;
+        entry.sku = std::move(*sku);
+        resolved.push_back(std::move(entry));
+    }
+
+    entries = std::move(resolved);
+    return issues;
+}
+
 const std::string& containerKey()
 {
     static const std::string key(reinterpret_cast<const char*>(kContainerKey.data()),
@@ -263,14 +353,14 @@ const std::string& containerKey()
 std::vector<Entry> parseExposedCharacters(const std::string& luaSource)
 {
     // A scan, not a Lua parse: this runs before any Lua state exists, and only
-    // has to recognise the flat table the API documents. A nested table inside
-    // the call would end the match early -- no shipped field needs one.
-    //
-    // Custom raw-string delimiters: the patterns contain )" , which would close
-    // a plain R"( ... )" early.
-    static const std::regex kExpose(R"rx(exposeCharacter\s*\(\s*\{([^}]*)\})rx");
-    static const std::regex kName(R"rx(Name\s*=\s*"([^"]*)")rx");
-    static const std::regex kSku(R"rx(sku_id\s*=\s*"([^"]*)")rx");
+    // has to recognise the flat table the API documents.
+    // Supports both exposeCharacter({...}) and idiomatic exposeCharacter{...}.
+    static const std::regex kExpose(R"rx(exposeCharacter\s*(?:\(\s*)?\{([^}]*)\})rx");
+    static const std::regex kName(R"rx([Nn]ame\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kSku(R"rx(sku_id\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kBase(R"rx(baseCharacter\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kProg(R"rx([Pp]rogressionTree\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kIcon(R"rx([Ii]con\s*=\s*["']([^"'\r\n]+)["'])rx");
 
     std::vector<Entry> out;
     for (auto it = std::sregex_iterator(luaSource.begin(), luaSource.end(), kExpose);
@@ -285,6 +375,13 @@ std::vector<Entry> parseExposedCharacters(const std::string& luaSource)
         entry.name = m[1].str();
         if (std::regex_search(body, m, kSku))
             entry.sku = m[1].str();
+        if (std::regex_search(body, m, kBase))
+            entry.baseCharacter = m[1].str();
+        if (std::regex_search(body, m, kProg))
+            entry.progressionTree = m[1].str();
+        if (std::regex_search(body, m, kIcon))
+            entry.icon = m[1].str();
+
         out.push_back(std::move(entry));
     }
     return out;
@@ -313,12 +410,14 @@ std::string buildSkuTableLua(const std::vector<Entry>& entries)
     return lua;
 }
 
+// Every field but `name` is constant across the shipped avatar slots. The slot
+// key is the entry's sku_id, and an existing slot -- a shipped figure's -- is
+// never overwritten.
 std::string buildInjectionLua(const std::vector<Entry>& entries)
 {
     if (entries.empty())
         return {};
 
-    // Constant across every avatar slot in the shipped data.
     static const struct {
         const char* key;
         bool isNumber;
@@ -340,7 +439,7 @@ std::string buildInjectionLua(const std::vector<Entry>& entries)
     lua += "-- No standard library is available in this Lua state.\n";
     lua += "local c = _G[";
     lua += luaLiteral(containerKey());
-    lua += "]\nif c then\nlocal t\n";
+    lua += "]\nif c then\nlocal t, k\n";
 
     for (const Entry& entry : entries) {
         lua += "t = {}\n";
@@ -360,15 +459,176 @@ std::string buildInjectionLua(const std::vector<Entry>& entries)
             lua += "\n";
         }
 
-        // An explicit sku_id in the .lua wins: the row will select with that id,
-        // so the slot has to carry it too.
-        lua += "c[";
+        lua += "k = ";
         lua += luaLiteral(encryptString(entry.sku.empty() ? allocateSku(entry.name)
                                                           : entry.sku));
-        lua += "] = t\n";
+        lua += "\nif c[k] == nil then c[k] = t end\n";
     }
 
     lua += "end\n";
+    return lua;
+}
+
+std::vector<Entry> parseManifestCharacters(const std::string& jsonSource, const std::string& origin)
+{
+    std::vector<Entry> out;
+    try {
+        const auto j = nlohmann::json::parse(jsonSource, nullptr, false);
+        if (j.is_discarded() || !j.is_object())
+            return out;
+
+        auto parseObj = [&](const nlohmann::json& obj) {
+            if (!obj.is_object()) return;
+            Entry entry;
+            entry.origin = origin;
+
+            if (obj.contains("name") && obj["name"].is_string())
+                entry.name = obj["name"].get<std::string>();
+            else if (obj.contains("Name") && obj["Name"].is_string())
+                entry.name = obj["Name"].get<std::string>();
+
+            if (entry.name.empty()) return;
+
+            if (obj.contains("sku_id") && obj["sku_id"].is_string())
+                entry.sku = obj["sku_id"].get<std::string>();
+            else if (obj.contains("sku") && obj["sku"].is_string())
+                entry.sku = obj["sku"].get<std::string>();
+
+            if (obj.contains("baseCharacter") && obj["baseCharacter"].is_string())
+                entry.baseCharacter = obj["baseCharacter"].get<std::string>();
+            else if (obj.contains("base_character") && obj["base_character"].is_string())
+                entry.baseCharacter = obj["base_character"].get<std::string>();
+
+            if (obj.contains("displayName") && obj["displayName"].is_string())
+                entry.displayName = obj["displayName"].get<std::string>();
+            else if (obj.contains("display_name") && obj["display_name"].is_string())
+                entry.displayName = obj["display_name"].get<std::string>();
+
+            if (obj.contains("icon") && obj["icon"].is_string())
+                entry.icon = obj["icon"].get<std::string>();
+            else if (obj.contains("Icon") && obj["Icon"].is_string())
+                entry.icon = obj["Icon"].get<std::string>();
+
+            if (obj.contains("progressionTree") && obj["progressionTree"].is_string())
+                entry.progressionTree = obj["progressionTree"].get<std::string>();
+            else if (obj.contains("progression_tree") && obj["progression_tree"].is_string())
+                entry.progressionTree = obj["progression_tree"].get<std::string>();
+
+            out.push_back(std::move(entry));
+        };
+
+        if (j.contains("character")) {
+            parseObj(j["character"]);
+        }
+        if (j.contains("characters") && j["characters"].is_array()) {
+            for (const auto& item : j["characters"]) {
+                parseObj(item);
+            }
+        }
+    } catch (...) {
+        // No unhandled exceptions across module boundaries
+    }
+    return out;
+}
+
+std::string buildExposeCallLua(const Entry& entry)
+{
+    std::string lua = "Crabe.VirtualReader.exposeCharacter({\n";
+    lua += "  Name = " + luaLiteral(entry.name) + ",\n";
+    if (!entry.sku.empty()) {
+        lua += "  sku_id = " + luaLiteral(entry.sku) + ",\n";
+    }
+    if (!entry.progressionTree.empty()) {
+        lua += "  ProgressionTree = " + luaLiteral(entry.progressionTree) + ",\n";
+    }
+    if (!entry.icon.empty()) {
+        lua += "  Icon = " + luaLiteral(entry.icon) + ",\n";
+    }
+    lua += "})\n";
+    return lua;
+}
+
+std::string buildActorListPatchLua(const std::vector<Entry>& entries)
+{
+    bool hasBase = false;
+    for (const auto& entry : entries) {
+        if (!entry.baseCharacter.empty()) {
+            hasBase = true;
+            break;
+        }
+    }
+    if (!hasBase)
+        return {};
+
+    std::string lua = "-- CrabeLoader: Auto-patch ActorList for custom characters\n"
+                      "if Data and Data.DBName == \"ActorList\" and Data.Records then\n"
+                      "  local recs = Data.Records\n"
+                      "  local n = #recs\n";
+
+    for (const auto& entry : entries) {
+        if (entry.baseCharacter.empty()) continue;
+        const std::string lowerBase = lowered(entry.baseCharacter);
+        const std::string lowerName = lowered(entry.name);
+
+        lua += "  local hasBase = false\n"
+               "  local hasClone = false\n"
+               "  for i = 1, n do\n"
+               "    local r = recs[i]\n"
+               "    if r then\n"
+               "      if r.Name == \"" + lowerBase + "\" then hasBase = true end\n"
+               "      if r.Name == \"" + lowerName + "\" then hasClone = true end\n"
+               "    end\n"
+               "  end\n"
+               "  if hasBase and not hasClone then\n"
+               "    n = n + 1\n"
+               "    recs[n] = { Parms = \"DNAFile=characters/" + entry.name + "/" + entry.name + ".dnax\", Type = \"Avatar\", Name = \"" + lowerName + "\" }\n"
+               "  end\n";
+    }
+    lua += "end\n";
+    return lua;
+}
+
+std::string buildDataMapPatchLua(const std::vector<Entry>& entries)
+{
+    bool hasBase = false;
+    for (const auto& entry : entries) {
+        if (!entry.baseCharacter.empty()) {
+            hasBase = true;
+            break;
+        }
+    }
+    if (!hasBase)
+        return {};
+
+    std::string lua = "-- CrabeLoader: Auto-patch DataMap for custom characters\n"
+                      "local function cloneFiles(files, from, to)\n"
+                      "  local out = {}\n"
+                      "  local i = 1\n"
+                      "  while files and i <= #files do\n"
+                      "    local v = files[i]\n"
+                      "    if v == from then v = to end\n"
+                      "    out[i] = v\n"
+                      "    i = i + 1\n"
+                      "  end\n"
+                      "  return out\n"
+                      "end\n"
+                      "local A = DataMap and DataMap.Actor\n"
+                      "local C = DataMap and DataMap.Costume\n";
+
+    for (const auto& entry : entries) {
+        if (entry.baseCharacter.empty()) continue;
+        const std::string lowerBase = lowered(entry.baseCharacter);
+        const std::string lowerName = lowered(entry.name);
+
+        lua += "if A and A." + lowerBase + " and not A." + lowerName + " then\n"
+               "  local src = A." + lowerBase + "\n"
+               "  A." + lowerName + " = { Includes = src.Includes, Files = cloneFiles(src.Files, \"DNA|characters/" + lowerBase + "\", \"DNA|characters/" + lowerName + "/" + lowerName + "\") }\n"
+               "end\n"
+               "if C and C." + lowerBase + "_default and not C." + lowerName + "_default then\n"
+               "  local src = C." + lowerBase + "_default\n"
+               "  C." + lowerName + "_default = { Files = cloneFiles(src.Files, \"Entity|characters/" + lowerBase + "/" + lowerBase + "\", \"Entity|characters/" + lowerName + "/" + lowerName + "\") }\n"
+               "end\n";
+    }
     return lua;
 }
 

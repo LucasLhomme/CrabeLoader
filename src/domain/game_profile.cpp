@@ -142,6 +142,36 @@ namespace {
         { "OctaneAppMutex",                 0x0003F0DE },
     };
 
+    // Engine entry points behind the Lua API. ActivateFreeCamera is the
+    // __thiscall at the start of the engine's free-camera state machine; s_Scenes
+    // is the static object the game itself passes as `this` (rva 0x2A7A30).
+    // CreateFreeCameras runs on every world load, from Players::InitializeScenes (rva 0xFA7F9A).
+    constexpr crabe::domain::SymbolRva kDi3GoldEngineSymbols[] = {
+        { "LoopScenes::ActivateFreeCamera", 0x002A1000 },
+        { "LoopScenes::CreateFreeCameras",  0x002A45C0 },
+        { "BaseLoop::s_Scenes",             0x01E02940 },
+        // Script VM natives the Lua state never sees; EngineKinematics reads its entry points off them.
+        { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
+        { "Script_CameraGetPosition",               0x00F7A4C0 },
+        { "Script_KinematicStateGetActualPosition", 0x01490200 },
+        // EngineSky calls this one as is, with a one-argument script frame.
+        { "Script_RealmManager_LoadSkyDomeInZone",  0x006934C0 },
+        // EngineActors reads CActorCreator::CreateActor and ParameterSet off this one.
+        { "Script_CreateFromInitString",            0x0035A3F0 },
+        { "Script_AddActorStateByName",             0x0030F9C0 },
+        { "Script_RemoveActorStateByName",          0x0030FA10 },
+        { "Script_TestActorStateByName",            0x0030FAD0 },
+        // EngineActors reads ActorCommands::DamageRadius and CActor::FromHandle off this one.
+        { "Script_DamageRadiusExceptActor",         0x00F76330 },
+        // EngineMeridian hooks this one to protect node graph connectivity buffers.
+        { "Meridian_DynArrayAppend",                0x002A9E90 },
+        // EngineShaders hooks this one to supply fallback shaders for missing hashes.
+        { "Shader_LookupCrc",                       0x000509D0 },
+        // EngineShaders hooks this one to validate material parameter binding indices.
+        { "Shader_ParseBindings",                   0x0005D5C0 },
+    };
+
+
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
         {
             .id = "di3-gold-steam-1.0",
@@ -169,6 +199,7 @@ namespace {
 
             .luaSymbols = kDi3GoldLuaSymbols,
             .patchSites = kDi3GoldPatchSites,
+            .engineSymbols = kDi3GoldEngineSymbols,
         },
     };
 
@@ -188,6 +219,15 @@ namespace crabe::domain {
     std::uint32_t GameProfile::luaSymbolRva(std::string_view name) const noexcept
     {
         for (const SymbolRva& entry : luaSymbols) {
+            if (entry.name == name)
+                return entry.rva;
+        }
+        return kUnmeasured;
+    }
+
+    std::uint32_t GameProfile::engineSymbolRva(std::string_view name) const noexcept
+    {
+        for (const SymbolRva& entry : engineSymbols) {
             if (entry.name == name)
                 return entry.rva;
         }

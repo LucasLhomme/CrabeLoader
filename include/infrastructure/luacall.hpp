@@ -1,7 +1,11 @@
 /*
 ** CrabeLoader
 ** File description:
-** luacall
+** Declares LuaCall, the loader's access to the game's Lua C API through resolved addresses.
+** loadfile/loadbuffer/pcall are hooked to observe the game; every other address is only called.
+** It resolves no address itself: the caller hands them over in LuaApiAddresses.
+**
+** Authors: @LucasLhomme
 */
 
 #ifndef LUACALL_HPP_
