@@ -163,7 +163,10 @@ namespace {
         { "Script_TestActorStateByName",            0x0030FAD0 },
         // EngineActors reads ActorCommands::DamageRadius and CActor::FromHandle off this one.
         { "Script_DamageRadiusExceptActor",         0x00F76330 },
+        // EngineMeridian hooks this one to protect node graph connectivity buffers.
+        { "Meridian_DynArrayAppend",                0x002A9E90 },
     };
+
 
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
         {
