@@ -154,6 +154,8 @@ namespace {
         { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
         { "Script_CameraGetPosition",               0x00F7A4C0 },
         { "Script_KinematicStateGetActualPosition", 0x01490200 },
+        // EngineSky calls this one as is, with a one-argument script frame.
+        { "Script_RealmManager_LoadSkyDomeInZone",  0x006934C0 },
         // EngineActors reads CActorCreator::CreateActor and ParameterSet off this one.
         { "Script_CreateFromInitString",            0x0035A3F0 },
         { "Script_AddActorStateByName",             0x0030F9C0 },
