@@ -1,11 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the bridge to CActorCreator::CreateActor, the engine's own way to build an actor
-** from a parameter string, and to an actor's named ActorState bits (its combat team among
-** them), and to ActorCommands::DamageRadius, the engine's area damage; all reached through the
-** Script VM natives that wrap them.
-** Knows no gameplay: it creates actors, flips states and deals damage where it is told, Lua decides.
+** Declares the bridge to actor creation, state bits and area damage through Script VM natives.
+** Resolves engine entry points dynamically from script native wrappers without Rumpus editor.
+** Knows no gameplay rules: it builds actors and flips states as requested, Lua decides.
 **
 ** Authors: @LucasLhomme
 */
