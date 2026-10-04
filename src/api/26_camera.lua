@@ -128,6 +128,13 @@ local function forgetStaleFreeCam()
     freeCam.generation = nil
 end
 
+-- What the engine says: true/false when `playerId` has a camera scene, nil
+-- otherwise (front end, mid-load) or when the loader lacks the native.
+local function engineFreeCamOn(playerId)
+    if type(Crabe._engineFreeCameraActive) ~= "function" then return nil end
+    return Crabe._engineFreeCameraActive(playerId)
+end
+
 -- One step of the engine state machine. true/false is the state it is now
 -- in; nil means the native is missing or refused (loader.log says why).
 local function stepEngineFreeCam(playerId)
@@ -149,12 +156,23 @@ local function setEngineFreeCam(wanted, playerId)
     return state
 end
 
+local function adopt(playerId)
+    Camera.freeCam.active = true
+    Camera.freeCam.playerId = playerId
+    Camera.freeCam.generation = sceneGeneration()
+end
+
 -- Switches `playerId` (default: the host) to the engine free camera.
 -- Returns true when it is on, false when the player has no camera to switch.
 function Camera.StartFreeCam(playerId)
     playerId = Crabe.hostPlayer(playerId)
     forgetStaleFreeCam()
     if Camera.freeCam.active then return true end
+    -- Already flying, but forgotten by a scene rebuild: toggling would stop it.
+    if engineFreeCamOn(playerId) == true then
+        adopt(playerId)
+        return true
+    end
 
     local state = setEngineFreeCam(true, playerId)
     if state == nil then
@@ -162,9 +180,7 @@ function Camera.StartFreeCam(playerId)
     end
     if state ~= true then return false end
 
-    Camera.freeCam.active = true
-    Camera.freeCam.playerId = playerId
-    Camera.freeCam.generation = sceneGeneration()
+    adopt(playerId)
     if type(Game) == "table" and type(Game.SuppressHud) == "function" then
         Game.SuppressHud(true, playerId)
     end
@@ -172,11 +188,13 @@ function Camera.StartFreeCam(playerId)
 end
 
 -- Returns the view to the avatar camera. false when nothing was running.
+-- The engine is asked as well as the flag: a scene rebuild clears the flag,
+-- and some rebuilds (a master zone streaming its children) keep the camera.
 function Camera.StopFreeCam()
     forgetStaleFreeCam()
-    if not Camera.freeCam.active then return false end
+    local playerId = Camera.freeCam.playerId or Crabe.hostPlayer()
+    if not Camera.freeCam.active and engineFreeCamOn(playerId) ~= true then return false end
 
-    local playerId = Camera.freeCam.playerId
     Camera.freeCam.active = false
     Camera.freeCam.playerId = nil
     Camera.freeCam.generation = nil
@@ -190,6 +208,8 @@ end
 
 function Camera.IsFreeCamActive()
     forgetStaleFreeCam()
+    local engine = engineFreeCamOn(Camera.freeCam.playerId or Crabe.hostPlayer())
+    if engine ~= nil then return engine end
     return Camera.freeCam.active
 end
 

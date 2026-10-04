@@ -418,6 +418,12 @@ void Loader::ensureRuntimeReady(void* L)
     _initializedStates.insert(L);
     _luaState = L;
 
+    // A capture belongs to the state that asked for it. The game closes the
+    // old state on a world load without telling anyone, so a menu left open
+    // would otherwise keep Escape, Enter and the pad away from the game.
+    setCapturedKeys({});
+    crabe::presentation::InputHook::get().setCaptured(false);
+
     crabe::shared::Logger::getInstance().info("Loader: game Lua state 0x{:X} ready, injecting the API ({} state(s) so far).",
                             reinterpret_cast<uintptr_t>(L), _initializedStates.size());
 
