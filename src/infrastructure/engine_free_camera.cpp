@@ -224,7 +224,23 @@ std::optional<bool> EngineFreeCamera::toggle(int playerId, bool skipNoControl)
         "EngineFreeCamera::toggle");
     if (!completed)
         return std::nullopt;
+    crabe::shared::Logger::getInstance().debug("EngineFreeCamera: player {} free camera now {}.",
+                                               playerId, active ? "on" : "off");
     return active;
+}
+
+std::optional<bool> EngineFreeCamera::isActive(int playerId) const
+{
+    if (!_sceneHookSlot)
+        return std::nullopt;
+
+    const char* current = nullptr;
+    const bool completed = CrashHandler::runGuarded(
+        [&] { current = currentCameraName(playerId); },
+        "EngineFreeCamera::isActive");
+    if (!completed || !current)
+        return std::nullopt;
+    return std::strcmp(current, kFreeCamName) == 0;
 }
 
 } // namespace crabe::infrastructure

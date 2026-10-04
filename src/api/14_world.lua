@@ -223,6 +223,16 @@ function Game.CanLoadLevel(levelName)
     return Crabe.native("UI_CanTransitionToLevel", "Game.CanLoadLevel")(levelName) == true
 end
 
+-- The engine free camera takes the player's controls and outlives the world
+-- it flies in, so the next world's menus would get no input. Every way out of
+-- a world below hands it back first. Crabe.Camera loads after this module.
+local function releaseFreeCam()
+    local Camera = Crabe.Camera
+    if Camera and type(Camera.IsFreeCamActive) == "function" and Camera.IsFreeCamActive() then
+        Camera.StopFreeCam()
+    end
+end
+
 -- The five-argument form is what levelselectmenu.lua:70 and :111 use. The
 -- trailing booleans are unexplained by any call site -- they are passed
 -- identically everywhere except the daily-challenge call (:519), which passes
@@ -239,6 +249,7 @@ function Game.LoadLevel(levelName, force)
         error("Game.LoadLevel: the game refuses to transition to '" .. levelName .. "'", 2)
     end
 
+    releaseFreeCam()
     Crabe.native("UI_LaunchLevel", "Game.LoadLevel")(levelName, "world", true, true, false)
     return levelName
 end
@@ -253,10 +264,12 @@ end
 -- The pause menu's Quit without its popup (pausemenu.lua PauseExit): the game
 -- autosaves, then returns to the main menu by itself.
 function Game.QuitToMainMenu()
+    releaseFreeCam()
     Crabe.native("Pause_ExitGame", "Game.QuitToMainMenu")()
 end
 
 function Game.LoadDefaultLevel()
+    releaseFreeCam()
     Crabe.native("UI_LaunchDefaultLevel", "Game.LoadDefaultLevel")()
 end
 
@@ -266,6 +279,7 @@ end
 
 -- UI_ReturnToHub takes the player number, as pausemenu.lua passes it.
 function Game.ReturnToHub(playerId)
+    releaseFreeCam()
     Crabe.native("UI_ReturnToHub", "Game.ReturnToHub")(Crabe.hostPlayer(playerId))
 end
 

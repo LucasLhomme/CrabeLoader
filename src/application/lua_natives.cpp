@@ -120,6 +120,21 @@ namespace {
         return 1;
     }
 
+    // Crabe._engineFreeCameraActive(playerId) -> true/false (is that player's current
+    // camera the free camera), or nil when the player has no camera scene.
+    int __cdecl nativeEngineFreeCameraActive(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const int playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+        const std::optional<bool> active = crabe::infrastructure::EngineFreeCamera::get().isActive(playerId);
+        if (!active) return 0;
+
+        lua.pushBoolean(L, *active);
+        return 1;
+    }
+
     // Crabe._engineSceneGeneration() -> how many times the engine has rebuilt its
     // camera scenes, once per world load. A free camera belongs to one generation.
     int __cdecl nativeEngineSceneGeneration(void* L)
@@ -669,6 +684,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
+        { "_engineFreeCameraActive", &nativeEngineFreeCameraActive },
         { "_engineSceneGeneration", &nativeEngineSceneGeneration },
         { "_cameraEye",             &nativeCameraEye },
         { "_actorPlace",            &nativeActorPlace },
