@@ -343,6 +343,12 @@ function Crabe.ImGui.DrawRect(x, y, w, h, color, rounding, thickness) end
 ---@param horizontal? boolean
 function Crabe.ImGui.DrawGradient(x, y, w, h, colorA, colorB, horizontal) end
 
+--- Draws an image file (PNG, JPEG, BMP...) stretched over the box. The path is relative
+--- to the game folder and may not contain "..". The tint is a packed colour multiplied
+--- into every pixel; white, the default, leaves the image as it is.
+---@param tint? number
+function Crabe.ImGui.DrawImage(path, x, y, w, h, tint) end
+
 --- Draws a line segment.
 function Crabe.ImGui.DrawLine(x1, y1, x2, y2, color, thickness) end
 
