@@ -1,10 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Resolves CActorCreator::CreateActor and the ParameterSet it takes from Script_CreateFromInitString,
-** the ActorState bit calls from the Add/Remove/TestActorStateByName natives, and the area damage
-** ActorCommands::DamageRadius from Script_DamageRadiusExceptActor, then calls them the way those
-** natives do. Unlike the Toy Box placer, none of it needs the Rumpus editor.
+** Implements actor creation, state bit manipulation and area damage through Script VM natives.
+** Resolves CreateActor and DamageRadius pointers dynamically from script native entry points.
+** Does not rely on Toy Box placer or Rumpus editor, operating directly through engine memory.
 **
 ** Authors: @LucasLhomme
 */
