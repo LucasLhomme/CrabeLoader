@@ -81,6 +81,7 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/pad_state.cpp
     src/presentation/imgui_bindings.cpp
     src/presentation/draw_buffer.cpp
+    src/presentation/texture_cache.cpp
 
     # Application Layer
     src/application/loader.cpp
@@ -265,6 +266,7 @@ if(CRABELOADER_BUILD_IMGUI)
             winhttp
             ole32
             oleaut32
+            windowscodecs
             ws2_32
             iphlpapi
     )
