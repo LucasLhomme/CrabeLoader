@@ -155,6 +155,20 @@ function Game.CurrentWorld()
     return Crabe.native("UI_CurrentWorldName", "Game.CurrentWorld")()
 end
 
+-- Replaces the sky and its lighting with a realm from realms/ (realmlist.lua),
+-- e.g. "tbx_ala_skydome". The engine does this through a Script VM native no
+-- shipped script calls, so the loader calls it (src/infrastructure/engine_sky.cpp).
+-- Call it once the world is up, not during the load. Returns true when loaded.
+function Game.LoadSkyDome(realmName)
+    if type(realmName) ~= "string" or realmName == "" then
+        error("Game.LoadSkyDome: realmName must be a non-empty string", 2)
+    end
+    if type(Crabe._loadSkyDome) ~= "function" then
+        error("Game.LoadSkyDome: this loader has no sky native", 2)
+    end
+    return Crabe._loadSkyDome(realmName) == true
+end
+
 function Game.CurrentZone(playerId)
     return Crabe.native("UI_GetPlayerZoneName", "Game.CurrentZone")(Crabe.hostPlayer(playerId))
 end

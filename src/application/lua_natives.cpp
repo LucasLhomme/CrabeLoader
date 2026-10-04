@@ -29,6 +29,7 @@
 #include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/engine_actors.hpp"
 #include "infrastructure/engine_kinematics.hpp"
+#include "infrastructure/engine_sky.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
 #if CRABELOADER_WITH_MULTIPLAYER
@@ -117,6 +118,20 @@ namespace {
         if (!lua.hasReturnSupport() || !active) return 0;
 
         lua.pushBoolean(L, *active);
+        return 1;
+    }
+
+    // Crabe._loadSkyDome(realmName) -> true when the engine loaded that realm as the
+    // sky and lighting, false when the build lacks the native or the call faulted.
+    int __cdecl nativeLoadSkyDome(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* raw = lua.argToString(L, 1);
+        const std::string realmName = raw ? raw : "";
+        const bool loaded = crabe::infrastructure::EngineSky::get().loadSkyDome(realmName);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, loaded);
         return 1;
     }
 
@@ -684,6 +699,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
+        { "_loadSkyDome",           &nativeLoadSkyDome },
         { "_engineFreeCameraActive", &nativeEngineFreeCameraActive },
         { "_engineSceneGeneration", &nativeEngineSceneGeneration },
         { "_cameraEye",             &nativeCameraEye },
