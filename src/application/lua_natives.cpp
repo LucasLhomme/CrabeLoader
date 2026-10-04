@@ -218,6 +218,30 @@ namespace {
         return 1;
     }
 
+    // Crabe._damageRadius(x, y, z, radius, damage, damageType, exceptActorHandle) -> true when the
+    // engine ran the area damage. damageType is "damageExplosive", "damageNormal", "damageSpecial" or
+    // a four-character code; the actor behind exceptActorHandle (0 for none) is spared.
+    int __cdecl nativeDamageRadius(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const crabe::infrastructure::EngineActors::Position center{
+            static_cast<float>(lua.argToNumber(L, 1, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 2, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 3, 0.0)),
+        };
+        const auto radius = static_cast<float>(lua.argToNumber(L, 4, 0.0));
+        const auto damage = static_cast<float>(lua.argToNumber(L, 5, 0.0));
+        const char* damageType = lua.argToString(L, 6);
+        const auto spared = static_cast<std::uint32_t>(lua.argToNumber(L, 7, 0.0));
+
+        const bool ran = damageType
+            && crabe::infrastructure::EngineActors::get().damageRadius(center, radius, damage, damageType, spared);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, ran);
+        return 1;
+    }
+
     // Crabe._actorPlace(actorHandle, x, y, z) -> true when the engine placed the actor.
     int __cdecl nativeActorPlace(void* L)
     {
@@ -652,6 +676,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_actorCreate",           &nativeActorCreate },
         { "_actorSetState",         &nativeActorSetState },
         { "_actorTestState",        &nativeActorTestState },
+        { "_damageRadius",          &nativeDamageRadius },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },
