@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Implements safe shader fallback hooking to prevent assertion failures on missing shader hashes.
-** Intercepts Shader_LookupCrc and provides a default fallback shader if the CRC is not found.
+** Hooks shader CRC lookup and binding parsing to supply safe fallbacks for missing shaders.
+** Validates parameter binding indices to prevent buffer desynchronisation on unknown hashes.
+** Does not replace valid shaders: only intercepts lookups when the CRC is not found.
 **
 ** Authors: @LucasLhomme
 */

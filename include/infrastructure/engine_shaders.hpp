@@ -2,7 +2,8 @@
 ** CrabeLoader
 ** File description:
 ** Intercepts the engine's shader CRC lookup to provide safe fallback for missing shaders.
-** Prevents fatal EXCEPTION_BREAKPOINT (int 3) asserts when loading materials from console updates.
+** Prevents fatal EXCEPTION_BREAKPOINT asserts when loading materials from console updates.
+** Does not generate shaders: supplies a default zero-parameter shader for unknown CRCs.
 **
 ** Authors: @LucasLhomme
 */
