@@ -112,9 +112,11 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/hook_registry.cpp
     src/infrastructure/minhook_backend.cpp
     src/infrastructure/code_cave.cpp
+    src/infrastructure/engine_actors.cpp
     src/infrastructure/engine_free_camera.cpp
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_shaders.cpp
+    src/infrastructure/script_natives.cpp
     src/infrastructure/message_hook.cpp
     src/infrastructure/lua_call.cpp
     src/infrastructure/lua_symbols.cpp

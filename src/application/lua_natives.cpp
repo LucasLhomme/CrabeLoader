@@ -27,6 +27,7 @@
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_actors.hpp"
 #include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
@@ -119,6 +120,21 @@ namespace {
         return 1;
     }
 
+    // Crabe._engineFreeCameraActive(playerId) -> true/false (is that player's current
+    // camera the free camera), or nil when the player has no camera scene.
+    int __cdecl nativeEngineFreeCameraActive(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const int playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+        const std::optional<bool> active = crabe::infrastructure::EngineFreeCamera::get().isActive(playerId);
+        if (!active) return 0;
+
+        lua.pushBoolean(L, *active);
+        return 1;
+    }
+
     // Crabe._engineSceneGeneration() -> how many times the engine has rebuilt its
     // camera scenes, once per world load. A free camera belongs to one generation.
     int __cdecl nativeEngineSceneGeneration(void* L)
@@ -144,6 +160,101 @@ namespace {
         lua.pushNumber(L, (*eye)[1]);
         lua.pushNumber(L, (*eye)[2]);
         return 3;
+    }
+
+    // Crabe._actorPosition(actorHandle) -> x, y, z of that actor, or nothing when the
+    // handle names no kinematic actor.
+    int __cdecl nativeActorPosition(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+
+        const auto position = crabe::infrastructure::EngineKinematics::get().actorPosition(handle);
+        if (!lua.hasReturnSupport() || !position) return 0;
+
+        lua.pushNumber(L, (*position)[0]);
+        lua.pushNumber(L, (*position)[1]);
+        lua.pushNumber(L, (*position)[2]);
+        return 3;
+    }
+
+    // Crabe._actorCreate(parameters, x, y, z, heading) -> the new actor's handle, or
+    // nothing when the engine built none. `parameters` is an engine parameter string,
+    // "DNAFile=characters/X.dnax" for an actor list entry's Parms.
+    int __cdecl nativeActorCreate(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* parameters = lua.argToString(L, 1);
+        const crabe::infrastructure::EngineActors::Position position{
+            static_cast<float>(lua.argToNumber(L, 2, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 3, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 4, 0.0)),
+        };
+        const auto heading = static_cast<float>(lua.argToNumber(L, 5, 0.0));
+        if (!parameters) return 0;
+
+        const std::uint32_t handle =
+            crabe::infrastructure::EngineActors::get().createActor(parameters, position, heading);
+        if (!lua.hasReturnSupport() || !handle) return 0;
+
+        lua.pushNumber(L, static_cast<double>(handle));
+        return 1;
+    }
+
+    // Crabe._actorSetState(actorHandle, stateName, on) -> true when the ActorState bit
+    // was set (on) or cleared. Combat teams are ActorState bits: "CombatTeam1".."4".
+    int __cdecl nativeActorSetState(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const char* state = lua.argToString(L, 2);
+        const bool on = lua.argToBoolean(L, 3, true);
+
+        const bool applied = state && crabe::infrastructure::EngineActors::get().setActorState(handle, state, on);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, applied);
+        return 1;
+    }
+
+    // Crabe._actorTestState(actorHandle, stateName) -> whether the actor carries that
+    // ActorState bit, or nothing when it cannot be read.
+    int __cdecl nativeActorTestState(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const char* state = lua.argToString(L, 2);
+        if (!state || !lua.hasReturnSupport()) return 0;
+
+        const auto result = crabe::infrastructure::EngineActors::get().testActorState(handle, state);
+        if (!result) return 0;
+
+        lua.pushBoolean(L, *result);
+        return 1;
+    }
+
+    // Crabe._damageRadius(x, y, z, radius, damage, damageType, exceptActorHandle) -> true when the
+    // engine ran the area damage. damageType is "damageExplosive", "damageNormal", "damageSpecial" or
+    // a four-character code; the actor behind exceptActorHandle (0 for none) is spared.
+    int __cdecl nativeDamageRadius(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const crabe::infrastructure::EngineActors::Position center{
+            static_cast<float>(lua.argToNumber(L, 1, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 2, 0.0)),
+            static_cast<float>(lua.argToNumber(L, 3, 0.0)),
+        };
+        const auto radius = static_cast<float>(lua.argToNumber(L, 4, 0.0));
+        const auto damage = static_cast<float>(lua.argToNumber(L, 5, 0.0));
+        const char* damageType = lua.argToString(L, 6);
+        const auto spared = static_cast<std::uint32_t>(lua.argToNumber(L, 7, 0.0));
+
+        const bool ran = damageType
+            && crabe::infrastructure::EngineActors::get().damageRadius(center, radius, damage, damageType, spared);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, ran);
+        return 1;
     }
 
     // Crabe._actorPlace(actorHandle, x, y, z) -> true when the engine placed the actor.
@@ -573,9 +684,15 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
+        { "_engineFreeCameraActive", &nativeEngineFreeCameraActive },
         { "_engineSceneGeneration", &nativeEngineSceneGeneration },
         { "_cameraEye",             &nativeCameraEye },
         { "_actorPlace",            &nativeActorPlace },
+        { "_actorPosition",         &nativeActorPosition },
+        { "_actorCreate",           &nativeActorCreate },
+        { "_actorSetState",         &nativeActorSetState },
+        { "_actorTestState",        &nativeActorTestState },
+        { "_damageRadius",          &nativeDamageRadius },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },
