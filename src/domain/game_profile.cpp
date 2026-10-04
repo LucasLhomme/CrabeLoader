@@ -154,6 +154,13 @@ namespace {
         { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
         { "Script_CameraGetPosition",               0x00F7A4C0 },
         { "Script_KinematicStateGetActualPosition", 0x01490200 },
+        // EngineActors reads CActorCreator::CreateActor and ParameterSet off this one.
+        { "Script_CreateFromInitString",            0x0035A3F0 },
+        { "Script_AddActorStateByName",             0x0030F9C0 },
+        { "Script_RemoveActorStateByName",          0x0030FA10 },
+        { "Script_TestActorStateByName",            0x0030FAD0 },
+        // EngineActors reads ActorCommands::DamageRadius and CActor::FromHandle off this one.
+        { "Script_DamageRadiusExceptActor",         0x00F76330 },
     };
 
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
