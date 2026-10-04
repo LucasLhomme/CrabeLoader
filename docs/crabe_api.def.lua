@@ -222,6 +222,15 @@ function Crabe.Vfs.count() end
 ---@return string? resolved Physical file path or nil if not overridden.
 function Crabe.Vfs.resolve(path) end
 
+---@class CrabeVfsEntry
+---@field path string Normalized virtual path (lowercase, forward slashes).
+---@field mod string Folder name of the mod that provides the file.
+
+--- Lists the active overrides whose virtual path starts with prefix (all when nil).
+---@param prefix? string Virtual path prefix, e.g. "characters/".
+---@return CrabeVfsEntry[] entries
+function Crabe.Vfs.list(prefix) end
+
 --- Returns operational lookup and hit statistics for the VFS.
 ---@return CrabeVfsStats stats
 function Crabe.Vfs.stats() end

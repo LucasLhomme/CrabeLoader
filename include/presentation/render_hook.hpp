@@ -68,10 +68,13 @@ class RenderHook {
         // crabe_window_mode.cfg is never written to again.
         static void saveWindowModeConfig(WindowMode mode);
 
-        // Resolves Present, ResizeBuffers, and SetFullscreenState vtable pointers.
+        // Resolves Present, ResizeBuffers, SetFullscreenState, GetFullscreenState
+        // and ResizeTarget vtable pointers.
         static bool resolveSwapChainFunctions(uintptr_t& outPresent,
                                               uintptr_t& outResizeBuffers,
-                                              uintptr_t& outSetFullscreenState);
+                                              uintptr_t& outSetFullscreenState,
+                                              uintptr_t& outGetFullscreenState,
+                                              uintptr_t& outResizeTarget);
 
         // Flags cursor visibility as stale from any thread.
         void updateCursorVisibility();
@@ -91,6 +94,16 @@ class RenderHook {
         // Applies pending window styles and dimensions on the render thread.
         void applyPendingWindowMode(IDXGISwapChain* swapChain);
 
+        // Drops the swap chain out of exclusive fullscreen if the game put it
+        // there. Returns true when a transition actually happened.
+        bool leaveExclusiveFullscreen(IDXGISwapChain* swapChain);
+
+        // Makes ImGui work in back-buffer pixels: DisplaySize becomes the back
+        // buffer size and this frame's mouse positions are scaled from client
+        // to back-buffer coordinates. Render thread only, between the backend
+        // NewFrame calls and ImGui::NewFrame.
+        void mapImGuiToBackBuffer();
+
         // Hook for IDXGISwapChain::Present driving ImGui rendering.
         static HRESULT __stdcall hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
 
@@ -99,9 +112,16 @@ class RenderHook {
                                                 UINT width, UINT height, DXGI_FORMAT newFormat,
                                                 UINT swapChainFlags);
 
-        // Hook for IDXGISwapChain::SetFullscreenState enforcing windowed mode.
+        // Hook for IDXGISwapChain::SetFullscreenState refusing exclusive fullscreen.
         static HRESULT __stdcall hkSetFullscreenState(IDXGISwapChain* swapChain, BOOL fullscreen,
                                                      IDXGIOutput* target);
+
+        // Hook for IDXGISwapChain::GetFullscreenState reporting the state the game asked for.
+        static HRESULT __stdcall hkGetFullscreenState(IDXGISwapChain* swapChain, BOOL* fullscreen,
+                                                     IDXGIOutput** target);
+
+        // Hook for IDXGISwapChain::ResizeTarget keeping the game from resizing the window.
+        static HRESULT __stdcall hkResizeTarget(IDXGISwapChain* swapChain, const DXGI_MODE_DESC* newTargetParameters);
 
         // Hook for SetCursorPos to suppress cursor centering while overlay is open.
         static BOOL WINAPI hkSetCursorPos(int X, int Y);
@@ -115,6 +135,8 @@ class RenderHook {
         typedef HRESULT(__stdcall* t_Present)(IDXGISwapChain*, UINT, UINT);
         typedef HRESULT(__stdcall* t_ResizeBuffers)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
         typedef HRESULT(__stdcall* t_SetFullscreenState)(IDXGISwapChain*, BOOL, IDXGIOutput*);
+        typedef HRESULT(__stdcall* t_GetFullscreenState)(IDXGISwapChain*, BOOL*, IDXGIOutput**);
+        typedef HRESULT(__stdcall* t_ResizeTarget)(IDXGISwapChain*, const DXGI_MODE_DESC*);
         typedef BOOL(WINAPI* t_SetCursorPos)(int, int);
         typedef BOOL(WINAPI* t_ShowWindow)(HWND, int);
 
@@ -127,6 +149,12 @@ class RenderHook {
         // Returns pointer to the original SetFullscreenState method.
         t_SetFullscreenState originalSetFullscreenState() const;
 
+        // Returns pointer to the original GetFullscreenState method.
+        t_GetFullscreenState originalGetFullscreenState() const;
+
+        // Returns pointer to the original ResizeTarget method.
+        t_ResizeTarget originalResizeTarget() const;
+
         // Returns pointer to the original SetCursorPos function.
         t_SetCursorPos originalSetCursorPos() const;
 
@@ -136,6 +164,8 @@ class RenderHook {
         crabe::infrastructure::Hook _hookPresent;
         crabe::infrastructure::Hook _hookResizeBuffers;
         crabe::infrastructure::Hook _hookSetFullscreenState;
+        crabe::infrastructure::Hook _hookGetFullscreenState;
+        crabe::infrastructure::Hook _hookResizeTarget;
         crabe::infrastructure::Hook _hookSetCursorPos;
         crabe::infrastructure::Hook _hookShowWindow;
 
@@ -150,10 +180,30 @@ class RenderHook {
         std::atomic<bool> _menuOpen{false};
         std::atomic<bool> _cursorDirty{false};
 
-        LONG_PTR _originalStyle = 0;
-        RECT _originalRect{};
+        // Back buffer size, refreshed whenever the render target is rebuilt.
+        UINT _backBufferWidth = 0;
+        UINT _backBufferHeight = 0;
 
+        // Render thread only. The mode the window was last put in, and the
+        // decorated rect it had the last time it left windowed mode, so a
+        // round trip through borderless puts it back where the user left it.
+        bool _hasAppliedWindowMode = false;
+        WindowMode _appliedWindowMode{WindowMode::BorderlessWindowed};
+        bool _hasWindowedRect = false;
+        RECT _windowedRect{};
+
+        // _windowModeDirty asks the render thread to (re)apply the requested
+        // mode; _persistWindowMode additionally writes it to crabe.toml, which
+        // only an explicit request (Lua, Alt+Enter) does -- re-asserting the
+        // mode after the game fought it is not a change of preference.
         std::atomic<bool> _windowModeDirty{false};
+        std::atomic<bool> _persistWindowMode{false};
+
+        // What the game last asked SetFullscreenState for. The retail exe
+        // stops rendering until GetFullscreenState agrees with its request,
+        // so that is what GetFullscreenState reports while the swap chain
+        // really stays windowed.
+        std::atomic<bool> _gameWantsFullscreen{false};
         std::atomic<WindowMode> _requestedWindowMode{WindowMode::BorderlessWindowed};
         std::atomic<bool> _isFocused{true};
 };

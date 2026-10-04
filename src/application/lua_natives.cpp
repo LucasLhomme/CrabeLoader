@@ -315,6 +315,36 @@ namespace {
         return 0;
     }
 
+    // Crabe._vfsList([prefix]) -> one string, a "virtualPath\toriginMod\n" line
+    // per override whose virtual path starts with prefix (normalized like any
+    // virtual path; every override when absent). One string rather than a
+    // table because LuaCall cannot build tables, and rather than one value per
+    // override because a mod with thousands of textures would overflow the
+    // stack. Crabe.Vfs.list parses it.
+    int __cdecl nativeVfsList(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* rawPrefix = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        const std::string prefix = rawPrefix
+            ? crabe::infrastructure::VfsOverrideManager::normalizeVirtualPath(rawPrefix)
+            : std::string{};
+
+        std::string out;
+        for (const auto& [virtualPath, entry] :
+             crabe::infrastructure::VfsOverrideManager::get().getActiveOverrides()) {
+            if (!virtualPath.starts_with(prefix))
+                continue;
+            out += virtualPath;
+            out += '\t';
+            out += entry.originMod;
+            out += '\n';
+        }
+        lua.pushString(L, out);
+        return 1;
+    }
+
     // Crabe._vfsGetStats() -> totalOverrides, totalResolutions, totalHits.
     int __cdecl nativeVfsGetStats(void* L)
     {
@@ -735,6 +765,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_fileLog",               &nativeFileLog },
         { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
         { "_vfsResolve",            &nativeVfsResolve },
+        { "_vfsList",               &nativeVfsList },
         { "_vfsGetStats",           &nativeVfsGetStats },
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
     };
