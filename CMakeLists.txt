@@ -112,6 +112,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/hook_registry.cpp
     src/infrastructure/minhook_backend.cpp
     src/infrastructure/code_cave.cpp
+    src/infrastructure/engine_actors.cpp
     src/infrastructure/engine_free_camera.cpp
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_sky.cpp

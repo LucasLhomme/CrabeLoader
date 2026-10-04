@@ -33,6 +33,11 @@ public:
     /// std::nullopt when this build does not carry the entry points or the call faulted.
     [[nodiscard]] std::optional<bool> toggle(int playerId, bool skipNoControl);
 
+    /// Whether `playerId`'s current camera is the engine free camera, read from the
+    /// engine rather than remembered. std::nullopt when the player has no camera scene
+    /// (front end, mid-load) or the read faulted.
+    [[nodiscard]] std::optional<bool> isActive(int playerId) const;
+
     /// Counts the camera-scene sets the engine has built, one per world load. A free
     /// camera switched on under an older value died with the world it was flying in.
     [[nodiscard]] std::uint32_t sceneGeneration() const;
