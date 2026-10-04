@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Guards Meridian graph array operations against corrupted or uninitialized heap pointers.
-** Prevents fatal EXCEPTION_ACCESS_VIOLATION when loading node graphs from console updates.
+** Hooks DynArray16 append to intercept and validate buffer pointers before array mutations.
+** Verifies buffer readability and writability, resetting bad pointers to force reallocation.
+** Defers memory allocation to the engine's original allocator when buffer is reset.
 **
 ** Authors: @LucasLhomme
 */

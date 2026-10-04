@@ -3,6 +3,7 @@
 ** File description:
 ** Guards Meridian graph array operations against corrupted or uninitialized heap pointers.
 ** Prevents fatal EXCEPTION_ACCESS_VIOLATION when loading node graphs from console updates.
+** Does not modify graph topology: only resets unreadable buffer pointers before append.
 **
 ** Authors: @LucasLhomme
 */
