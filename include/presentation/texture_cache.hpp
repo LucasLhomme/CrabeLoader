@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** Declares the cache that turns image files on disk into Direct3D 11 textures for ImGui.
-** Render thread only: it creates GPU resources, so it is the one place besides RenderHook that touches the device.
+** Render thread only, because it creates GPU resources on the device RenderHook owns.
 ** Knows no Lua and no draw command; DrawBuffer asks it through a resolver function.
 **
 ** Authors: @LucasLhomme
