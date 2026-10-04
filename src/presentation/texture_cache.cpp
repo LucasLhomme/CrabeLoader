@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** Decodes an image file with Windows Imaging Component into an immutable RGBA texture.
-** Paths stay inside the game folder: absolute paths and ".." are refused, since a mod names the file.
+** Paths stay in the game folder: absolute paths and ".." are refused, since a mod names the file.
 ** Caches failures too, so a missing file costs one disk hit instead of one per frame.
 **
 ** Authors: @LucasLhomme
