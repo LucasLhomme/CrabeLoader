@@ -165,6 +165,10 @@ namespace {
         { "Script_DamageRadiusExceptActor",         0x00F76330 },
         // EngineMeridian hooks this one to protect node graph connectivity buffers.
         { "Meridian_DynArrayAppend",                0x002A9E90 },
+        // EngineShaders hooks this one to supply fallback shaders for missing hashes.
+        { "Shader_LookupCrc",                       0x000509D0 },
+        // EngineShaders hooks this one to validate material parameter binding indices.
+        { "Shader_ParseBindings",                   0x0005D5C0 },
     };
 
 

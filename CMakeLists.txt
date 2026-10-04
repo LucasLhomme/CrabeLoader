@@ -116,6 +116,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/engine_free_camera.cpp
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_meridian.cpp
+    src/infrastructure/engine_shaders.cpp
     src/infrastructure/engine_sky.cpp
     src/infrastructure/script_natives.cpp
     src/infrastructure/message_hook.cpp
