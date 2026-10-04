@@ -51,6 +51,7 @@ namespace crabe::presentation {
         ShapeLine,
         ShapeCircle,
         ShapeText,
+        ShapeImage,
     };
 
     // Fonts a draw command can ask for: the atlas default plus the two UI faces
@@ -90,6 +91,10 @@ namespace crabe::presentation {
         std::string text;
     };
 
+    // Turns an image path into an ImGui texture id, or nullptr when it cannot.
+    // Called on the render thread only; the renderer installs it once at startup.
+    using ImageResolver = void* (*)(const std::string& path);
+
     // Carries one frame of Lua-issued ImGui calls from the script thread to the
     // render thread, and the resulting widget states back, so that the Lua VM is
     // never touched outside Loader::runTicks (Architecture Blueprint, Rule 3).
@@ -119,6 +124,10 @@ namespace crabe::presentation {
         // records every widget state for the script thread to read next frame.
         // Publishing an empty frame is what resets stale widget state.
         void replay();
+
+        // Render thread: installs the function ShapeImage uses to find a texture.
+        // Without one, an image command draws nothing.
+        static void setImageResolver(ImageResolver resolver);
 
         // Script thread: the display size the render thread saw on its last
         // frame, or 0x0 before the first one.

@@ -507,6 +507,24 @@ int __cdecl luaDrawText(void* L)
     return 0;
 }
 
+/// DrawImage(path, x, y, w, h [, tint]): an image file (PNG, JPEG, BMP...) read
+/// from a path relative to the game folder, stretched over the box. The tint is
+/// a packed colour multiplied into every pixel; white, the default, leaves it as is.
+int __cdecl luaDrawImage(void* L)
+{
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+    DrawCommand command;
+    command.op = DrawOp::ShapeImage;
+    command.text = argText(L, 1);
+    command.f0 = argFloat(L, 2);
+    command.f1 = argFloat(L, 3);
+    command.f2 = argFloat(L, 4);
+    command.f3 = argFloat(L, 5);
+    command.c0 = lua.getTop(L) >= 6 ? argColor(L, 6) : 0xFFFFFFFFu;
+    recordOnly(std::move(command));
+    return 0;
+}
+
 /// Pushes the width and height the render thread saw last frame (0, 0 before it ran).
 int __cdecl luaGetDisplaySize(void* L)
 {
@@ -566,6 +584,7 @@ void ImGuiBindings::registerBindings(void* L)
         { "DrawLine", &luaDrawLine },
         { "DrawCircle", &luaDrawCircle },
         { "DrawText", &luaDrawText },
+        { "DrawImage", &luaDrawImage },
         { "GetDisplaySize", &luaGetDisplaySize }
     };
 

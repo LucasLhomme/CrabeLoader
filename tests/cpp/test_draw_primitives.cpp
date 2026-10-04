@@ -198,6 +198,36 @@ void testGradient()
             "a horizontal gradient runs colorA on the left to colorB on the right");
 }
 
+void* fakeResolver(const std::string& path)
+{
+    static int texture = 0;
+    return path == "ui/banner.png" ? &texture : nullptr;
+}
+
+void testImage()
+{
+    DrawCommand image;
+    image.op = DrawOp::ShapeImage;
+    image.text = "ui/banner.png";
+    image.f0 = 10;
+    image.f1 = 20;
+    image.f2 = 200;
+    image.f3 = 50;
+    image.c0 = 0xFFFFFFFFu;
+
+    require(replay({ image }).count == 0, "an image draws nothing without a resolver");
+
+    DrawBuffer::setImageResolver(&fakeResolver);
+    Vertices drawn = replay({ image });
+    require(drawn.count == 4, "an image is one textured quad");
+    require(drawn.minX == 10 && drawn.maxX == 210 && drawn.minY == 20 && drawn.maxY == 70,
+            "an image covers x, y, x + w, y + h");
+
+    image.text = "ui/missing.png";
+    require(replay({ image }).count == 0, "an image the resolver cannot load is skipped");
+    DrawBuffer::setImageResolver(nullptr);
+}
+
 void testLineAndCircle()
 {
     DrawCommand line;
@@ -377,6 +407,7 @@ int main()
     testDisplaySize();
     testRect();
     testGradient();
+    testImage();
     testLineAndCircle();
     testText();
     testFonts();
