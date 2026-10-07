@@ -34,12 +34,15 @@ CrabeLoader v1.0.0 follows a strict **decoupled, layered architecture**:
 
 ## Modular Mod Layout
 
-All user modifications reside strictly inside the `mods/` directory:
+All user modifications reside strictly inside the `mods/` directory, while runtime configuration and diagnostic logs are stored under `Crabe/`:
 
 ```text
 Disney Infinity 3.0 Gold Edition/
 ├── bink2w32.dll              <- CrabeLoader proxy DLL
 ├── bink2w32_orig.dll         <- Original game Bink DLL
+├── Crabe/
+│   ├── crabe.toml            <- Main configuration file
+│   └── loader.log            <- Diagnostics, logs, and minidumps
 └── mods/                     <- Target mod directory
     ├── standalone_mod.lua    <- Single-file mod
     └── hero_expansion/       <- Modular mod package
@@ -48,6 +51,59 @@ Disney Infinity 3.0 Gold Edition/
         ├── characters/       <- Bundled character definitions
         └── skilltrees/       <- Bundled progression patches
 ```
+
+---
+
+## Configuration (`crabe.toml`)
+
+CrabeLoader is configured via a standard TOML file located at `<GameRoot>/Crabe/crabe.toml`. It is generated automatically on the first launch with sensible defaults. If the file contains syntax errors, CrabeLoader logs the exact line and column to `loader.log`, ignores the file in favour of defaults without overwriting it, and keeps your modifications safe.
+
+```toml
+# CrabeLoader configuration (<GameRoot>/Crabe/crabe.toml)
+
+[general]
+language  = "en"       # UI language (informational)
+logLevel  = "info"     # debug | info | warning | error
+profile   = "default"  # Active mod profile from [profiles.*]
+
+[display]
+windowMode = "borderless" # "borderless" | "windowed" (hot-toggle with Alt+Enter)
+
+[keybinds]
+hotReload  = "F4"      # Reloads every active mod from disk
+devOverlay = "Insert"  # Toggles the ImGui developer overlay / console
+
+[updates]
+check = true           # Checks GitHub at launch for new stable releases (non-blocking)
+
+# Mod profiles allow managing multiple mod loadouts.
+# Use "*" to load all discovered mods, or list specific mod IDs.
+[profiles.default]
+enabled = ["*"]
+
+# Optional profile example (switch by setting [general].profile = "speedrun")
+#[profiles.speedrun]
+#enabled = ["com.example.crabemenu"]
+
+# [quarantine] is managed automatically by the runtime fault-isolation engine.
+# Misbehaving mod callbacks that throw repeatedly are quarantined here without crashing the game.
+```
+
+### Configuration Options Reference
+
+* **`[general]`**
+  * `language`: UI localization string (`"en"`).
+  * `logLevel`: Logging verbosity (`"debug"`, `"info"`, `"warning"`, `"error"`). Logs are written to `Crabe/loader.log`.
+  * `profile`: Active profile key (`"default"`). References a matching `[profiles.<name>]` section.
+* **`[display]`**
+  * `windowMode`: Window presentation mode (`"borderless"` or `"windowed"`). Pressing `Alt + Enter` in-game toggles between them and persists the choice.
+* **`[keybinds]`**
+  * `hotReload`: Virtual key name for reloading all scripts and VFS overrides in real-time (default: `"F4"`).
+  * `devOverlay`: Virtual key name for toggling the native ImGui developer console (default: `"Insert"`).
+* **`[updates]`**
+  * `check`: When `true`, CrabeLoader queries the GitHub Releases API in the background on startup. If a newer stable release is found, a non-blocking prompt is shown. Set to `false` to disable network access entirely.
+* **`[profiles.<name>]`**
+  * `enabled`: Array of strings specifying which mods to load. Use `["*"]` to load all valid mods found in `mods/`, or specify explicit mod identifiers (e.g. `["local.mymod", "com.author.mod"]`).
 
 ---
 

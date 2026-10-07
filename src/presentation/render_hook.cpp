@@ -202,6 +202,18 @@ bool RenderHook::initialize()
         }
     }
 
+    HMODULE d3d11 = GetModuleHandleW(L"d3d11.dll");
+    if (!d3d11) d3d11 = LoadLibraryW(L"d3d11.dll");
+    if (d3d11) {
+        auto targetD3D11Create = reinterpret_cast<void*>(GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain"));
+        if (targetD3D11Create) {
+            _hookD3D11CreateDeviceAndSwapChain.installLogged(
+                reinterpret_cast<uintptr_t>(targetD3D11Create),
+                reinterpret_cast<void*>(&RenderHook::hkD3D11CreateDeviceAndSwapChain),
+                "RenderHook", "D3D11CreateDeviceAndSwapChain");
+        }
+    }
+
     // Applied at the first Present, once the game's window is known. It used
     // to start clean, so the configured mode was never applied at startup and
     // the game simply stayed in whatever display mode it chose for itself.
@@ -229,6 +241,7 @@ void RenderHook::uninitialize()
     _hookResizeBuffers.remove();
     _hookSetCursorPos.remove();
     _hookShowWindow.remove();
+    _hookD3D11CreateDeviceAndSwapChain.remove();
 
     if (_backendInitialized) {
         ImGui_ImplDX11_Shutdown();
@@ -364,6 +377,15 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
     if (!_hwnd || !_windowModeDirty.exchange(false))
         return;
 
+    // Never alter window placement or styles while the window is iconic (minimized).
+    // In Win32, GetWindowRect returns (-32000, -32000) for iconic windows, and calling
+    // SetWindowPos overwrites WINDOWPLACEMENT.rcNormalPosition, corrupting the restore
+    // rect and leaving the window stuck minimized or off-screen.
+    if (IsIconic(_hwnd)) {
+        _windowModeDirty = true;
+        return;
+    }
+
     leaveExclusiveFullscreen(swapChain);
 
     const WindowMode mode = _requestedWindowMode.load();
@@ -377,9 +399,9 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
     const bool wasOurWindowed = _hasAppliedWindowMode && _appliedWindowMode == WindowMode::Windowed && decorated;
 
     // Remember where the user left the decorated window before taking it
-    // borderless, so the next switch back puts it there. Not when maximized:
-    // that rect is the monitor, not a placement anyone chose.
-    if (mode == WindowMode::BorderlessWindowed && wasOurWindowed && !IsZoomed(_hwnd) && !IsIconic(_hwnd)) {
+    // borderless, so the next switch back puts it there. Not when maximized or iconic:
+    // that rect is the monitor or (-32000, -32000), not a placement anyone chose.
+    if (wasOurWindowed && !IsZoomed(_hwnd) && !IsIconic(_hwnd) && currentRect.left > -30000) {
         _windowedRect = currentRect;
         _hasWindowedRect = true;
     }
@@ -397,12 +419,12 @@ void RenderHook::applyPendingWindowMode(IDXGISwapChain* swapChain)
         targetRect = monitorInfo.rcMonitor;
     } else {
         targetStyle = kWindowedStyle | (currentStyle & kClipStyles);
-        if (wasOurWindowed) {
+        if (wasOurWindowed && currentRect.left > -30000) {
             // Already windowed by us: the user may have moved, resized or
             // maximized it since, and a re-assert must not undo that.
             targetStyle |= currentStyle & WS_MAXIMIZE;
             targetRect = currentRect;
-        } else if (_hasWindowedRect && MonitorFromRect(&_windowedRect, MONITOR_DEFAULTTONULL)) {
+        } else if (_hasWindowedRect && _windowedRect.left > -30000 && MonitorFromRect(&_windowedRect, MONITOR_DEFAULTTONULL)) {
             targetRect = _windowedRect;
         } else {
             targetRect = windowedRectFor(_hwnd, _backBufferWidth, _backBufferHeight, targetStyle);
@@ -521,6 +543,12 @@ RenderHook::t_SetCursorPos RenderHook::originalSetCursorPos() const
 RenderHook::t_ShowWindow RenderHook::originalShowWindow() const
 {
     return reinterpret_cast<t_ShowWindow>(_hookShowWindow.getOriginal());
+}
+
+// Returns the trampoline to the original D3D11CreateDeviceAndSwapChain function.
+RenderHook::t_D3D11CreateDeviceAndSwapChain RenderHook::originalD3D11CreateDeviceAndSwapChain() const
+{
+    return reinterpret_cast<t_D3D11CreateDeviceAndSwapChain>(_hookD3D11CreateDeviceAndSwapChain.getOriginal());
 }
 
 // Releases the active backbuffer render target view.
@@ -668,17 +696,55 @@ BOOL WINAPI RenderHook::hkSetCursorPos(int X, int Y)
     return self.originalSetCursorPos()(X, Y);
 }
 
-// Intercepts ShowWindow calls from the game to suppress window minimization in borderless mode.
+// Intercepts ShowWindow calls from the game to suppress window minimization on focus loss.
 BOOL WINAPI RenderHook::hkShowWindow(HWND hWnd, int nCmdShow)
 {
     RenderHook& self = RenderHook::get();
-    if (self._hwnd && hWnd == self._hwnd && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+    if (self._hwnd && hWnd == self._hwnd) {
         if (nCmdShow == SW_MINIMIZE || nCmdShow == SW_FORCEMINIMIZE || nCmdShow == SW_SHOWMINIMIZED) {
-            // Block minimization and keep window displayed without stealing focus
+            // Block minimization and keep window displayed without stealing focus.
+            // On Alt+Tab, this prevents both borderless and windowed modes from dropping into
+            // the taskbar, which breaks DXGI ResizeBuffers (0x887A0001) and corrupts window restore geometry.
             return self.originalShowWindow()(hWnd, SW_SHOWNA);
         }
     }
     return self.originalShowWindow()(hWnd, nCmdShow);
+}
+
+// Hook for D3D11CreateDeviceAndSwapChain preventing the game from creating an exclusive fullscreen
+// swap chain at startup, which causes monitor mode-switch flicker and desktop window reshuffling.
+HRESULT WINAPI RenderHook::hkD3D11CreateDeviceAndSwapChain(
+    IDXGIAdapter* pAdapter,
+    D3D_DRIVER_TYPE DriverType,
+    HMODULE Software,
+    UINT Flags,
+    const D3D_FEATURE_LEVEL* pFeatureLevels,
+    UINT FeatureLevels,
+    UINT SDKVersion,
+    const DXGI_SWAP_CHAIN_DESC* pSwapChainDesc,
+    IDXGISwapChain** ppSwapChain,
+    ID3D11Device** ppDevice,
+    D3D_FEATURE_LEVEL* pFeatureLevel,
+    ID3D11DeviceContext** ppImmediateContext)
+{
+    RenderHook& self = RenderHook::get();
+    DXGI_SWAP_CHAIN_DESC descCopy{};
+    const DXGI_SWAP_CHAIN_DESC* descToUse = pSwapChainDesc;
+
+    if (pSwapChainDesc) {
+        descCopy = *pSwapChainDesc;
+        if (!descCopy.Windowed) {
+            self._gameWantsFullscreen = true;
+            descCopy.Windowed = TRUE;
+            descToUse = &descCopy;
+            crabe::shared::Logger::getInstance().info(
+                "RenderHook: forced swap chain creation to windowed mode (suppressed startup mode-switch flicker).");
+        }
+    }
+
+    return self.originalD3D11CreateDeviceAndSwapChain()(
+        pAdapter, DriverType, Software, Flags, pFeatureLevels, FeatureLevels,
+        SDKVersion, descToUse, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
 }
 
 // Drives frame rendering, pending mode application, and UI overlay rendering.
@@ -762,6 +828,15 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
                                             UINT swapChainFlags)
 {
     RenderHook& self = RenderHook::get();
+
+    // Guard against width == 0 && height == 0 when the window is iconic or client area is 0.
+    // DXGI returns DXGI_ERROR_INVALID_CALL (0x887A0001) if width/height are 0 on an iconic window.
+    if (width == 0 && height == 0 && self._hwnd && (IsIconic(self._hwnd) || self._backBufferWidth > 0)) {
+        if (self._backBufferWidth > 0 && self._backBufferHeight > 0) {
+            width = self._backBufferWidth;
+            height = self._backBufferHeight;
+        }
+    }
 
     crabe::shared::Logger::getInstance().info("RenderHook: ResizeBuffers requested ({}x{}, format {}).",
                                               width, height, static_cast<uint32_t>(newFormat));
@@ -858,6 +933,9 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             // Block internal minimization logic
             return 0;
         }
+        if (wParam == SIZE_RESTORED && self._hasWindowedRect) {
+            self._windowModeDirty = true;
+        }
     } else if (msg == WM_KILLFOCUS) {
         self._isFocused.store(false);
         ClipCursor(nullptr);
@@ -897,13 +975,33 @@ LRESULT CALLBACK RenderHook::hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
     if (msg == WM_SYSCOMMAND) {
         WPARAM cmd = wParam & 0xFFF0;
-        if (cmd == SC_MINIMIZE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+        if (cmd == SC_MINIMIZE) {
             ClipCursor(nullptr);
-            return 0; // Prevent window minimization on focus loss in borderless mode
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                return 0; // Prevent window minimization on focus loss in borderless mode
+            }
+            if (!IsIconic(hwnd) && !IsZoomed(hwnd)) {
+                RECT r{};
+                GetWindowRect(hwnd, &r);
+                if (r.left > -30000) {
+                    self._windowedRect = r;
+                    self._hasWindowedRect = true;
+                }
+            }
         }
-        if (cmd == SC_RESTORE && self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
-            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-            BringWindowToTop(hwnd);
+        if (cmd == SC_RESTORE) {
+            if (self._requestedWindowMode.load() == WindowMode::BorderlessWindowed) {
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                BringWindowToTop(hwnd);
+            } else if (self._hasWindowedRect && self._windowedRect.left > -30000) {
+                WINDOWPLACEMENT wp{};
+                wp.length = sizeof(wp);
+                if (GetWindowPlacement(hwnd, &wp)) {
+                    wp.rcNormalPosition = self._windowedRect;
+                    wp.showCmd = SW_SHOWNORMAL;
+                    SetWindowPlacement(hwnd, &wp);
+                }
+            }
         }
         if (cmd == SC_KEYMENU && lParam != VK_SPACE) {
             return 0;

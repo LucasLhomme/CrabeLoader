@@ -129,6 +129,21 @@ class RenderHook {
         // Hook for ShowWindow to suppress SW_MINIMIZE in borderless mode for instant Alt+Tab.
         static BOOL WINAPI hkShowWindow(HWND hWnd, int nCmdShow);
 
+        // Hook for D3D11CreateDeviceAndSwapChain to prevent startup fullscreen mode-switch flicker.
+        static HRESULT WINAPI hkD3D11CreateDeviceAndSwapChain(
+            IDXGIAdapter* pAdapter,
+            D3D_DRIVER_TYPE DriverType,
+            HMODULE Software,
+            UINT Flags,
+            const D3D_FEATURE_LEVEL* pFeatureLevels,
+            UINT FeatureLevels,
+            UINT SDKVersion,
+            const DXGI_SWAP_CHAIN_DESC* pSwapChainDesc,
+            IDXGISwapChain** ppSwapChain,
+            ID3D11Device** ppDevice,
+            D3D_FEATURE_LEVEL* pFeatureLevel,
+            ID3D11DeviceContext** ppImmediateContext);
+
         // Subclassed window procedure handling hotkeys, alt-tab, and input routing.
         static LRESULT CALLBACK hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -139,6 +154,11 @@ class RenderHook {
         typedef HRESULT(__stdcall* t_ResizeTarget)(IDXGISwapChain*, const DXGI_MODE_DESC*);
         typedef BOOL(WINAPI* t_SetCursorPos)(int, int);
         typedef BOOL(WINAPI* t_ShowWindow)(HWND, int);
+        typedef HRESULT(WINAPI* t_D3D11CreateDeviceAndSwapChain)(
+            IDXGIAdapter*, D3D_DRIVER_TYPE, HMODULE, UINT,
+            const D3D_FEATURE_LEVEL*, UINT, UINT,
+            const DXGI_SWAP_CHAIN_DESC*, IDXGISwapChain**,
+            ID3D11Device**, D3D_FEATURE_LEVEL*, ID3D11DeviceContext**);
 
         // Returns pointer to the original Present method.
         t_Present originalPresent() const;
@@ -161,6 +181,9 @@ class RenderHook {
         // Returns pointer to the original ShowWindow function.
         t_ShowWindow originalShowWindow() const;
 
+        // Returns pointer to the original D3D11CreateDeviceAndSwapChain function.
+        t_D3D11CreateDeviceAndSwapChain originalD3D11CreateDeviceAndSwapChain() const;
+
         crabe::infrastructure::Hook _hookPresent;
         crabe::infrastructure::Hook _hookResizeBuffers;
         crabe::infrastructure::Hook _hookSetFullscreenState;
@@ -168,6 +191,7 @@ class RenderHook {
         crabe::infrastructure::Hook _hookResizeTarget;
         crabe::infrastructure::Hook _hookSetCursorPos;
         crabe::infrastructure::Hook _hookShowWindow;
+        crabe::infrastructure::Hook _hookD3D11CreateDeviceAndSwapChain;
 
         Overlay _overlay;
 
