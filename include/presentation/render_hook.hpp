@@ -52,6 +52,10 @@ class RenderHook {
         // Returns the underlying Win32 window handle.
         HWND getHwnd() const noexcept { return _hwnd; }
 
+        // Patches the main executable's delay-load IAT entry for d3d11.dll to intercept
+        // D3D11CreateDeviceAndSwapChain immediately at startup, preventing mode-switch flicker.
+        static bool installEarlyDelayLoadHook();
+
     private:
         RenderHook() = default;
         ~RenderHook() = default;

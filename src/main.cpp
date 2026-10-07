@@ -20,6 +20,7 @@
 #endif
 #include "domain/game_profile.hpp"
 #include "infrastructure/crash_reporter.hpp"
+#include "presentation/render_hook.hpp"
 
 namespace {
     std::string moduleDirectory(HMODULE hModule) {
@@ -80,6 +81,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         DisableThreadLibraryCalls(hModule);
         DisableProcessWindowsGhosting();
         initLogger(hModule);
+        crabe::presentation::RenderHook::installEarlyDelayLoadHook();
 
         // Installed before anything else runs, and before the game gets a
         // chance to install a filter of its own. install() adds a vectored

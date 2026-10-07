@@ -44,6 +44,18 @@ namespace {
     constexpr LONG kClipStyles = WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
     constexpr LONG kBorderlessStyle = WS_POPUP | WS_VISIBLE;
     constexpr LONG kWindowedStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+
+    // PE delay-load import descriptor (ImgDelayDescrV2) layout.
+    struct DelayLoadDescriptor {
+        DWORD attributes;
+        DWORD dllNameRva;
+        DWORD moduleHandleRva;
+        DWORD importAddressTableRva;
+        DWORD importNameTableRva;
+        DWORD boundIatRva;
+        DWORD unloadIatRva;
+        DWORD timeDateStamp;
+    };
 }
 
 // Returns the singleton instance of RenderHook.
@@ -72,6 +84,43 @@ void RenderHook::saveWindowModeConfig(WindowMode mode)
         ? crabe::domain::ConfigWindowMode::Borderless
         : crabe::domain::ConfigWindowMode::Windowed;
     crabe::domain::Config::active().setWindowMode(std::filesystem::current_path(), configMode);
+}
+
+// Patches the main module's delay-load IAT entry for d3d11.dll to intercept
+// D3D11CreateDeviceAndSwapChain instantly upon process attach, eliminating
+// startup display-mode flicker without thread race conditions.
+bool RenderHook::installEarlyDelayLoadHook()
+{
+    auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    if (!base) return false;
+
+    auto* dosHeader = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
+
+    auto* ntHeaders = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dosHeader->e_lfanew);
+    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
+
+    const auto& delayDir = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT];
+    if (delayDir.VirtualAddress == 0 || delayDir.Size == 0) return false;
+
+    auto* desc = reinterpret_cast<const DelayLoadDescriptor*>(base + delayDir.VirtualAddress);
+    while (desc->dllNameRva != 0) {
+        const char* dllName = reinterpret_cast<const char*>(base + desc->dllNameRva);
+        if (_stricmp(dllName, "d3d11.dll") == 0) {
+            auto* iat = reinterpret_cast<void**>(base + desc->importAddressTableRva);
+            DWORD oldProtect = 0;
+            if (VirtualProtect(iat, sizeof(void*), PAGE_READWRITE, &oldProtect)) {
+                *iat = reinterpret_cast<void*>(&RenderHook::hkD3D11CreateDeviceAndSwapChain);
+                VirtualProtect(iat, sizeof(void*), oldProtect, &oldProtect);
+                crabe::shared::Logger::getInstance().info(
+                    "RenderHook: installed early delay-load IAT interceptor for D3D11CreateDeviceAndSwapChain.");
+                return true;
+            }
+            break;
+        }
+        ++desc;
+    }
+    return false;
 }
 
 // Resolves swapchain vtable function pointers using a temporary dummy device.
@@ -742,7 +791,22 @@ HRESULT WINAPI RenderHook::hkD3D11CreateDeviceAndSwapChain(
         }
     }
 
-    return self.originalD3D11CreateDeviceAndSwapChain()(
+    t_D3D11CreateDeviceAndSwapChain originalFunc = self.originalD3D11CreateDeviceAndSwapChain();
+    if (!originalFunc) {
+        HMODULE d3d11 = GetModuleHandleW(L"d3d11.dll");
+        if (!d3d11) d3d11 = LoadLibraryW(L"d3d11.dll");
+        if (d3d11) {
+            originalFunc = reinterpret_cast<t_D3D11CreateDeviceAndSwapChain>(
+                GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain"));
+        }
+    }
+
+    if (!originalFunc) {
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to resolve real D3D11CreateDeviceAndSwapChain.");
+        return E_FAIL;
+    }
+
+    return originalFunc(
         pAdapter, DriverType, Software, Flags, pFeatureLevels, FeatureLevels,
         SDKVersion, descToUse, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
 }
