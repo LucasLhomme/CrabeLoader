@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "presentation/render_hook.hpp"
 
@@ -55,6 +56,11 @@ namespace {
         DWORD boundIatRva;
         DWORD unloadIatRva;
         DWORD timeDateStamp;
+    };
+
+    struct ResolutionEntry {
+        uint32_t width;
+        uint32_t height;
     };
 }
 
@@ -121,6 +127,131 @@ bool RenderHook::installEarlyDelayLoadHook()
         ++desc;
     }
     return false;
+}
+
+// Expands the game's internal resolution list in memory to support 4K UHD, Ultrawide,
+// and smaller laptop/Steam Deck resolutions natively.
+bool RenderHook::patchSupportedResolutions()
+{
+    auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    if (!base) return false;
+
+    // Pattern for the vanilla table start: 960x540, 1024x576, 1136x640, 1280x720
+    static constexpr uint32_t kPattern[] = {
+        960, 540, 1024, 576, 1136, 640, 1280, 720
+    };
+    static constexpr size_t kPatternBytes = sizeof(kPattern);
+
+    // Known measured RVAs for di3-gold-steam-1.0
+    constexpr uintptr_t kDefaultTableRva = 0x1bad9f0;
+    constexpr uintptr_t kDefaultCountRva = 0x1bad708;
+
+    auto* tablePtr = reinterpret_cast<ResolutionEntry*>(base + kDefaultTableRva);
+    auto* countPtr = reinterpret_cast<uint32_t*>(base + kDefaultCountRva);
+
+    // Verify if table matches at default RVA; if not, do a safe memory scan
+    if (memcmp(tablePtr, kPattern, kPatternBytes) != 0) {
+        auto* dosHeader = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+        if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
+        auto* ntHeaders = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dosHeader->e_lfanew);
+        if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
+
+        const auto* section = IMAGE_FIRST_SECTION(ntHeaders);
+        bool found = false;
+        for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections; ++i, ++section) {
+            if (section->Characteristics & IMAGE_SCN_MEM_READ) {
+                const auto* start = reinterpret_cast<const uint8_t*>(base + section->VirtualAddress);
+                const size_t size = section->Misc.VirtualSize;
+                if (size > kPatternBytes) {
+                    for (size_t offset = 0; offset <= size - kPatternBytes; offset += 4) {
+                        if (memcmp(start + offset, kPattern, kPatternBytes) == 0) {
+                            tablePtr = reinterpret_cast<ResolutionEntry*>(const_cast<uint8_t*>(start + offset));
+                            countPtr = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(tablePtr) - 0x2E8);
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (found) break;
+        }
+        if (!found) {
+            crabe::shared::Logger::getInstance().warning(
+                "RenderHook: resolution table signature not found; skipping resolution expansion.");
+            return false;
+        }
+    }
+
+    std::vector<ResolutionEntry> resolutions = {
+        // Low / retro / mobile / Steam Deck
+        {  640,  480 },
+        {  800,  600 },
+        {  960,  540 },
+        { 1024,  576 },
+        { 1024,  768 },
+        { 1136,  640 },
+        { 1280,  720 },
+        { 1280,  800 },  // Steam Deck native
+        { 1280,  960 },
+        { 1280, 1024 },
+        { 1360,  768 },
+        { 1366,  768 },
+        { 1440,  900 },
+        { 1600,  900 },
+        { 1600, 1200 },
+        { 1680, 1050 },
+        // Standard HD / FHD
+        { 1920, 1080 },
+        { 1920, 1200 },
+        // QHD / 1440p
+        { 2560, 1080 },  // 21:9 Ultrawide
+        { 2560, 1440 },
+        { 2560, 1600 },
+        // UWQHD / 4K / High-end
+        { 3440, 1440 },  // 21:9 UWQHD
+        { 3840, 1600 },
+        { 3840, 2160 },  // 4K UHD
+        { 5120, 1440 },  // 32:9 Super Ultrawide
+        { 5120, 2160 },  // 21:9 5K2K
+        { 5120, 2880 },  // 5K
+        { 7680, 4320 },  // 8K
+    };
+
+    const int screenW = GetSystemMetrics(SM_CXSCREEN);
+    const int screenH = GetSystemMetrics(SM_CYSCREEN);
+    if (screenW > 0 && screenH > 0) {
+        resolutions.push_back({ static_cast<uint32_t>(screenW), static_cast<uint32_t>(screenH) });
+    }
+
+    std::sort(resolutions.begin(), resolutions.end(), [](const auto& a, const auto& b) {
+        if (a.width != b.width) return a.width < b.width;
+        return a.height < b.height;
+    });
+    resolutions.erase(std::unique(resolutions.begin(), resolutions.end(), [](const auto& a, const auto& b) {
+        return a.width == b.width && a.height == b.height;
+    }), resolutions.end());
+
+    DWORD oldProtect = 0;
+    const size_t tableBytes = resolutions.size() * sizeof(ResolutionEntry);
+    if (!VirtualProtect(tablePtr, tableBytes, PAGE_READWRITE, &oldProtect)) {
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to protect resolution table memory.");
+        return false;
+    }
+    memcpy(tablePtr, resolutions.data(), tableBytes);
+    VirtualProtect(tablePtr, tableBytes, oldProtect, &oldProtect);
+
+    if (!VirtualProtect(countPtr, sizeof(uint32_t), PAGE_READWRITE, &oldProtect)) {
+        crabe::shared::Logger::getInstance().error("RenderHook: failed to protect resolution count memory.");
+        return false;
+    }
+    *countPtr = static_cast<uint32_t>(resolutions.size());
+    VirtualProtect(countPtr, sizeof(uint32_t), oldProtect, &oldProtect);
+
+    crabe::shared::Logger::getInstance().info(
+        "RenderHook: patched supported resolutions table ({} resolutions available, 640x480 up to 8K & 4K UHD).",
+        resolutions.size());
+
+    return true;
 }
 
 // Resolves swapchain vtable function pointers using a temporary dummy device.

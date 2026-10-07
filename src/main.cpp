@@ -82,6 +82,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         DisableProcessWindowsGhosting();
         initLogger(hModule);
         crabe::presentation::RenderHook::installEarlyDelayLoadHook();
+        crabe::presentation::RenderHook::patchSupportedResolutions();
 
         // Installed before anything else runs, and before the game gets a
         // chance to install a filter of its own. install() adds a vectored

@@ -56,6 +56,10 @@ class RenderHook {
         // D3D11CreateDeviceAndSwapChain immediately at startup, preventing mode-switch flicker.
         static bool installEarlyDelayLoadHook();
 
+        // Expands the game's internal resolution list in memory to support 4K UHD, Ultrawide,
+        // and smaller laptop/Steam Deck resolutions natively.
+        static bool patchSupportedResolutions();
+
     private:
         RenderHook() = default;
         ~RenderHook() = default;
