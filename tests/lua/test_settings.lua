@@ -164,24 +164,31 @@ suite.cases[#suite.cases + 1] = {
         for _ = 1, 3 do state.Game._runTicks(0.016) end
 
         local screen = newScreen(state, "SettingsVideo")
-        state.Game._runTicks(0.016)
+        for _ = 1, 30 do state.Game._runTicks(0.016) end
 
         screen:BuildList()
         assertEquals(idsIn(screen.listData), "gamma,resolution,crabeWindowMode",
-                     "the retry must have installed the wrapper")
+                     "the poller must have installed the wrapper")
     end,
 }
 
 suite.cases[#suite.cases + 1] = {
-    "the retry stops once it lands, and gives up on a screen never opened",
+    "a screen that appears long after the mod loaded is still caught, exactly once",
     function(state)
-        state.Crabe.Settings.addOption("SettingsNeverOpened", option("x"))
-        assertTrue(state.Crabe.Settings._retrying["SettingsNeverOpened"],
-                   "retrying while the screen is absent")
+        state.Crabe.Settings.addOption("SettingsLate", option("x"))
+        assertTrue(state.Crabe.Settings._retrying["SettingsLate"],
+                   "watching while the screen is absent")
 
-        for _ = 1, 501 do state.Game._runTicks(0.016) end
-        assertEquals(state.Crabe.Settings._retrying["SettingsNeverOpened"], nil,
-                     "the budget must run out rather than poll forever")
+        for _ = 1, 5000 do state.Game._runTicks(0.016) end
+        assertTrue(state.Crabe.Settings._retrying["SettingsLate"],
+                   "the poller must not give up on a screen that has not been opened yet")
+
+        local screen = newScreen(state, "SettingsLate")
+        for _ = 1, 120 do state.Game._runTicks(0.016) end
+
+        screen:BuildList()
+        assertEquals(idsIn(screen.listData), "gamma,resolution,x",
+                     "installed once the screen exists, and not stacked by later checks")
     end,
 }
 

@@ -169,6 +169,8 @@ function Crabe.Settings._install(screenName)
         return result
     end
 
+    screen.__crabeSettingsWrapper = screen.BuildList
+
     -- The game's NextEnumValue only moves its own resolution row and silently
     -- ignores any other id, so LEFT/RIGHT on a mod's choice row is answered
     -- here. Stashed like BuildList, for the same hot-reload reason.
@@ -328,9 +330,8 @@ function Crabe.Settings.addOption(screenName, entry)
     -- The chunk that builds this screen may already have run -- a mod loading
     -- into a state that has been up for a while, or a hot reload -- so try now,
     -- and arm the patch for the case where it has not.
-    if not Crabe.Settings._install(screenName) then
-        scheduleRetry(screenName)
-    end
+    Crabe.Settings._install(screenName)
+    scheduleRetry(screenName)
 
     armPatch(screenName)
     return true
@@ -372,36 +373,48 @@ function Crabe.Settings.onBuild(screenName, fn)
         end)
     end
 
-    if not Crabe.Settings._install(screenName) then
-        scheduleRetry(screenName)
-    end
+    Crabe.Settings._install(screenName)
+    scheduleRetry(screenName)
 
     armPatch(screenName)
     return true
 end
 
--- Retries _install for a short window after a patch fired and found nothing.
+-- Keeps a screen wrapped for the whole session, one cheap check about twice a second.
 --
--- Bounded on purpose: a screen the player never opens must not leave a
--- callback polling for the rest of the session. kRetryTicks is about eight
--- seconds at 60 Hz, which covers the gap between the chunk returning and the
--- caller assigning the global many times over.
-local kRetryTicks = 500
+-- The earlier version gave up after about eight seconds. The screen can come
+-- into existence later than that, or be rebuilt by the game, and the chunk patch
+-- alone does not always catch it: in 3 of 17 sessions measured in loader.log the
+-- option only appeared after an F4. A rawget and a comparison per check costs
+-- nothing, so the poller never stops. It is registered under "core" so a mod
+-- hot reload, which revokes the mod's own callbacks, cannot leave it orphaned.
+local kPollTicks = 30
+
+local function isWrapped(screenName)
+    local screen = rawget(kGlobals, screenName)
+    return type(screen) == "table"
+        and screen.__crabeSettingsWrapper ~= nil
+        and screen.BuildList == screen.__crabeSettingsWrapper
+end
 
 function scheduleRetry(screenName)
     if Crabe.Settings._retrying[screenName] then return end
     if not (Game and Game.onTick) then return end
 
     Crabe.Settings._retrying[screenName] = true
-    local ticksLeft = kRetryTicks
+    local ticks = 0
 
+    local registry = Crabe.Registry
+    local previous = registry and registry._current
+    if registry then registry._current = nil end
     Game.onTick(function()
-        if not Crabe.Settings._retrying[screenName] then return end
-        ticksLeft = ticksLeft - 1
-        if Crabe.Settings._install(screenName) or ticksLeft <= 0 then
-            Crabe.Settings._retrying[screenName] = nil
+        ticks = ticks + 1
+        if ticks % kPollTicks ~= 0 then return end
+        if not isWrapped(screenName) then
+            Crabe.Settings._install(screenName)
         end
     end)
+    if registry then registry._current = previous end
 end
 
 -- Every option currently registered for a screen, in the order they load.
