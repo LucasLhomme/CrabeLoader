@@ -66,11 +66,41 @@ local kListField = "listData"
 -- because _retry and addOption above it both reach for it, and a local
 -- declared after its use site is captured as a nil global, not as itself.
 local scheduleRetry
+local refreshChoice
 
 local function warn(line)
     if Crabe.write then
         Crabe.write("! [Crabe.Settings] " .. tostring(line))
     end
+end
+
+-- A choice row (LR_Toggle with `choices`) is shown by the game through its
+-- enumValue field: MenuBase:GetItemData returns data[field] for any row the
+-- screen does not special-case, and SettingsVideo only special-cases its own
+-- "resolution" row. So the label is just that field, kept current here.
+local function choiceIndex(self, record)
+    local count = #record.choice.choices
+    local index = tonumber(record.choice.get(self, record.entry.id)) or 1
+    index = math.floor(index)
+    if index < 1 then index = 1 end
+    if index > count then index = count end
+    return index
+end
+
+function refreshChoice(self, record)
+    record.entry.enumValue = record.choice.choices[choiceIndex(self, record)]
+end
+
+-- The registered choice row with this id on this screen, or nil.
+local function findChoice(screenName, id)
+    local entries = Crabe.Settings._pending[screenName]
+    if not entries or id == nil then return nil end
+    for _, record in ipairs(entries) do
+        if record.choice and record.entry.id == id then
+            return record
+        end
+    end
+    return nil
 end
 
 -- Appends every entry registered for this screen that is not already in the
@@ -88,6 +118,9 @@ local function appendEntries(screenName, self)
     if not entries then return end
 
     for _, record in ipairs(entries) do
+        if record.choice then
+            refreshChoice(self, record)
+        end
         local present = false
         for _, existing in ipairs(list) do
             if type(existing) == "table" and existing.id == record.entry.id then
@@ -123,7 +156,50 @@ function Crabe.Settings._install(screenName)
         if not ok then
             warn(screenName .. ": " .. tostring(err))
         end
+
+        local hooks = Crabe.Settings._buildHooks and Crabe.Settings._buildHooks[screenName]
+        if hooks then
+            for _, record in ipairs(hooks) do
+                local okHook, errHook = pcall(record.fn, self)
+                if not okHook then
+                    warn(screenName .. " hook: " .. tostring(errHook))
+                end
+            end
+        end
         return result
+    end
+
+    -- The game's NextEnumValue only moves its own resolution row and silently
+    -- ignores any other id, so LEFT/RIGHT on a mod's choice row is answered
+    -- here. Stashed like BuildList, for the same hot-reload reason.
+    if screen.__crabeSettingsNextEnum == nil and type(screen.NextEnumValue) == "function" then
+        screen.__crabeSettingsNextEnum = screen.NextEnumValue
+    end
+    local originalNextEnum = screen.__crabeSettingsNextEnum
+    screen.NextEnumValue = function(self, id, newDirection, ...)
+        local data = id ~= nil and self.listData and self.listData[tonumber(id)]
+        local record = data and findChoice(screenName, data.id)
+        if not record then
+            if originalNextEnum then
+                return originalNextEnum(self, id, newDirection, ...)
+            end
+            return nil
+        end
+
+        local index = choiceIndex(self, record)
+        if newDirection == "LEFT" or tonumber(newDirection) == 0 then
+            index = math.max(1, index - 1)
+        elseif newDirection == "RIGHT" or tonumber(newDirection) == 1 then
+            index = math.min(#record.choice.choices, index + 1)
+        end
+        -- A settings screen the player still has to use must not be taken
+        -- down by a mod's setter, the same reason appendEntries runs guarded.
+        local ok, err = pcall(record.choice.set, self, record.entry.id, index)
+        if not ok then
+            warn(screenName .. ": " .. record.entry.id .. ".set: " .. tostring(err))
+        end
+        refreshChoice(self, record)
+        return record.entry.enumValue
     end
 
     if not Crabe.Settings._armed[screenName] then
@@ -133,6 +209,23 @@ function Crabe.Settings._install(screenName)
         end
     end
     return true
+end
+
+local function armPatch(screenName)
+    if not Crabe.Settings._armed[screenName .. ":patch"] then
+        Crabe.Settings._armed[screenName .. ":patch"] = true
+        local installer = "if Crabe and Crabe.Settings and "
+            .. "not Crabe.Settings._install('" .. screenName .. "') then "
+            .. "Crabe.Settings._retry('" .. screenName .. "') end"
+
+        if Crabe.Hooks and Crabe.Hooks.patchNamedChunk then
+            Crabe.Hooks.patchNamedChunk("Presentation/" .. screenName .. ".lua", installer)
+        end
+
+        if Crabe.Hooks and Crabe.Hooks.patchChunk then
+            Crabe.Hooks.patchChunk(screenName, installer)
+        end
+    end
 end
 
 -- Public only so the chunk patch, which runs as its own chunk in the game's
@@ -160,6 +253,23 @@ end
 -- thing the moment the menu and the mod disagree about what the current state
 -- is -- which is exactly what the first version of window_mode did.
 --
+-- A choice row -- the "< value >" widget the game uses for its resolution --
+-- is an LR_Toggle with a list of labels:
+--
+--   Crabe.Settings.addOption("SettingsVideo", {
+--       id = "myChoice",
+--       text = "My Choice",
+--       widgetType = "LR_Toggle",
+--       choices = { "Low", "Medium", "High" },
+--       get = function(self, id) return 2 end,          -- index of the current choice
+--       set = function(self, id, index) end,            -- index the player moved to
+--   })
+--
+-- The game has no generic support for this (its NextEnumValue only moves its
+-- own resolution row), so the loader answers LEFT/RIGHT for it and keeps the
+-- displayed label in step. The row handed to the game carries no get/set of
+-- its own, exactly like the game's resolution row.
+--
 -- Safe to call from any Lua state and at any time: the option is remembered and
 -- installed when that screen's chunk loads. Returns false, having said why,
 -- rather than raising -- a mod that gets this wrong should not fail to load.
@@ -173,6 +283,18 @@ function Crabe.Settings.addOption(screenName, entry)
         return false
     end
 
+    local choice = nil
+    if entry.choices ~= nil then
+        if entry.widgetType ~= "LR_Toggle" or type(entry.choices) ~= "table" or #entry.choices == 0
+            or type(entry.get) ~= "function" or type(entry.set) ~= "function" then
+            warn("addOption: " .. entry.id .. ": a choice row needs widgetType = \"LR_Toggle\", "
+                .. "a non-empty choices list, get and set")
+            return false
+        end
+        choice = { choices = entry.choices, get = entry.get, set = entry.set }
+        entry = { id = entry.id, text = entry.text, widgetType = "LR_Toggle", enumValue = entry.choices[1] }
+    end
+
     local owner = (Crabe.Registry and Crabe.Registry._current) or "core"
     local entries = Crabe.Settings._pending[screenName]
     if not entries then
@@ -183,12 +305,12 @@ function Crabe.Settings.addOption(screenName, entry)
     -- Same id from the same owner twice is a reload, not a second option.
     for index, record in ipairs(entries) do
         if record.entry.id == entry.id then
-            entries[index] = { owner = owner, entry = entry }
+            entries[index] = { owner = owner, entry = entry, choice = choice }
             return true
         end
     end
 
-    entries[#entries + 1] = { owner = owner, entry = entry }
+    entries[#entries + 1] = { owner = owner, entry = entry, choice = choice }
 
     -- Revoked on hot reload with everything else the mod registered, so a
     -- removed mod's option does not outlive it.
@@ -210,29 +332,51 @@ function Crabe.Settings.addOption(screenName, entry)
         scheduleRetry(screenName)
     end
 
-    if not Crabe.Settings._armed[screenName .. ":patch"] then
-        Crabe.Settings._armed[screenName .. ":patch"] = true
-        -- screenName is validated above, so neither string below can be
-        -- closed early or carry a second statement.
-        local installer = "if Crabe and Crabe.Settings and "
-            .. "not Crabe.Settings._install('" .. screenName .. "') then "
-            .. "Crabe.Settings._retry('" .. screenName .. "') end"
+    armPatch(screenName)
+    return true
+end
 
-        -- The exact chunk name, read out of a debug log of a real boot:
-        -- "loadbuffer Presentation/SettingsVideo.lua (12654 bytes)". A named
-        -- patch fires on that chunk alone.
-        if Crabe.Hooks and Crabe.Hooks.patchNamedChunk then
-            Crabe.Hooks.patchNamedChunk("Presentation/" .. screenName .. ".lua", installer)
-        end
-
-        -- And the content hint as well, for a screen whose chunk is named
-        -- differently or not at all. It matches several chunks, which costs
-        -- nothing: the install is guarded and idempotent.
-        if Crabe.Hooks and Crabe.Hooks.patchChunk then
-            Crabe.Hooks.patchChunk(screenName, installer)
-        end
+--- Registers a callback invoked after the settings screen's BuildList runs.
+--- Allows mods to inspect or extend the screen's populated data (e.g. resolutions).
+--- @param screenName string Name of the settings screen table (e.g. "SettingsVideo")
+--- @param fn function Callback receiving `(self)` as argument
+function Crabe.Settings.onBuild(screenName, fn)
+    if type(screenName) ~= "string" or not string.find(screenName, kValidScreen) then
+        warn("onBuild: screen name must be a Lua identifier, got " .. tostring(screenName))
+        return false
+    end
+    if type(fn) ~= "function" then
+        warn("onBuild: callback must be a function")
+        return false
     end
 
+    local owner = (Crabe.Registry and Crabe.Registry._current) or "core"
+    Crabe.Settings._buildHooks = Crabe.Settings._buildHooks or {}
+    local hooks = Crabe.Settings._buildHooks[screenName]
+    if not hooks then
+        hooks = {}
+        Crabe.Settings._buildHooks[screenName] = hooks
+    end
+
+    local record = { owner = owner, fn = fn }
+    hooks[#hooks + 1] = record
+
+    if Crabe.Registry and Crabe.Registry.track then
+        Crabe.Registry.track(function()
+            for index = #hooks, 1, -1 do
+                if hooks[index] == record then
+                    table.remove(hooks, index)
+                    break
+                end
+            end
+        end)
+    end
+
+    if not Crabe.Settings._install(screenName) then
+        scheduleRetry(screenName)
+    end
+
+    armPatch(screenName)
     return true
 end
 

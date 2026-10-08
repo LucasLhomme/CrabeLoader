@@ -81,6 +81,35 @@ function Game.ApplyVideoSettings()
     Crabe.native("Settings_ApplyVideoSettings", "Game.ApplyVideoSettings")()
 end
 
+-- The resolution the running game renders at, as width, height. The engine's
+-- UI_GetCurrentResolution reports the window size instead, which is the
+-- monitor's when rendering 4K on a 1440p screen, so the back buffer size
+-- CrabeLoader reads wins whenever it is known.
+function Game.GetResolution()
+    if type(Crabe._getRenderResolutionNative) == "function" then
+        local width, height = Crabe._getRenderResolutionNative()
+        if width and height then
+            return width, height
+        end
+    end
+    return Crabe.native("UI_GetCurrentResolution", "Game.GetResolution")()
+end
+
+-- Records the resolution the game starts with next time. The engine never resizes
+-- its swap chain or render targets while running, so nothing changes on screen
+-- until the game is restarted; Game.GetResolution() keeps reporting the running mode.
+-- CrabeLoader's EngineResolution keeps the saved mode through that restart instead
+-- of clamping it to 2560x1440.
+function Game.SetResolution(width, height)
+    width = tonumber(width)
+    height = tonumber(height)
+    if not width or not height then
+        error("Game.SetResolution: expected numeric width and height", 2)
+    end
+    Crabe.native("Settings_SetResolution", "Game.SetResolution")(width, height)
+    return width, height
+end
+
 function Game.SaveSettings()
     Crabe.native("Settings_Save", "Game.SaveSettings")()
 end

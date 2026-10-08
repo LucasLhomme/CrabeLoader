@@ -109,6 +109,13 @@ namespace crabe::infrastructure {
             return std::unexpected(translate(status));
         }
 
+        // Published before the hook goes live: another thread can enter the
+        // detour the instant MH_EnableHook returns, and a detour that reads a
+        // still-null trampoline calls address 0 (seen as a crash at EIP=0 on
+        // the game's main thread, racing RenderHook's ShowWindow install).
+        if (original != nullptr)
+            *original = trampoline;
+
         status = MH_EnableHook(source);
         if (status != MH_OK) {
             logger.error("MinHookBackend: MH_EnableHook failed at 0x{:X}: {}.",
@@ -117,11 +124,11 @@ namespace crabe::infrastructure {
             // would make the next install there fail with ALREADY_CREATED, so
             // take it back out before reporting.
             MH_RemoveHook(source);
+            if (original != nullptr)
+                *original = nullptr;
             return std::unexpected(translate(status));
         }
 
-        if (original != nullptr)
-            *original = trampoline;
         return trampoline;
     }
 

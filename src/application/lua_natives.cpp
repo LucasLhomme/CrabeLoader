@@ -62,6 +62,49 @@ namespace {
         return 1;
     }
 
+    // Crabe._getRenderResolutionNative() -> width, height of the back buffer, or nothing
+    // before the first frame.
+    int __cdecl nativeGetRenderResolution(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        UINT width = 0;
+        UINT height = 0;
+        if (!crabe::presentation::RenderHook::get().getRenderResolution(width, height))
+            return 0;
+        lua.pushNumber(L, static_cast<double>(width));
+        lua.pushNumber(L, static_cast<double>(height));
+        return 2;
+    }
+
+    // Crabe._setFrameLimitNative(fps) -> caps the frame rate (0 = unlimited) and saves it.
+    int __cdecl nativeSetFrameLimit(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const double fps = lua.argToNumber(L, 1);
+        crabe::presentation::RenderHook::get().setFrameLimit(fps > 0.0 ? static_cast<std::uint32_t>(fps) : 0u, true);
+        return 0;
+    }
+
+    // Crabe._getFrameLimitNative() -> the current cap, 0 when unlimited.
+    int __cdecl nativeGetFrameLimit(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushNumber(L, static_cast<double>(crabe::presentation::RenderHook::get().getFrameLimit()));
+        return 1;
+    }
+
+    // Crabe._getRenderFpsNative() -> frames presented per second, as measured at Present.
+    int __cdecl nativeGetRenderFps(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushNumber(L, static_cast<double>(crabe::presentation::RenderHook::get().getRenderFps()));
+        return 1;
+    }
+
     // Crabe._setCapturedKeys(vk, ...) -> swallows those keys before the game
     // sees them. Called with no arguments, it releases every captured key.
     int __cdecl nativeSetCapturedKeys(void* L)
@@ -726,6 +769,10 @@ bool crabe::lua_runtime::registerNatives(void* L)
     static constexpr Entry kNatives[] = {
         { "_setWindowModeNative",   &nativeSetWindowMode },
         { "_getWindowModeNative",   &nativeGetWindowMode },
+        { "_getRenderResolutionNative", &nativeGetRenderResolution },
+        { "_setFrameLimitNative",   &nativeSetFrameLimit },
+        { "_getFrameLimitNative",   &nativeGetFrameLimit },
+        { "_getRenderFpsNative",    &nativeGetRenderFps },
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },

@@ -26,7 +26,7 @@ namespace crabe::domain {
     namespace {
 
         constexpr std::array<std::string_view, 3> kKnownGeneralKeys = {"language", "logLevel", "profile"};
-        constexpr std::array<std::string_view, 1> kKnownDisplayKeys = {"windowMode"};
+        constexpr std::array<std::string_view, 2> kKnownDisplayKeys = {"windowMode", "frameLimit"};
         constexpr std::array<std::string_view, 2> kKnownKeybindKeys = {"hotReload", "devOverlay"};
         constexpr std::array<std::string_view, 1> kKnownMultiplayerKeys = {"enabled"};
         constexpr std::array<std::string_view, 1> kKnownUpdatesKeys = {"check"};
@@ -318,6 +318,11 @@ namespace crabe::domain {
                         *value, windowModeName(config._windowMode)));
                 }
             }
+            if (auto value = (*display)["frameLimit"].value<std::int64_t>()) {
+                config._frameLimit = clampFrameLimit(*value);
+            } else if ((*display).contains("frameLimit")) {
+                config._ignoredKeys.push_back("display.frameLimit (not an integer, using 0 = unlimited)");
+            }
             collectIgnored(*display, kKnownDisplayKeys, "display", config._ignoredKeys);
         }
 
@@ -440,14 +445,37 @@ namespace crabe::domain {
     void Config::setWindowMode(const std::filesystem::path& gameRoot, ConfigWindowMode mode)
     {
         _windowMode = mode;
+        writeDisplaySection(gameRoot);
+    }
 
+    std::uint32_t Config::clampFrameLimit(std::int64_t fps) noexcept
+    {
+        if (fps <= 0)
+            return 0;
+        if (fps < kMinFrameLimit)
+            return kMinFrameLimit;
+        if (fps > kMaxFrameLimit)
+            return kMaxFrameLimit;
+        return static_cast<std::uint32_t>(fps);
+    }
+
+    void Config::setFrameLimit(const std::filesystem::path& gameRoot, std::uint32_t fps)
+    {
+        _frameLimit = clampFrameLimit(fps);
+        writeDisplaySection(gameRoot);
+    }
+
+    void Config::writeDisplaySection(const std::filesystem::path& gameRoot) const
+    {
         const std::filesystem::path path = configPathFor(gameRoot);
         const std::optional<std::string> current = readWholeFile(path);
         if (!current)
             return; // Nothing to splice into; load() never ran or the file is gone.
 
         const std::string section = std::format(
-            "[display]\nwindowMode = \"{}\"   # borderless | windowed\n", windowModeName(mode));
+            "[display]\nwindowMode = \"{}\"   # borderless | windowed\n"
+            "frameLimit = {}   # max frames per second, 0 = unlimited\n",
+            windowModeName(_windowMode), _frameLimit);
         writeWholeFile(path, spliceTomlSection(*current, "display", section));
     }
 
@@ -544,6 +572,7 @@ profile   = "default"  # selects one of the [profiles.*] tables below
 
 [display]
 windowMode = "{}"   # borderless | windowed
+frameLimit = 0   # max frames per second, 0 = unlimited
 
 [keybinds]
 hotReload  = "F4"      # reloads every mod from disk

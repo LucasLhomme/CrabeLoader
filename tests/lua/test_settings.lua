@@ -233,4 +233,78 @@ suite.cases[#suite.cases + 1] = {
     end,
 }
 
+suite.cases[#suite.cases + 1] = {
+    "onBuild callback runs after BuildList and can inspect/modify screen data",
+    function(state)
+        local screen = newScreen(state, "SettingsVideo")
+        screen.resolutionText = { "1280x720", "1920x1080" }
+        screen.resolutionWidths = { 1280, 1920 }
+        screen.resolutionHeights = { 720, 1080 }
+
+        local callbackRan = false
+        assertTrue(state.Crabe.Settings.onBuild("SettingsVideo", function(s)
+            callbackRan = true
+            s.resolutionText[#s.resolutionText + 1] = "3840x2160"
+            s.resolutionWidths[#s.resolutionWidths + 1] = 3840
+            s.resolutionHeights[#s.resolutionHeights + 1] = 2160
+        end))
+
+        screen:BuildList()
+        assertTrue(callbackRan, "onBuild callback must execute when BuildList runs")
+        assertEquals(#screen.resolutionText, 3, "callback should have added 4K resolution")
+        assertEquals(screen.resolutionText[3], "3840x2160")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "a choice row shows its current label and moves with LEFT/RIGHT",
+    function(state)
+        local screen = newScreen(state, "SettingsVideo")
+        local gameMoves = {}
+        screen.NextEnumValue = function(self, id, direction)
+            gameMoves[#gameMoves + 1] = self.listData[tonumber(id)].id .. ":" .. direction
+        end
+
+        local current = 2
+        assertTrue(state.Crabe.Settings.addOption("SettingsVideo", {
+            id = "crabeFrameLimit",
+            text = "Frame Rate Limit",
+            widgetType = "LR_Toggle",
+            choices = { "Unlimited", "30 FPS", "60 FPS" },
+            get = function() return current end,
+            set = function(_, _, index) current = index end,
+        }))
+
+        screen:BuildList()
+        assertEquals(idsIn(screen.listData), "gamma,resolution,crabeFrameLimit")
+        local row = screen.listData[3]
+        assertEquals(row.enumValue, "30 FPS", "the label must follow get()")
+        assertEquals(row.get, nil, "the row handed to the game carries no getter, like its resolution row")
+
+        screen:NextEnumValue("3", "RIGHT")
+        assertEquals(current, 3)
+        assertEquals(row.enumValue, "60 FPS")
+
+        screen:NextEnumValue("3", "RIGHT")
+        assertEquals(current, 3, "RIGHT on the last choice stays there")
+
+        screen:NextEnumValue("3", "LEFT")
+        assertEquals(row.enumValue, "30 FPS")
+
+        screen:NextEnumValue("2", "RIGHT")
+        assertEquals(table.concat(gameMoves, ","), "resolution:RIGHT", "other rows still reach the game")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "a choice row without choices, get or set is refused",
+    function(state)
+        newScreen(state, "SettingsVideo")
+        assertFalse(state.Crabe.Settings.addOption("SettingsVideo", {
+            id = "broken", text = "Broken", widgetType = "LR_Toggle", choices = {},
+            get = function() return 1 end, set = function() end,
+        }))
+    end,
+}
+
 return suite

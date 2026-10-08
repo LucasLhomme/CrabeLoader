@@ -13,9 +13,9 @@
 #include <chrono>
 #include <dxgi.h>
 #include <filesystem>
+#include <intrin.h>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include "presentation/render_hook.hpp"
 
@@ -56,11 +56,6 @@ namespace {
         DWORD boundIatRva;
         DWORD unloadIatRva;
         DWORD timeDateStamp;
-    };
-
-    struct ResolutionEntry {
-        uint32_t width;
-        uint32_t height;
     };
 }
 
@@ -127,131 +122,6 @@ bool RenderHook::installEarlyDelayLoadHook()
         ++desc;
     }
     return false;
-}
-
-// Expands the game's internal resolution list in memory to support 4K UHD, Ultrawide,
-// and smaller laptop/Steam Deck resolutions natively.
-bool RenderHook::patchSupportedResolutions()
-{
-    auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    if (!base) return false;
-
-    // Pattern for the vanilla table start: 960x540, 1024x576, 1136x640, 1280x720
-    static constexpr uint32_t kPattern[] = {
-        960, 540, 1024, 576, 1136, 640, 1280, 720
-    };
-    static constexpr size_t kPatternBytes = sizeof(kPattern);
-
-    // Known measured RVAs for di3-gold-steam-1.0
-    constexpr uintptr_t kDefaultTableRva = 0x1bad9f0;
-    constexpr uintptr_t kDefaultCountRva = 0x1bad708;
-
-    auto* tablePtr = reinterpret_cast<ResolutionEntry*>(base + kDefaultTableRva);
-    auto* countPtr = reinterpret_cast<uint32_t*>(base + kDefaultCountRva);
-
-    // Verify if table matches at default RVA; if not, do a safe memory scan
-    if (memcmp(tablePtr, kPattern, kPatternBytes) != 0) {
-        auto* dosHeader = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-        if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
-        auto* ntHeaders = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dosHeader->e_lfanew);
-        if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
-
-        const auto* section = IMAGE_FIRST_SECTION(ntHeaders);
-        bool found = false;
-        for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections; ++i, ++section) {
-            if (section->Characteristics & IMAGE_SCN_MEM_READ) {
-                const auto* start = reinterpret_cast<const uint8_t*>(base + section->VirtualAddress);
-                const size_t size = section->Misc.VirtualSize;
-                if (size > kPatternBytes) {
-                    for (size_t offset = 0; offset <= size - kPatternBytes; offset += 4) {
-                        if (memcmp(start + offset, kPattern, kPatternBytes) == 0) {
-                            tablePtr = reinterpret_cast<ResolutionEntry*>(const_cast<uint8_t*>(start + offset));
-                            countPtr = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(tablePtr) - 0x2E8);
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (found) break;
-        }
-        if (!found) {
-            crabe::shared::Logger::getInstance().warning(
-                "RenderHook: resolution table signature not found; skipping resolution expansion.");
-            return false;
-        }
-    }
-
-    std::vector<ResolutionEntry> resolutions = {
-        // Low / retro / mobile / Steam Deck
-        {  640,  480 },
-        {  800,  600 },
-        {  960,  540 },
-        { 1024,  576 },
-        { 1024,  768 },
-        { 1136,  640 },
-        { 1280,  720 },
-        { 1280,  800 },  // Steam Deck native
-        { 1280,  960 },
-        { 1280, 1024 },
-        { 1360,  768 },
-        { 1366,  768 },
-        { 1440,  900 },
-        { 1600,  900 },
-        { 1600, 1200 },
-        { 1680, 1050 },
-        // Standard HD / FHD
-        { 1920, 1080 },
-        { 1920, 1200 },
-        // QHD / 1440p
-        { 2560, 1080 },  // 21:9 Ultrawide
-        { 2560, 1440 },
-        { 2560, 1600 },
-        // UWQHD / 4K / High-end
-        { 3440, 1440 },  // 21:9 UWQHD
-        { 3840, 1600 },
-        { 3840, 2160 },  // 4K UHD
-        { 5120, 1440 },  // 32:9 Super Ultrawide
-        { 5120, 2160 },  // 21:9 5K2K
-        { 5120, 2880 },  // 5K
-        { 7680, 4320 },  // 8K
-    };
-
-    const int screenW = GetSystemMetrics(SM_CXSCREEN);
-    const int screenH = GetSystemMetrics(SM_CYSCREEN);
-    if (screenW > 0 && screenH > 0) {
-        resolutions.push_back({ static_cast<uint32_t>(screenW), static_cast<uint32_t>(screenH) });
-    }
-
-    std::sort(resolutions.begin(), resolutions.end(), [](const auto& a, const auto& b) {
-        if (a.width != b.width) return a.width < b.width;
-        return a.height < b.height;
-    });
-    resolutions.erase(std::unique(resolutions.begin(), resolutions.end(), [](const auto& a, const auto& b) {
-        return a.width == b.width && a.height == b.height;
-    }), resolutions.end());
-
-    DWORD oldProtect = 0;
-    const size_t tableBytes = resolutions.size() * sizeof(ResolutionEntry);
-    if (!VirtualProtect(tablePtr, tableBytes, PAGE_READWRITE, &oldProtect)) {
-        crabe::shared::Logger::getInstance().error("RenderHook: failed to protect resolution table memory.");
-        return false;
-    }
-    memcpy(tablePtr, resolutions.data(), tableBytes);
-    VirtualProtect(tablePtr, tableBytes, oldProtect, &oldProtect);
-
-    if (!VirtualProtect(countPtr, sizeof(uint32_t), PAGE_READWRITE, &oldProtect)) {
-        crabe::shared::Logger::getInstance().error("RenderHook: failed to protect resolution count memory.");
-        return false;
-    }
-    *countPtr = static_cast<uint32_t>(resolutions.size());
-    VirtualProtect(countPtr, sizeof(uint32_t), oldProtect, &oldProtect);
-
-    crabe::shared::Logger::getInstance().info(
-        "RenderHook: patched supported resolutions table ({} resolutions available, 640x480 up to 8K & 4K UHD).",
-        resolutions.size());
-
-    return true;
 }
 
 // Resolves swapchain vtable function pointers using a temporary dummy device.
@@ -380,6 +250,18 @@ bool RenderHook::initialize()
                                           reinterpret_cast<void*>(&RenderHook::hkShowWindow),
                                           "RenderHook", "ShowWindow");
         }
+        auto targetScreenToClient = reinterpret_cast<void*>(GetProcAddress(user32, "ScreenToClient"));
+        if (targetScreenToClient) {
+            _hookScreenToClient.installLogged(reinterpret_cast<uintptr_t>(targetScreenToClient),
+                                              reinterpret_cast<void*>(&RenderHook::hkScreenToClient),
+                                              "RenderHook", "ScreenToClient");
+        }
+        auto targetClientToScreen = reinterpret_cast<void*>(GetProcAddress(user32, "ClientToScreen"));
+        if (targetClientToScreen) {
+            _hookClientToScreen.installLogged(reinterpret_cast<uintptr_t>(targetClientToScreen),
+                                              reinterpret_cast<void*>(&RenderHook::hkClientToScreen),
+                                              "RenderHook", "ClientToScreen");
+        }
     }
 
     HMODULE d3d11 = GetModuleHandleW(L"d3d11.dll");
@@ -400,6 +282,7 @@ bool RenderHook::initialize()
     _requestedWindowMode = loadWindowModeConfig();
     _persistWindowMode = false;
     _windowModeDirty = true;
+    setFrameLimit(crabe::domain::Config::active().frameLimit(), false);
 
     return allInstalled;
 }
@@ -421,6 +304,8 @@ void RenderHook::uninitialize()
     _hookResizeBuffers.remove();
     _hookSetCursorPos.remove();
     _hookShowWindow.remove();
+    _hookScreenToClient.remove();
+    _hookClientToScreen.remove();
     _hookD3D11CreateDeviceAndSwapChain.remove();
 
     if (_backendInitialized) {
@@ -467,6 +352,102 @@ bool RenderHook::isMenuOpen() const
 }
 
 // Enqueues a window mode change to be applied, and saved, on the render thread.
+void RenderHook::setFrameLimit(std::uint32_t fps, bool persist)
+{
+    const std::uint32_t limit = crabe::domain::Config::clampFrameLimit(fps);
+    if (_frameLimit.exchange(limit) != limit) {
+        if (limit == 0)
+            crabe::shared::Logger::getInstance().info("RenderHook: frame limit removed.");
+        else
+            crabe::shared::Logger::getInstance().info("RenderHook: frame limit set to {} FPS.", limit);
+    }
+    if (persist)
+        crabe::domain::Config::active().setFrameLimit(std::filesystem::current_path(), limit);
+}
+
+namespace {
+    // CreateWaitableTimerExW flag (Windows 10 1803+); older SDK headers lack it.
+    constexpr DWORD kHighResolutionTimer = 0x00000002;
+
+    long long performanceFrequency()
+    {
+        static const long long frequency = [] {
+            LARGE_INTEGER value{};
+            QueryPerformanceFrequency(&value);
+            return value.QuadPart;
+        }();
+        return frequency;
+    }
+
+    long long performanceNow()
+    {
+        LARGE_INTEGER value{};
+        QueryPerformanceCounter(&value);
+        return value.QuadPart;
+    }
+}
+
+void RenderHook::paceFrame()
+{
+    const long long frequency = performanceFrequency();
+    long long now = performanceNow();
+
+    if (_fpsWindowStart == 0)
+        _fpsWindowStart = now;
+    ++_fpsFrames;
+    if (now - _fpsWindowStart >= frequency / 2) {
+        _renderFps = static_cast<float>(static_cast<double>(_fpsFrames) * static_cast<double>(frequency)
+                                        / static_cast<double>(now - _fpsWindowStart));
+        _fpsWindowStart = now;
+        _fpsFrames = 0;
+    }
+
+    const std::uint32_t limit = _frameLimit.load();
+    if (limit == 0) {
+        _nextFrameTicks = 0;
+        return;
+    }
+
+    const long long period = frequency / limit;
+    // First limited frame, or more than a frame behind (a load, an alt-tab):
+    // start counting from now instead of rushing frames to catch up.
+    if (_nextFrameTicks == 0 || now - _nextFrameTicks > period)
+        _nextFrameTicks = now;
+
+    if (!_frameTimer) {
+        HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, kHighResolutionTimer, TIMER_ALL_ACCESS);
+        if (!timer)
+            timer = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
+        _frameTimer.reset(timer);
+    }
+
+    // Sleep through most of the wait, then spin the last ~1.5 ms: a timer
+    // wake-up can be late by about a millisecond, a spin cannot.
+    const long long spinTicks = frequency * 3 / 2000;
+    for (;;) {
+        now = performanceNow();
+        const long long remaining = _nextFrameTicks - now;
+        if (remaining <= 0)
+            break;
+        if (remaining > spinTicks) {
+            const long long sleepTicks = remaining - spinTicks;
+            if (_frameTimer) {
+                LARGE_INTEGER due{};
+                due.QuadPart = -(sleepTicks * 10000000LL / frequency); // relative, 100 ns units
+                if (SetWaitableTimer(_frameTimer.get(), &due, 0, nullptr, nullptr, FALSE))
+                    WaitForSingleObject(_frameTimer.get(), INFINITE);
+                else
+                    Sleep(1);
+            } else {
+                Sleep(1);
+            }
+        } else {
+            YieldProcessor();
+        }
+    }
+    _nextFrameTicks += period;
+}
+
 void RenderHook::requestWindowMode(WindowMode mode)
 {
     _requestedWindowMode = mode;
@@ -862,6 +843,11 @@ HRESULT __stdcall RenderHook::hkResizeTarget(IDXGISwapChain* swapChain, const DX
     if (newTargetParameters) {
         crabe::shared::Logger::getInstance().debug("RenderHook: ignored ResizeTarget({}x{}).",
                                                    newTargetParameters->Width, newTargetParameters->Height);
+        if (newTargetParameters->Width > 0 && newTargetParameters->Height > 0) {
+            RenderHook& self = RenderHook::get();
+            self._targetWidth = newTargetParameters->Width;
+            self._targetHeight = newTargetParameters->Height;
+        }
     }
     return S_OK;
 }
@@ -889,6 +875,74 @@ BOOL WINAPI RenderHook::hkShowWindow(HWND hWnd, int nCmdShow)
         }
     }
     return self.originalShowWindow()(hWnd, nCmdShow);
+}
+
+namespace {
+    // True when `address` lies in the game executable's image.
+    bool isGameCode(uintptr_t address)
+    {
+        static const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+        static const uintptr_t size = [] {
+            const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+            const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+            return static_cast<uintptr_t>(nt->OptionalHeader.SizeOfImage);
+        }();
+        return address >= base && address < base + size;
+    }
+}
+
+bool RenderHook::backBufferScale(HWND hWnd, float& scaleX, float& scaleY) const
+{
+    if (!_hwnd || hWnd != _hwnd || _backBufferWidth == 0 || _backBufferHeight == 0)
+        return false;
+    RECT client{};
+    if (!GetClientRect(hWnd, &client) || client.right <= 0 || client.bottom <= 0)
+        return false;
+    if (static_cast<UINT>(client.right) == _backBufferWidth && static_cast<UINT>(client.bottom) == _backBufferHeight)
+        return false;
+    scaleX = static_cast<float>(_backBufferWidth) / static_cast<float>(client.right);
+    scaleY = static_cast<float>(_backBufferHeight) / static_cast<float>(client.bottom);
+    return true;
+}
+
+// Client pixels -> back-buffer pixels, for the game's own mouse reads only.
+BOOL WINAPI RenderHook::hkScreenToClient(HWND hWnd, LPPOINT point)
+{
+    RenderHook& self = RenderHook::get();
+    const auto original = reinterpret_cast<t_PointConversion>(self._hookScreenToClient.getOriginal());
+    const BOOL result = original(hWnd, point);
+
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+    if (result && point && isGameCode(reinterpret_cast<uintptr_t>(_ReturnAddress()))
+        && self.backBufferScale(hWnd, scaleX, scaleY)) {
+        static std::atomic<bool> announced{false};
+        if (!announced.exchange(true)) {
+            crabe::shared::Logger::getInstance().info(
+                "RenderHook: game mouse mapped from client to back-buffer pixels (x{:.3f}, y{:.3f}).",
+                scaleX, scaleY);
+        }
+        point->x = static_cast<LONG>(static_cast<float>(point->x) * scaleX);
+        point->y = static_cast<LONG>(static_cast<float>(point->y) * scaleY);
+    }
+    return result;
+}
+
+// Back-buffer pixels -> client pixels, the inverse, so the game's cursor re-centring lands
+// where it means to.
+BOOL WINAPI RenderHook::hkClientToScreen(HWND hWnd, LPPOINT point)
+{
+    RenderHook& self = RenderHook::get();
+    const auto original = reinterpret_cast<t_PointConversion>(self._hookClientToScreen.getOriginal());
+
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+    if (point && isGameCode(reinterpret_cast<uintptr_t>(_ReturnAddress()))
+        && self.backBufferScale(hWnd, scaleX, scaleY)) {
+        point->x = static_cast<LONG>(static_cast<float>(point->x) / scaleX);
+        point->y = static_cast<LONG>(static_cast<float>(point->y) / scaleY);
+    }
+    return original(hWnd, point);
 }
 
 // Hook for D3D11CreateDeviceAndSwapChain preventing the game from creating an exclusive fullscreen
@@ -1004,6 +1058,8 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
         }
     }
 
+    self.paceFrame();
+
     HRESULT hr = self.originalPresent()(swapChain, syncInterval, flags);
     if (hr == DXGI_STATUS_OCCLUDED) {
         return S_OK;
@@ -1023,6 +1079,12 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
                                             UINT swapChainFlags)
 {
     RenderHook& self = RenderHook::get();
+
+    // "Size it to the window" after a swallowed ResizeTarget means the mode the game asked for.
+    if (width == 0 && height == 0 && self._targetWidth.load() > 0 && self._targetHeight.load() > 0) {
+        width = self._targetWidth.load();
+        height = self._targetHeight.load();
+    }
 
     // Guard against width == 0 && height == 0 when the window is iconic or client area is 0.
     // DXGI returns DXGI_ERROR_INVALID_CALL (0x887A0001) if width/height are 0 on an iconic window.

@@ -169,6 +169,12 @@ namespace {
         { "Shader_LookupCrc",                       0x000509D0 },
         // EngineShaders hooks this one to validate material parameter binding indices.
         { "Shader_ParseBindings",                   0x0005D5C0 },
+        // EngineResolution widens these two display-mode checks (the static nine-entry table filter,
+        // and the boot-time lookup that clamps and overwrites the saved resolution).
+        { "Resolution_IsSupported",                 0x000459B0 },
+        { "ResolutionList_Contains",                0x0065A010 },
+        // EngineResolution recentres full-screen Scaleform movies to 16:9 through this one.
+        { "Flash_Movie_SetViewport",                0x003F3C20 },
     };
 
 
