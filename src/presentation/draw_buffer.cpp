@@ -11,6 +11,7 @@
 #include "presentation/draw_buffer.hpp"
 #include "imgui/imgui.h"
 
+#include <atomic>
 #include <cfloat>
 #include <cmath>
 #include <cstddef>
@@ -148,6 +149,25 @@ namespace {
             list->AddCircle(centre, command.f2, command.c0, 0, command.f4);
         else
             list->AddCircleFilled(centre, command.f2, command.c0);
+    }
+
+    std::atomic<ImageResolver> g_imageResolver{ nullptr };
+
+    // Image `text` in the box (f0, f1, f2, f3), multiplied by the tint c0. An
+    // image the resolver cannot load is skipped, leaving whatever was drawn under it.
+    void drawShapeImage(const DrawCommand& command)
+    {
+        const ImageResolver resolver = g_imageResolver.load(std::memory_order_acquire);
+        if (!resolver)
+            return;
+
+        void* texture = resolver(command.text);
+        if (!texture)
+            return;
+
+        ImGui::GetBackgroundDrawList()->AddImage(texture, ImVec2(command.f0, command.f1),
+                                                 ImVec2(command.f0 + command.f2, command.f1 + command.f3),
+                                                 ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), command.c0);
     }
 
     // FNV-1a over the label, mixed with the call index. A widget keeps its id
@@ -451,6 +471,9 @@ void DrawBuffer::replay()
             case DrawOp::ShapeText:
                 drawShapeText(command);
                 break;
+            case DrawOp::ShapeImage:
+                drawShapeImage(command);
+                break;
         }
     }
 
@@ -463,6 +486,11 @@ void DrawBuffer::replay()
         std::lock_guard<std::mutex> lock(_resultsMutex);
         _results = accumulated;
     }
+}
+
+void DrawBuffer::setImageResolver(ImageResolver resolver)
+{
+    g_imageResolver.store(resolver, std::memory_order_release);
 }
 
 void DrawBuffer::displaySize(float& width, float& height) const

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include "imgui/imgui_internal.h"
 #include "presentation/draw_buffer.hpp"
+#include "presentation/texture_cache.hpp"
 #include "application/loader.hpp"
 #include "domain/config.hpp"
 #include "infrastructure/crash_handler.hpp"
@@ -307,6 +308,9 @@ void RenderHook::uninitialize()
     _hookScreenToClient.remove();
     _hookClientToScreen.remove();
     _hookD3D11CreateDeviceAndSwapChain.remove();
+
+    DrawBuffer::setImageResolver(nullptr);
+    TextureCache::get().release();
 
     if (_backendInitialized) {
         ImGui_ImplDX11_Shutdown();
@@ -790,6 +794,8 @@ void RenderHook::ensureBackendInit(IDXGISwapChain* swapChain)
 
     ImGui_ImplWin32_Init(_hwnd);
     ImGui_ImplDX11_Init(_device, _context);
+    TextureCache::get().attach(_device);
+    DrawBuffer::setImageResolver(&TextureCache::resolveForDrawBuffer);
 
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     // mapImGuiToBackBuffer rescales the queued mouse events once per frame,
