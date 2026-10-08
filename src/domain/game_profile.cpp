@@ -169,6 +169,10 @@ namespace {
         { "Shader_LookupCrc",                       0x000509D0 },
         // EngineShaders hooks this one to validate material parameter binding indices.
         { "Shader_ParseBindings",                   0x0005D5C0 },
+        // EngineAssetLoader hooks this one: the engine's file loader (path, &size, 4 flags) -> heap buffer.
+        { "Asset_LoadFile",                         0x0001FAF0 },
+        // EngineAssetLoader allocates served buffers with this one (cdecl, size -> pointer): the engine frees them by pointer.
+        { "Engine_Alloc",                           0x00006E80 },
     };
 
 

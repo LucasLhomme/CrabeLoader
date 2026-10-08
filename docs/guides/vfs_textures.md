@@ -13,7 +13,9 @@ In the retail PC release of *Disney Infinity 3.0*, textures are distributed as `
 * If two independent mods introduced textures starting with `a5`, installing both caused a fatal file overwrite collision: one mod would overwrite the other's `.zip`.
 
 ### The CrabeLoader V2 Solution:
-CrabeLoader hooks the engine's internal file resolution layer (`VfsOverrideManager`), intercepting requests for texture assets before the engine consults archive files on disk. If any active mod supplies the matching texture as a loose `.tbody` file, CrabeLoader redirects the file handle directly to the mod's loose file in memory.
+CrabeLoader hooks the engine's own file loader (the function that turns a path such as `textures/<hash>.tbody` into a memory buffer), below the Win32 file calls. If any active mod supplies the matching texture as a loose `.tbody` file, the loader returns the mod's file instead of the archive member. The buffer comes from the engine's own allocator, so the engine frees it like any other.
+
+Why not the Win32 hooks alone? Textures are requested by hash from the engine's loader, which reads them out of `assets/textures/<xx>.zip`. Windows only ever sees the archive being opened, never the texture, so a loose texture was indexed but never served. This was measured in game (2026-10-08): a loose copy of an existing texture was indexed yet the engine kept loading the archive version until the loader hook was added.
 
 ---
 
@@ -41,14 +43,19 @@ All lookups are **case-insensitive** and O(1) in memory via `std::unordered_map`
 
 ---
 
-## 3. Runtime Hot-Reloading (`F4`) & Texture Cache Invalidation
+## 3. Reloading After an Edit
 
-When you edit a texture in external authoring software (e.g. Photoshop, GIMP, Blender) and save the `.tbody` file:
+The loose file is read each time the engine requests that texture. A texture the engine already holds in memory is not requested again, so:
 
-1. Press **`F4`** in-game.
-2. CrabeLoader re-scans the `mods/` directory, updating the internal VFS lookup map.
-3. CrabeLoader automatically purges the engine's internal `g_MaterialCache` and flushes Direct3D 11 texture resource views.
-4. The game reloads the texture instantly on the live 3D character model without restarting `DisneyInfinity3.exe`.
+* **Restart the game** to be certain an edited texture is picked up.
+* **`F4`** re-scans `mods/` (so a newly added `.tbody` is indexed) and flushes the material cache and Direct3D 11 views, but it does **not** evict the engine's own texture cache. A texture that is already loaded may therefore keep its old pixels after `F4`; this has not been verified in game and is a known limit.
+
+## 3b. Scope & Safety
+
+* Only `.tbody` requests are served from loose files. Other asset types (models, materials, scripts) keep going through the Win32 hooks and archives as before.
+* If anything fails while serving a loose file (unreadable file, empty file, allocation failure), the engine silently falls back to the archive version and a warning is written to `loader.log`.
+* Each served texture is logged once per request in `loader.log` as `EngineAssetLoader: served loose override '<path>'` (capped at 500 lines).
+* Next to `DisneyInfinity3.exe`, an empty file named `crabe_disable_asset_override.txt` turns the substitution off, and `crabe_probe_asset_loader.txt` logs every texture request the engine makes (for diagnosing a texture that does not show up).
 
 ---
 
@@ -67,7 +74,7 @@ When you edit a texture in external authoring software (e.g. Photoshop, GIMP, Bl
 ## 5. Frequently Asked Questions (FAQ)
 
 ### Can I replace specific in-game objects, world assets, or props (e.g. a Star Wars wall)?
-**Yes, absolutely.** The Virtual File System (VFS) intercepts file access at the Win32 API level (`CreateFile`, `GetFileAttributes`, `FindFirstFile`), which means **any** file requested by the game under `assets/` (textures, sounds, models, UI, etc.) can be overridden or added without modifying the original game files.
+**Yes, absolutely.** The Virtual File System (VFS) intercepts file access at the Win32 API level (`CreateFile`, `GetFileAttributes`, `FindFirstFile`) for files the engine opens from disk, and at the engine's own file loader for `.tbody` textures. Loose `.tbody` textures can therefore be overridden or added without modifying the original game files. Other asset types are overridden only where the game opens them from disk (for example whole archives such as `characters/<name>.zip`).
 
 ### Why is there no Lua API like `replaceTexture("wall", "new_texture")`?
 In *Disney Infinity 3.0* (built on Avalanche Software's **Octane** engine):

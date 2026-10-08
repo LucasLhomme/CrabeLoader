@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Loose textures are served:** a `.tbody` under `mods/<mod>/textures/` now replaces the archive texture of the same id, with no zip needed. The VFS only saw Win32 file calls, and the engine reads textures out of `assets/textures/<xx>.zip` by hash, so loose textures were indexed but never used. A hook on the engine's file loader (`EngineAssetLoader`) now answers those requests with the mod's file, in a buffer from the engine's own allocator, and falls back to the archive on any failure. Only `.tbody` requests are touched. `crabe_disable_asset_override.txt` next to the executable turns it off; `crabe_probe_asset_loader.txt` logs every texture request. New `VfsOverrideManager::readOverrideBytes`, covered by `test_vfs_override`.
+
 ### Fixed
 - **Window mode actually applies:** the `SetFullscreenState` hook was declared but never installed, and the configured mode was never applied at startup, so the game stayed in its own exclusive fullscreen (topmost, frameless) whatever `[display].windowMode` said. `SetFullscreenState` now refuses exclusive fullscreen and `GetFullscreenState` reports it as granted (the game otherwise retries forever and never renders), `ResizeTarget` is swallowed, an exclusive swap chain is dropped at the first Present, and the configured mode is applied there.
 - **Window mode application is idempotent:** re-asserting the mode (the game asking for fullscreen again, `WM_DISPLAYCHANGE`) touches nothing when the window already matches, never steals focus, and never moves a windowed game the user placed. Windowed placement is remembered across a round trip through borderless.

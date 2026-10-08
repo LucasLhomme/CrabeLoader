@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -56,6 +57,10 @@ public:
     /// Resolves a requested asset path to its loose mod file in constant O(1) memory time.
     [[nodiscard]] bool resolve(std::string_view requestedPath,
                                std::filesystem::path& outPhysicalPath) const noexcept;
+
+    /// Resolves a requested asset path and reads the whole loose file into memory; empty when absent or unreadable.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> readOverrideBytes(
+        std::string_view requestedPath) const noexcept;
 
     /// Optional-returning overload of asset path resolution for convenient query callers.
     [[nodiscard]] std::optional<std::filesystem::path> resolve(

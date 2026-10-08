@@ -10,8 +10,12 @@
 
 #include "infrastructure/vfs_hook.hpp"
 
+#include <algorithm>
+#include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
@@ -40,6 +44,29 @@ using FindFirstFileExWFn = HANDLE(WINAPI*)(
     LPCWSTR, FINDEX_INFO_LEVELS, LPVOID, FINDEX_SEARCH_OPS, LPVOID, DWORD);
 
 thread_local bool t_reentrancyGuard = false;
+
+constexpr std::uint32_t kMaxTraceLines = 4000;
+std::atomic<bool> g_traceTextures{false};
+std::atomic<std::uint32_t> g_traceLines{0};
+
+// Logs a texture-looking request and whether a mod override served it; a no-op unless tracing is on.
+void traceTexture(const char* scope, std::string_view requested, bool redirected)
+{
+    if (!g_traceTextures.load(std::memory_order_relaxed))
+        return;
+
+    std::string lowered(requested);
+    std::ranges::transform(lowered, lowered.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lowered.find(".tbody") == std::string::npos && lowered.find("textures") == std::string::npos)
+        return;
+
+    if (g_traceLines.fetch_add(1, std::memory_order_relaxed) >= kMaxTraceLines)
+        return;
+
+    crabe::shared::Logger::getInstance().info("VfsTrace: {} '{}' -> {}", scope, requested,
+                                              redirected ? "mod override" : "passthrough");
+}
 
 struct ReentrancyScope final {
     ReentrancyScope() noexcept { t_reentrancyGuard = true; }
@@ -75,7 +102,9 @@ Result redirectAnsi(LPCSTR path, Result failure, const Call& call, const char* s
 
     bool executed = CrashHandler::runGuarded([&]() {
         std::filesystem::path overridePath;
-        if (VfsOverrideManager::get().resolve(path, overridePath))
+        const bool redirected = VfsOverrideManager::get().resolve(path, overridePath);
+        traceTexture(scope, path, redirected);
+        if (redirected)
             result = call(overridePath.string().c_str());
         else
             result = call(path);
@@ -99,7 +128,9 @@ Result redirectWide(LPCWSTR path, Result failure, const Call& call, const char* 
     bool executed = CrashHandler::runGuarded([&]() {
         std::string narrowName = wideToUtf8(path);
         std::filesystem::path overridePath;
-        if (!narrowName.empty() && VfsOverrideManager::get().resolve(narrowName, overridePath))
+        const bool redirected = !narrowName.empty() && VfsOverrideManager::get().resolve(narrowName, overridePath);
+        traceTexture(scope, narrowName, redirected);
+        if (redirected)
             result = call(overridePath.c_str());
         else
             result = call(path);
@@ -186,6 +217,11 @@ void VfsHook::uninitialize()
 bool VfsHook::isHooked() const noexcept
 {
     return _initialized;
+}
+
+void VfsHook::setTraceTextures(bool enabled) noexcept
+{
+    g_traceTextures.store(enabled, std::memory_order_relaxed);
 }
 
 HANDLE WINAPI VfsHook::hkCreateFileA(
