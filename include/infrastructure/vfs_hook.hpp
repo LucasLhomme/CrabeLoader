@@ -32,6 +32,9 @@ public:
     /// Returns whether file interception hooks are currently installed.
     [[nodiscard]] bool isHooked() const noexcept;
 
+    /// Logs every texture-looking path that reaches the Win32 file calls, and whether a mod served it.
+    static void setTraceTextures(bool enabled) noexcept;
+
 private:
     VfsHook() = default;
     ~VfsHook() = default;

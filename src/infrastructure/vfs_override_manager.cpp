@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 #include <system_error>
 
 #include "shared/logger.hpp"
@@ -305,6 +306,34 @@ std::optional<std::filesystem::path> VfsOverrideManager::resolve(
     if (resolve(requestedPath, result))
         return result;
     return std::nullopt;
+}
+
+std::optional<std::vector<std::uint8_t>> VfsOverrideManager::readOverrideBytes(
+    std::string_view requestedPath) const noexcept
+{
+    constexpr std::streamoff kMaxOverrideBytes = 256LL * 1024 * 1024;
+
+    std::filesystem::path physical;
+    if (!resolve(requestedPath, physical))
+        return std::nullopt;
+
+    try {
+        std::ifstream in(physical, std::ios::binary | std::ios::ate);
+        if (!in)
+            return std::nullopt;
+
+        const std::streamoff length = in.tellg();
+        if (length <= 0 || length > kMaxOverrideBytes)
+            return std::nullopt;
+
+        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(length));
+        in.seekg(0);
+        if (!in.read(reinterpret_cast<char*>(bytes.data()), length))
+            return std::nullopt;
+        return bytes;
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 std::size_t VfsOverrideManager::getOverrideCount() const noexcept
