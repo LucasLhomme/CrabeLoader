@@ -153,6 +153,8 @@ namespace crabe::domain {
         [[nodiscard]] const std::string& language() const noexcept { return _language; }
         [[nodiscard]] const std::string& logLevel() const noexcept { return _logLevel; }
         [[nodiscard]] ConfigWindowMode windowMode() const noexcept { return _windowMode; }
+        // Frames per second the loader holds the game to; 0 is unlimited.
+        [[nodiscard]] std::uint32_t frameLimit() const noexcept { return _frameLimit; }
         [[nodiscard]] bool multiplayerEnabled() const noexcept { return _multiplayerEnabled; }
         [[nodiscard]] bool updateCheckEnabled() const noexcept { return _updateCheckEnabled; }
 
@@ -187,6 +189,14 @@ namespace crabe::domain {
         // cannot be spliced (e.g. the file was deleted after load()).
         void setWindowMode(const std::filesystem::path& gameRoot, ConfigWindowMode mode);
 
+        // Same, for [display].frameLimit (0 = unlimited). Values outside
+        // kMinFrameLimit..kMaxFrameLimit, other than 0, are clamped.
+        void setFrameLimit(const std::filesystem::path& gameRoot, std::uint32_t fps);
+
+        static constexpr std::uint32_t kMinFrameLimit = 15;
+        static constexpr std::uint32_t kMaxFrameLimit = 1000;
+        [[nodiscard]] static std::uint32_t clampFrameLimit(std::int64_t fps) noexcept;
+
         // Updates the [quarantine] section, in memory and (if it changed)
         // on disk, splicing just that section (see spliceTomlSection).
         void updateQuarantineSnapshot(const std::filesystem::path& gameRoot, QuarantineSnapshot snapshot);
@@ -199,6 +209,11 @@ namespace crabe::domain {
         std::string _language{"en"};
         std::string _logLevel{"info"};
         ConfigWindowMode _windowMode{ConfigWindowMode::Borderless};
+        std::uint32_t _frameLimit{0};
+
+        // Rewrites the whole [display] section from the in-memory values, so
+        // setting one key never drops the other.
+        void writeDisplaySection(const std::filesystem::path& gameRoot) const;
         bool _multiplayerEnabled{false};
         bool _updateCheckEnabled{true};
         std::string _hotReloadKeybind{"F4"};

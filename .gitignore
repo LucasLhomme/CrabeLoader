@@ -9,6 +9,9 @@ tools/*
 herald-report.txt
 mods/*
 !mods/_template/
+!mods/window_mode.lua
+!mods/resolution.lua
+!mods/tick_demo.lua
 # The reference character mod ships with the loader: the worked example of
 # exposeCharacter, documented by its own README.
 !mods/crabe_heroes/
@@ -29,3 +32,4 @@ include/infrastructure/multiplayer/
 src/application/multiplayer/
 src/infrastructure/multiplayer/
 src/api/29_multiplayer.lua
+embedded_api_def.hpp

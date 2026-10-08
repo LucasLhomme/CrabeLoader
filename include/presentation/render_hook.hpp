@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <d3d11.h>
 #include <windows.h>
 
@@ -49,8 +50,33 @@ class RenderHook {
         // Returns the current requested window display mode.
         WindowMode getCurrentWindowMode() const noexcept { return _requestedWindowMode.load(); }
 
+        // Caps the frames the game presents per second; 0 removes the cap. The game
+        // asks for vsync (Present interval 1), so an unlimited cap, or one at or above the
+        // display refresh, presents with interval 0. `persist` also writes [display].frameLimit.
+        void setFrameLimit(std::uint32_t fps, bool persist);
+        std::uint32_t getFrameLimit() const noexcept { return _frameLimit.load(); }
+
+        // Frames actually presented per second, measured over half-second
+        // windows on the render thread. 0 before the first measurement.
+        float getRenderFps() const noexcept { return _renderFps.load(); }
+
+        // The size the game renders at (its swap chain's back buffer), which is
+        // the resolution the player chose. The engine's own UI_GetCurrentResolution
+        // reports the window instead, so 4K on a 1440p screen read as 1440p.
+        // False until the first Present has sized the back buffer.
+        bool getRenderResolution(UINT& width, UINT& height) const noexcept
+        {
+            width = _backBufferWidth;
+            height = _backBufferHeight;
+            return width != 0 && height != 0;
+        }
+
         // Returns the underlying Win32 window handle.
         HWND getHwnd() const noexcept { return _hwnd; }
+
+        // Patches the main executable's delay-load IAT entry for d3d11.dll to intercept
+        // D3D11CreateDeviceAndSwapChain immediately at startup, preventing mode-switch flicker.
+        static bool installEarlyDelayLoadHook();
 
     private:
         RenderHook() = default;
@@ -91,6 +117,14 @@ class RenderHook {
         // Creates a Direct3D 11 render target view for swapchain backbuffer.
         void createRenderTarget(IDXGISwapChain* swapChain);
 
+        // Waits, on the render thread, until the next frame is due under the
+        // frame limit, and counts the frame for getRenderFps().
+        void paceFrame();
+
+        // The sync interval to present with: 0 when the loader's cap owns the pacing
+        // (unlimited, or a cap at or above the display refresh), else the game's own.
+        UINT effectiveSyncInterval(UINT requested) noexcept;
+
         // Applies pending window styles and dimensions on the render thread.
         void applyPendingWindowMode(IDXGISwapChain* swapChain);
 
@@ -129,6 +163,34 @@ class RenderHook {
         // Hook for ShowWindow to suppress SW_MINIMIZE in borderless mode for instant Alt+Tab.
         static BOOL WINAPI hkShowWindow(HWND hWnd, int nCmdShow);
 
+        // Hooks for ScreenToClient / ClientToScreen. The engine reads the mouse
+        // with GetCursorPos + ScreenToClient and hands that to the UI as back
+        // buffer pixels; when the back buffer is not the window's size (4K on a
+        // 1440p screen, 21:9 stretched on a 16:9 one) the game's own calls are
+        // converted between client and back-buffer pixels. Calls from anywhere
+        // else, ImGui included, are untouched.
+        static BOOL WINAPI hkScreenToClient(HWND hWnd, LPPOINT point);
+        static BOOL WINAPI hkClientToScreen(HWND hWnd, LPPOINT point);
+
+        // Back buffer size over client size for the game window, or false when
+        // they match (or either is unknown), in which case nothing is scaled.
+        bool backBufferScale(HWND hWnd, float& scaleX, float& scaleY) const;
+
+        // Hook for D3D11CreateDeviceAndSwapChain to prevent startup fullscreen mode-switch flicker.
+        static HRESULT WINAPI hkD3D11CreateDeviceAndSwapChain(
+            IDXGIAdapter* pAdapter,
+            D3D_DRIVER_TYPE DriverType,
+            HMODULE Software,
+            UINT Flags,
+            const D3D_FEATURE_LEVEL* pFeatureLevels,
+            UINT FeatureLevels,
+            UINT SDKVersion,
+            const DXGI_SWAP_CHAIN_DESC* pSwapChainDesc,
+            IDXGISwapChain** ppSwapChain,
+            ID3D11Device** ppDevice,
+            D3D_FEATURE_LEVEL* pFeatureLevel,
+            ID3D11DeviceContext** ppImmediateContext);
+
         // Subclassed window procedure handling hotkeys, alt-tab, and input routing.
         static LRESULT CALLBACK hkWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -139,6 +201,12 @@ class RenderHook {
         typedef HRESULT(__stdcall* t_ResizeTarget)(IDXGISwapChain*, const DXGI_MODE_DESC*);
         typedef BOOL(WINAPI* t_SetCursorPos)(int, int);
         typedef BOOL(WINAPI* t_ShowWindow)(HWND, int);
+        typedef BOOL(WINAPI* t_PointConversion)(HWND, LPPOINT);
+        typedef HRESULT(WINAPI* t_D3D11CreateDeviceAndSwapChain)(
+            IDXGIAdapter*, D3D_DRIVER_TYPE, HMODULE, UINT,
+            const D3D_FEATURE_LEVEL*, UINT, UINT,
+            const DXGI_SWAP_CHAIN_DESC*, IDXGISwapChain**,
+            ID3D11Device**, D3D_FEATURE_LEVEL*, ID3D11DeviceContext**);
 
         // Returns pointer to the original Present method.
         t_Present originalPresent() const;
@@ -161,6 +229,9 @@ class RenderHook {
         // Returns pointer to the original ShowWindow function.
         t_ShowWindow originalShowWindow() const;
 
+        // Returns pointer to the original D3D11CreateDeviceAndSwapChain function.
+        t_D3D11CreateDeviceAndSwapChain originalD3D11CreateDeviceAndSwapChain() const;
+
         crabe::infrastructure::Hook _hookPresent;
         crabe::infrastructure::Hook _hookResizeBuffers;
         crabe::infrastructure::Hook _hookSetFullscreenState;
@@ -168,6 +239,9 @@ class RenderHook {
         crabe::infrastructure::Hook _hookResizeTarget;
         crabe::infrastructure::Hook _hookSetCursorPos;
         crabe::infrastructure::Hook _hookShowWindow;
+        crabe::infrastructure::Hook _hookScreenToClient;
+        crabe::infrastructure::Hook _hookClientToScreen;
+        crabe::infrastructure::Hook _hookD3D11CreateDeviceAndSwapChain;
 
         Overlay _overlay;
 
@@ -204,6 +278,26 @@ class RenderHook {
         // so that is what GetFullscreenState reports while the swap chain
         // really stays windowed.
         std::atomic<bool> _gameWantsFullscreen{false};
+
+        // The display mode the game last asked ResizeTarget for. ResizeTarget
+        // is swallowed, so a following ResizeBuffers(0, 0) would size the back
+        // buffer to the window instead; it is given this size instead, which is
+        // the resolution the player chose (4K on a 1440p screen is then
+        // rendered at 4K and scaled down, not silently dropped to 1440p).
+        std::atomic<std::uint32_t> _frameLimit{0};
+        std::atomic<std::uint32_t> _displayRefreshHz{0};
+        std::uint32_t _refreshCheckFrames = 0;
+        std::atomic<float> _renderFps{0.0f};
+
+        // Render thread only: frame pacing and the frame-rate measurement.
+        struct HandleCloser { void operator()(HANDLE handle) const noexcept { if (handle) CloseHandle(handle); } };
+        std::unique_ptr<void, HandleCloser> _frameTimer;
+        long long _nextFrameTicks = 0;
+        long long _fpsWindowStart = 0;
+        std::uint32_t _fpsFrames = 0;
+
+        std::atomic<UINT> _targetWidth{0};
+        std::atomic<UINT> _targetHeight{0};
         std::atomic<WindowMode> _requestedWindowMode{WindowMode::BorderlessWindowed};
         std::atomic<bool> _isFocused{true};
 };

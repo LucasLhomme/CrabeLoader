@@ -28,6 +28,7 @@
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/engine_meridian.hpp"
+#include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
@@ -673,6 +674,7 @@ void Loader::uninitialize()
     crabe::infrastructure::EngineFreeCamera::get().uninitialize();
     crabe::infrastructure::EngineMeridian::get().uninitialize();
     crabe::infrastructure::EngineShaders::get().uninitialize();
+    crabe::infrastructure::EngineResolution::get().uninitialize();
     crabe::infrastructure::MessageHook::get().uninitialize();
     crabe::presentation::RenderHook::get().uninitialize();
     crabe::infrastructure::LuaCall::get().uninitialize();

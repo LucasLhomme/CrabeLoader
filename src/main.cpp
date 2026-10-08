@@ -20,6 +20,8 @@
 #endif
 #include "domain/game_profile.hpp"
 #include "infrastructure/crash_reporter.hpp"
+#include "infrastructure/engine_resolution.hpp"
+#include "presentation/render_hook.hpp"
 
 namespace {
     std::string moduleDirectory(HMODULE hModule) {
@@ -80,6 +82,10 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         DisableThreadLibraryCalls(hModule);
         DisableProcessWindowsGhosting();
         initLogger(hModule);
+        crabe::presentation::RenderHook::installEarlyDelayLoadHook();
+        // Before the engine's first boot read of the saved resolution, which is why it is not
+        // left to Loader::initialize on the script thread.
+        crabe::infrastructure::EngineResolution::get().initialize();
 
         // Installed before anything else runs, and before the game gets a
         // chance to install a filter of its own. install() adds a vectored

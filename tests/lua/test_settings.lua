@@ -164,24 +164,31 @@ suite.cases[#suite.cases + 1] = {
         for _ = 1, 3 do state.Game._runTicks(0.016) end
 
         local screen = newScreen(state, "SettingsVideo")
-        state.Game._runTicks(0.016)
+        for _ = 1, 30 do state.Game._runTicks(0.016) end
 
         screen:BuildList()
         assertEquals(idsIn(screen.listData), "gamma,resolution,crabeWindowMode",
-                     "the retry must have installed the wrapper")
+                     "the poller must have installed the wrapper")
     end,
 }
 
 suite.cases[#suite.cases + 1] = {
-    "the retry stops once it lands, and gives up on a screen never opened",
+    "a screen that appears long after the mod loaded is still caught, exactly once",
     function(state)
-        state.Crabe.Settings.addOption("SettingsNeverOpened", option("x"))
-        assertTrue(state.Crabe.Settings._retrying["SettingsNeverOpened"],
-                   "retrying while the screen is absent")
+        state.Crabe.Settings.addOption("SettingsLate", option("x"))
+        assertTrue(state.Crabe.Settings._retrying["SettingsLate"],
+                   "watching while the screen is absent")
 
-        for _ = 1, 501 do state.Game._runTicks(0.016) end
-        assertEquals(state.Crabe.Settings._retrying["SettingsNeverOpened"], nil,
-                     "the budget must run out rather than poll forever")
+        for _ = 1, 5000 do state.Game._runTicks(0.016) end
+        assertTrue(state.Crabe.Settings._retrying["SettingsLate"],
+                   "the poller must not give up on a screen that has not been opened yet")
+
+        local screen = newScreen(state, "SettingsLate")
+        for _ = 1, 120 do state.Game._runTicks(0.016) end
+
+        screen:BuildList()
+        assertEquals(idsIn(screen.listData), "gamma,resolution,x",
+                     "installed once the screen exists, and not stacked by later checks")
     end,
 }
 
@@ -230,6 +237,80 @@ suite.cases[#suite.cases + 1] = {
         assertEquals(currentMode, "borderless", "value true sets borderless")
         options[1].set(nil, "crabeWindowMode", false)
         assertEquals(currentMode, "windowed", "value false sets windowed")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "onBuild callback runs after BuildList and can inspect/modify screen data",
+    function(state)
+        local screen = newScreen(state, "SettingsVideo")
+        screen.resolutionText = { "1280x720", "1920x1080" }
+        screen.resolutionWidths = { 1280, 1920 }
+        screen.resolutionHeights = { 720, 1080 }
+
+        local callbackRan = false
+        assertTrue(state.Crabe.Settings.onBuild("SettingsVideo", function(s)
+            callbackRan = true
+            s.resolutionText[#s.resolutionText + 1] = "3840x2160"
+            s.resolutionWidths[#s.resolutionWidths + 1] = 3840
+            s.resolutionHeights[#s.resolutionHeights + 1] = 2160
+        end))
+
+        screen:BuildList()
+        assertTrue(callbackRan, "onBuild callback must execute when BuildList runs")
+        assertEquals(#screen.resolutionText, 3, "callback should have added 4K resolution")
+        assertEquals(screen.resolutionText[3], "3840x2160")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "a choice row shows its current label and moves with LEFT/RIGHT",
+    function(state)
+        local screen = newScreen(state, "SettingsVideo")
+        local gameMoves = {}
+        screen.NextEnumValue = function(self, id, direction)
+            gameMoves[#gameMoves + 1] = self.listData[tonumber(id)].id .. ":" .. direction
+        end
+
+        local current = 2
+        assertTrue(state.Crabe.Settings.addOption("SettingsVideo", {
+            id = "crabeFrameLimit",
+            text = "Frame Rate Limit",
+            widgetType = "LR_Toggle",
+            choices = { "Unlimited", "30 FPS", "60 FPS" },
+            get = function() return current end,
+            set = function(_, _, index) current = index end,
+        }))
+
+        screen:BuildList()
+        assertEquals(idsIn(screen.listData), "gamma,resolution,crabeFrameLimit")
+        local row = screen.listData[3]
+        assertEquals(row.enumValue, "30 FPS", "the label must follow get()")
+        assertEquals(row.get, nil, "the row handed to the game carries no getter, like its resolution row")
+
+        screen:NextEnumValue("3", "RIGHT")
+        assertEquals(current, 3)
+        assertEquals(row.enumValue, "60 FPS")
+
+        screen:NextEnumValue("3", "RIGHT")
+        assertEquals(current, 3, "RIGHT on the last choice stays there")
+
+        screen:NextEnumValue("3", "LEFT")
+        assertEquals(row.enumValue, "30 FPS")
+
+        screen:NextEnumValue("2", "RIGHT")
+        assertEquals(table.concat(gameMoves, ","), "resolution:RIGHT", "other rows still reach the game")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "a choice row without choices, get or set is refused",
+    function(state)
+        newScreen(state, "SettingsVideo")
+        assertFalse(state.Crabe.Settings.addOption("SettingsVideo", {
+            id = "broken", text = "Broken", widgetType = "LR_Toggle", choices = {},
+            get = function() return 1 end, set = function() end,
+        }))
     end,
 }
 

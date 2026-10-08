@@ -79,6 +79,39 @@ function Crabe.GetWindowMode()
     return Crabe._windowMode
 end
 
+-- Caps the game's frame rate; 0 (or nil) removes the cap. The game never caps
+-- itself on PC, so this is the only limiter. Saved to crabe.toml and applied
+-- again on the next launch. Values below 15 or above 1000 are clamped.
+function Crabe.SetFrameLimit(fps)
+    fps = tonumber(fps) or 0
+    if fps < 0 then
+        error("Crabe.SetFrameLimit: expected 0 (unlimited) or a positive FPS, got " .. tostring(fps), 2)
+    end
+    if type(Crabe._setFrameLimitNative) ~= "function" then
+        error("Crabe.SetFrameLimit: the frame limiter is not available in this Lua state", 2)
+    end
+    Crabe._setFrameLimitNative(math.floor(fps))
+    return Crabe.GetFrameLimit()
+end
+
+-- The current frame cap, 0 when unlimited.
+function Crabe.GetFrameLimit()
+    if type(Crabe._getFrameLimitNative) == "function" then
+        return Crabe._getFrameLimitNative() or 0
+    end
+    return 0
+end
+
+-- Frames the game actually presents per second, measured at Present. Unlike a
+-- tick counter it is not capped by the loader's 60 Hz Lua tick. 0 until the
+-- first half second of rendering has been measured.
+function Crabe.GetRenderFps()
+    if type(Crabe._getRenderFpsNative) == "function" then
+        return Crabe._getRenderFpsNative() or 0
+    end
+    return 0
+end
+
 -- Generic helpers
 function Crabe.native(name, caller)
     local fn = rawget(_G, name)

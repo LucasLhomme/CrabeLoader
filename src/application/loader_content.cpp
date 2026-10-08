@@ -239,13 +239,15 @@ void Loader::armPatchIfNameMatched(const char* name, int depth)
                "\"\\n  [[\" .. [==[" + origin + "]==] .. \"]] \" .. tostring(err) end end\n";
     }
 
-    // Runs the guarded files in one chunk, then raises every collected error at
-    // once, so the patch still fails loudly in loader.log, naming each file.
+    // Runs the guarded files in one chunk, logging collected errors without aborting
+    // the entire VirtualReaderPC_Data catalog so other characters remain playable.
     std::string characterScript(const std::string& skuTable, const std::string& guardedFiles)
     {
         return skuTable + "local _crabeCharErrors = \"\"\n" + guardedFiles +
-               "if _crabeCharErrors ~= \"\" then error(\"characters/*.lua failed:\" .. "
-               "_crabeCharErrors, 0) end\n";
+               "if _crabeCharErrors ~= \"\" then\n"
+               "  if Crabe and Crabe.write then Crabe.write(\"[ERROR] characters/*.lua failed:\" .. _crabeCharErrors) end\n"
+               "  print(\"[ERROR] characters/*.lua failed:\" .. _crabeCharErrors)\n"
+               "end\n";
     }
 
     // Every characters/*.lua in one folder: exposeCharacter declarations go to
