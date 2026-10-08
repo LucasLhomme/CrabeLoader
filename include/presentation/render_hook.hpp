@@ -50,9 +50,9 @@ class RenderHook {
         // Returns the current requested window display mode.
         WindowMode getCurrentWindowMode() const noexcept { return _requestedWindowMode.load(); }
 
-        // Caps the frames the game presents per second; 0 removes the cap. The
-        // game itself never limits its frame rate on PC (vsync off), so this is
-        // the only limiter. `persist` also writes [display].frameLimit.
+        // Caps the frames the game presents per second; 0 removes the cap. The game
+        // asks for vsync (Present interval 1), so an unlimited cap, or one at or above the
+        // display refresh, presents with interval 0. `persist` also writes [display].frameLimit.
         void setFrameLimit(std::uint32_t fps, bool persist);
         std::uint32_t getFrameLimit() const noexcept { return _frameLimit.load(); }
 
@@ -120,6 +120,10 @@ class RenderHook {
         // Waits, on the render thread, until the next frame is due under the
         // frame limit, and counts the frame for getRenderFps().
         void paceFrame();
+
+        // The sync interval to present with: 0 when the loader's cap owns the pacing
+        // (unlimited, or a cap at or above the display refresh), else the game's own.
+        UINT effectiveSyncInterval(UINT requested) noexcept;
 
         // Applies pending window styles and dimensions on the render thread.
         void applyPendingWindowMode(IDXGISwapChain* swapChain);
@@ -281,6 +285,8 @@ class RenderHook {
         // the resolution the player chose (4K on a 1440p screen is then
         // rendered at 4K and scaled down, not silently dropped to 1440p).
         std::atomic<std::uint32_t> _frameLimit{0};
+        std::atomic<std::uint32_t> _displayRefreshHz{0};
+        std::uint32_t _refreshCheckFrames = 0;
         std::atomic<float> _renderFps{0.0f};
 
         // Render thread only: frame pacing and the frame-rate measurement.

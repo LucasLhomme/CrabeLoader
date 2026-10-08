@@ -387,6 +387,22 @@ namespace {
     }
 }
 
+UINT RenderHook::effectiveSyncInterval(UINT requested) noexcept
+{
+    if (_refreshCheckFrames++ % 120 == 0) {
+        DEVMODEW mode{};
+        mode.dmSize = sizeof(mode);
+        if (EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &mode))
+            _displayRefreshHz.store(mode.dmDisplayFrequency);
+    }
+
+    const std::uint32_t limit = _frameLimit.load();
+    const std::uint32_t refresh = _displayRefreshHz.load();
+    if (requested != 0 && (limit == 0 || (refresh != 0 && limit >= refresh)))
+        return 0;
+    return requested;
+}
+
 void RenderHook::paceFrame()
 {
     const long long frequency = performanceFrequency();
@@ -1058,9 +1074,31 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
         }
     }
 
+    static std::atomic<UINT> lastSyncInterval{0xFFFFFFFFu};
+    static std::atomic<UINT> lastPresentFlags{0xFFFFFFFFu};
+    if (lastSyncInterval.exchange(syncInterval) != syncInterval
+        || lastPresentFlags.exchange(flags) != flags) {
+        DXGI_SWAP_CHAIN_DESC desc{};
+        const bool haveDesc = SUCCEEDED(swapChain->GetDesc(&desc));
+        crabe::shared::Logger::getInstance().info(
+            "RenderHook: Present syncInterval={} flags=0x{:X}; swap chain effect={} buffers={} windowed={} flags=0x{:X} samples={} {}Hz.",
+            syncInterval, flags, haveDesc ? static_cast<int>(desc.SwapEffect) : -1,
+            haveDesc ? desc.BufferCount : 0, haveDesc ? static_cast<int>(desc.Windowed) : -1,
+            haveDesc ? desc.Flags : 0, haveDesc ? desc.SampleDesc.Count : 0,
+            haveDesc && desc.BufferDesc.RefreshRate.Denominator != 0
+                ? desc.BufferDesc.RefreshRate.Numerator / desc.BufferDesc.RefreshRate.Denominator : 0);
+    }
+
     self.paceFrame();
 
-    HRESULT hr = self.originalPresent()(swapChain, syncInterval, flags);
+    const UINT presentInterval = self.effectiveSyncInterval(syncInterval);
+    static std::atomic<bool> syncBypassAnnounced{false};
+    if (presentInterval != syncInterval && !syncBypassAnnounced.exchange(true)) {
+        crabe::shared::Logger::getInstance().info(
+            "RenderHook: the game asks for vsync; presenting without it while the frame limit is unlimited or at or above the display refresh ({} Hz).",
+            self._displayRefreshHz.load());
+    }
+    HRESULT hr = self.originalPresent()(swapChain, presentInterval, flags);
     if (hr == DXGI_STATUS_OCCLUDED) {
         return S_OK;
     }
