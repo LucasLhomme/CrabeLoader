@@ -19,7 +19,9 @@
 
 #include "shared/version.hpp"
 #include "presentation/imgui_bindings.hpp"
+#include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
+#include "presentation/input_remap.hpp"
 #include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
@@ -411,13 +413,14 @@ namespace {
         return 1;
     }
 
-    // Crabe._inputReport() -> which XInput slots the game has polled so far.
+    // Crabe._inputReport() -> which XInput slots and DirectInput devices the game has polled so far.
     int __cdecl nativeInputReport(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        lua.pushString(L, crabe::presentation::InputHook::get().report());
+        lua.pushString(L, crabe::presentation::InputHook::get().report() + " | "
+                              + crabe::presentation::DirectInputHook::get().report());
         return 1;
     }
 
@@ -790,6 +793,11 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },
         { "_setPadCaptured",        &crabe::input_natives::setPadCaptured },
+        { "_inputRemap",            &crabe::input_natives::remapSet },
+        { "_inputRemapClear",       &crabe::input_natives::remapClear },
+        { "_keyScanCode",           &crabe::input_natives::keyScanCode },
+        { "_mouseWheel",            &crabe::input_natives::mouseWheel },
+        { "_keyName",               &crabe::input_natives::keyName },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },
         { "_messageWatch",          &nativeMessageWatch },
         { "_messageReport",         &nativeMessageReport },

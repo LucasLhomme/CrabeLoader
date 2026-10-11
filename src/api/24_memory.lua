@@ -172,6 +172,74 @@ function Input.capturePad(captured)
     if Crabe._setPadCaptured then Crabe._setPadCaptured(captured == true) end
 end
 
+--- Devices an input remap can target: Input.remapKey, remapMouseButton and remapPadButton wrap them.
+Input.DEVICE = { KEYBOARD = 0, MOUSE = 1, PAD = 2 }
+
+--- Makes the game see one physical key as another. Mods keep reading the real keys.
+--- Both are DirectInput scan codes (see Input.scanCode); a `to` of 0 swallows the key.
+--- Returns false, and changes nothing, on a bad code or when this loader predates remapping.
+--- @param from number Scan code of the key the player presses
+--- @param to number Scan code the game should receive, or 0 to swallow
+--- @return boolean stored
+function Input.remapKey(from, to)
+    if type(from) ~= "number" or type(to) ~= "number" then return false end
+    if not Crabe._inputRemap then return false end
+    return Crabe._inputRemap(Input.DEVICE.KEYBOARD, from, to)
+end
+
+--- Makes the game see one mouse button as another (0-based: 0 left, 1 right, 2 middle, 3 and 4 the side buttons).
+--- A negative `to` swallows the button. Only buttons are remapped; movement and the wheel pass through.
+--- @param from number Button the player presses
+--- @param to number Button the game should receive, or -1 to swallow
+--- @return boolean stored
+function Input.remapMouseButton(from, to)
+    if type(from) ~= "number" or type(to) ~= "number" then return false end
+    if not Crabe._inputRemap then return false end
+    return Crabe._inputRemap(Input.DEVICE.MOUSE, from, to)
+end
+
+--- Makes the game see one pad button as another. Both are single Input.PAD bits; a `to` of 0 swallows the button.
+--- Sticks and triggers are not buttons and pass through unchanged.
+--- @param from number Input.PAD bit the player presses
+--- @param to number Input.PAD bit the game should receive, or 0 to swallow
+--- @return boolean stored
+function Input.remapPadButton(from, to)
+    if type(from) ~= "number" or type(to) ~= "number" then return false end
+    if not Crabe._inputRemap then return false end
+    return Crabe._inputRemap(Input.DEVICE.PAD, from, to)
+end
+
+--- Removes the remaps of one device, or of all of them when `device` is omitted.
+--- @param device number|nil An Input.DEVICE value
+function Input.clearRemap(device)
+    if not Crabe._inputRemapClear then return end
+    Crabe._inputRemapClear(device)
+end
+
+--- Returns the whole mouse wheel notches the game has read since the last call: positive up, negative down, 0 when
+--- the wheel did not move or this loader predates it. Call it once per tick: each call hands the notches out once.
+--- @return number notches
+function Input.wheel()
+    if not Crabe._mouseWheel then return 0 end
+    return Crabe._mouseWheel() or 0
+end
+
+--- Returns the DirectInput scan code of a Windows virtual key, or 0 when it has none (mouse buttons, say).
+--- @param vk number Windows Virtual Key code
+--- @return number scanCode
+function Input.scanCode(vk)
+    if type(vk) ~= "number" or not Crabe._keyScanCode then return 0 end
+    return Crabe._keyScanCode(vk)
+end
+
+--- Returns a key's name on the player's own keyboard layout ("Z" where a QWERTY keyboard says "W"), or "".
+--- @param scanCode number DirectInput scan code
+--- @return string name
+function Input.keyName(scanCode)
+    if type(scanCode) ~= "number" or not Crabe._keyName then return "" end
+    return Crabe._keyName(scanCode)
+end
+
 --- Binds a virtual key to a Lua callback function.
 --- @param vk number Windows Virtual Key code
 --- @param callback function Function to invoke on key down

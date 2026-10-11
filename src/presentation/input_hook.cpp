@@ -11,8 +11,10 @@
 #include <format>
 #include <string>
 #include <windows.h>
+#include <Xinput.h>
 
 #include "presentation/input_hook.hpp"
+#include "presentation/input_remap.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "shared/logger.hpp"
 
@@ -72,6 +74,13 @@ uint32_t __stdcall InputHook::hkXInputGetState(uint32_t userIndex, void* state)
         if (result == ERROR_SUCCESS) self._connected[userIndex].fetch_add(1, std::memory_order_relaxed);
     }
     self._pads.observe(userIndex, result, state);
+
+    // observe() has already kept the real buttons for mods, so the remap only touches what the
+    // game receives; while captured the game's copy is blank and there is nothing to remap.
+    if (result == ERROR_SUCCESS && state && !self._pads.isCaptured()) {
+        XINPUT_GAMEPAD& gamepad = static_cast<XINPUT_STATE*>(state)->Gamepad;
+        gamepad.wButtons = InputRemap::get().remapPad(gamepad.wButtons);
+    }
     return result;
 }
 

@@ -79,6 +79,9 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
     src/presentation/pad_state.cpp
+    src/presentation/input_remap.cpp
+    src/presentation/input_remap_natives.cpp
+    src/presentation/dinput_hook.cpp
     src/presentation/imgui_bindings.cpp
     src/presentation/draw_buffer.cpp
     src/presentation/texture_cache.cpp
@@ -362,6 +365,19 @@ else()
     target_compile_options(test_vfs_override PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(test_input_remap
+    tests/cpp/test_input_remap.cpp
+    src/presentation/input_remap.cpp
+)
+target_include_directories(test_input_remap PRIVATE
+    include
+)
+if(MSVC)
+    target_compile_options(test_input_remap PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_input_remap PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(test_draw_primitives
     tests/cpp/test_draw_primitives.cpp
     src/presentation/draw_buffer.cpp
@@ -634,6 +650,7 @@ endif()
 
 enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
+add_test(NAME test_input_remap COMMAND test_input_remap)
 add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)

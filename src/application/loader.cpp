@@ -33,7 +33,9 @@
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
+#include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
+#include "presentation/input_remap.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
 #include "infrastructure/vfs_hook.hpp"
@@ -425,6 +427,8 @@ void Loader::ensureRuntimeReady(void* L)
     // would otherwise keep Escape, Enter and the pad away from the game.
     setCapturedKeys({});
     crabe::presentation::InputHook::get().setCaptured(false);
+    // Same for remaps: the mod that set them re-applies its own in the new state.
+    crabe::presentation::InputRemap::get().clearAll();
 
     crabe::shared::Logger::getInstance().info("Loader: game Lua state 0x{:X} ready, injecting the API ({} state(s) so far).",
                             reinterpret_cast<uintptr_t>(L), _initializedStates.size());
@@ -634,6 +638,7 @@ bool Loader::initialize()
     }
 
     crabe::presentation::InputHook::get().initialize();
+    crabe::presentation::DirectInputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
     crabe::infrastructure::EngineFreeCamera::get().initialize();
     crabe::infrastructure::EngineMeridian::get().initialize();
@@ -671,6 +676,7 @@ void Loader::uninitialize()
     crabe::infrastructure::VfsHook::get().uninitialize();
     crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
+    crabe::presentation::DirectInputHook::get().uninitialize();
     crabe::infrastructure::EngineFreeCamera::get().uninitialize();
     crabe::infrastructure::EngineMeridian::get().uninitialize();
     crabe::infrastructure::EngineShaders::get().uninitialize();
