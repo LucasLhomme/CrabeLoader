@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Loose textures are served:** a `.tbody` under `mods/<mod>/textures/` now replaces the archive texture of the same id, with no zip needed. The VFS only saw Win32 file calls, and the engine reads textures out of `assets/textures/<xx>.zip` by hash, so loose textures were indexed but never used. A hook on the engine's file loader (`EngineAssetLoader`) now answers those requests with the mod's file, in a buffer from the engine's own allocator, and falls back to the archive on any failure. Only `.tbody` requests are touched. `crabe_disable_asset_override.txt` next to the executable turns it off; `crabe_probe_asset_loader.txt` logs every texture request. New `VfsOverrideManager::readOverrideBytes`, covered by `test_vfs_override`.
+
 ### Fixed
 - **Settings-screen options appear without an F4:** `Crabe.Settings` gave up looking for a screen after about eight seconds, and the chunk patch alone did not always catch it, so in 3 of 17 measured sessions the "Borderless Window" and "Frame Rate Limit" rows were missing from the video settings until a hot reload. A poller now checks about twice a second for the whole session, is owned by the loader so a mod reload cannot orphan it, and does nothing once the screen is wrapped. The saved window mode and frame limit were never affected: they are applied natively at startup.
 - **"Unlimited" frame rate is really unlimited:** the game presents with a sync interval of 1 (vsync) from its first frame, and the loader passed that through, so "Unlimited" and any cap at or above the display refresh stayed pinned at the refresh rate (180 FPS on a 180 Hz screen). The loader now presents with interval 0 in those cases and keeps the game's own value for lower caps. The sync interval and swap chain description are logged when they change.

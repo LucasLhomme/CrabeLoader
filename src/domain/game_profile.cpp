@@ -163,6 +163,10 @@ namespace {
         { "Script_TestActorStateByName",            0x0030FAD0 },
         // EngineActors reads ActorCommands::DamageRadius and CActor::FromHandle off this one.
         { "Script_DamageRadiusExceptActor",         0x00F76330 },
+        // EngineAssetLoader hooks this one: the engine's file loader (path, &size, 4 flags) -> heap buffer.
+        { "Asset_LoadFile",                         0x0001FAF0 },
+        // EngineAssetLoader allocates served buffers with this one (cdecl, size -> pointer): the engine frees them by pointer.
+        { "Engine_Alloc",                           0x00006E80 },
         // EngineMeridian hooks this one to protect node graph connectivity buffers.
         { "Meridian_DynArrayAppend",                0x002A9E90 },
         // EngineShaders hooks this one to supply fallback shaders for missing hashes.

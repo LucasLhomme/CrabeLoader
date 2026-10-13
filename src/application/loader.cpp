@@ -27,6 +27,7 @@
 #include "application/update_launcher.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/crash_reporter.hpp"
+#include "infrastructure/engine_asset_loader.hpp"
 #include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/engine_meridian.hpp"
 #include "infrastructure/engine_resolution.hpp"
@@ -665,6 +666,7 @@ bool Loader::initialize()
     crabe::infrastructure::EngineShaders::get().initialize();
     crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
     crabe::infrastructure::VfsHook::get().initialize();
+    crabe::infrastructure::EngineAssetLoader::get().initialize();
 
     // Two independent gates, and both must open. The config gate is the
     // player's stated preference; the profile gate is a safety property --
@@ -694,6 +696,7 @@ void Loader::uninitialize()
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
 #endif
     crabe::infrastructure::HttpRedirect::get().uninitialize();
+    crabe::infrastructure::EngineAssetLoader::get().uninitialize();
     crabe::infrastructure::VfsHook::get().uninitialize();
     crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
