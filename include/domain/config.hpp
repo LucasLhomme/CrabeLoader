@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares crabe.toml: general settings, display, keybinds, multiplayer, profiles, quarantine.
+** Declares crabe.toml: general, display, keybinds, multiplayer, http, profiles, quarantine.
 ** A malformed file is reported and fallen back from, never overwritten; comments survive.
 ** Holds no Win32 type; key names stay strings, resolved by shared/keybind_names.hpp.
 **
@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace crabe::domain {
@@ -158,6 +159,12 @@ namespace crabe::domain {
         [[nodiscard]] bool multiplayerEnabled() const noexcept { return _multiplayerEnabled; }
         [[nodiscard]] bool updateCheckEnabled() const noexcept { return _updateCheckEnabled; }
 
+        // [http.redirect]: server name -> "http(s)://host[:port]", in file order, unvalidated.
+        [[nodiscard]] const std::vector<std::pair<std::string, std::string>>& httpRedirects() const noexcept
+        {
+            return _httpRedirects;
+        }
+
         // Raw key names as written in [keybinds] ("F4", "Insert"), not yet
         // resolved to a virtual-key code -- that needs <windows.h>, which
         // this pure domain type does not pull in. See
@@ -216,6 +223,7 @@ namespace crabe::domain {
         void writeDisplaySection(const std::filesystem::path& gameRoot) const;
         bool _multiplayerEnabled{false};
         bool _updateCheckEnabled{true};
+        std::vector<std::pair<std::string, std::string>> _httpRedirects;
         std::string _hotReloadKeybind{"F4"};
         std::string _devOverlayKeybind{"Insert"};
 

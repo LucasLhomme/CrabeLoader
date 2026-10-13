@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <windows.h>
 
 #include "application/loader.hpp"
@@ -31,10 +32,13 @@
 #include "infrastructure/engine_meridian.hpp"
 #include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
+#include "infrastructure/http_redirect.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
+#include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
+#include "presentation/input_remap.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
 #include "infrastructure/vfs_hook.hpp"
@@ -426,6 +430,8 @@ void Loader::ensureRuntimeReady(void* L)
     // would otherwise keep Escape, Enter and the pad away from the game.
     setCapturedKeys({});
     crabe::presentation::InputHook::get().setCaptured(false);
+    // Same for remaps: the mod that set them re-applies its own in the new state.
+    crabe::presentation::InputRemap::get().clearAll();
 
     crabe::shared::Logger::getInstance().info("Loader: game Lua state 0x{:X} ready, injecting the API ({} state(s) so far).",
                             reinterpret_cast<uintptr_t>(L), _initializedStates.size());
@@ -542,6 +548,22 @@ void Loader::onKeyEvent(int virtualKey, bool isDown, bool isRepeat)
     }
 }
 
+// Builds the [http.redirect] rules, logs each one it rejects, and hooks WinHTTP when any rule is left.
+// Before the game's online code starts: a redirect installed late misses the requests already sent.
+static void installHttpRedirects(const crabe::domain::Config& config)
+{
+    auto& logger = crabe::shared::Logger::getInstance();
+    crabe::infrastructure::HttpRedirectRules rules;
+    for (const auto& [host, url] : config.httpRedirects()) {
+        if (auto added = rules.add(host, url); !added)
+            logger.error("Loader: crabe.toml [http.redirect] \"{}\": {}; rule ignored.", host, added.error());
+        else
+            logger.info("Loader: crabe.toml [http.redirect] {} -> {}", host, url);
+    }
+    if (!rules.empty() && !crabe::infrastructure::HttpRedirect::get().initialize(std::move(rules)))
+        logger.error("Loader: [http.redirect] is configured but WinHTTP could not be hooked.");
+}
+
 bool Loader::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -604,6 +626,8 @@ bool Loader::initialize()
         return false;
     }
 
+    installHttpRedirects(config);
+
     if (decision == crabe::domain::LoadDecision::Degraded) {
         const crabe::domain::PeIdentity identity = crabe::domain::runningGameIdentity();
 
@@ -635,6 +659,7 @@ bool Loader::initialize()
     }
 
     crabe::presentation::InputHook::get().initialize();
+    crabe::presentation::DirectInputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
     crabe::infrastructure::EngineFreeCamera::get().initialize();
     crabe::infrastructure::EngineMeridian::get().initialize();
@@ -670,10 +695,12 @@ void Loader::uninitialize()
 #if CRABELOADER_WITH_MULTIPLAYER
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
 #endif
+    crabe::infrastructure::HttpRedirect::get().uninitialize();
     crabe::infrastructure::EngineAssetLoader::get().uninitialize();
     crabe::infrastructure::VfsHook::get().uninitialize();
     crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
+    crabe::presentation::DirectInputHook::get().uninitialize();
     crabe::infrastructure::EngineFreeCamera::get().uninitialize();
     crabe::infrastructure::EngineMeridian::get().uninitialize();
     crabe::infrastructure::EngineShaders::get().uninitialize();

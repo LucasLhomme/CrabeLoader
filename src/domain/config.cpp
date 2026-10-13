@@ -30,8 +30,9 @@ namespace crabe::domain {
         constexpr std::array<std::string_view, 2> kKnownKeybindKeys = {"hotReload", "devOverlay"};
         constexpr std::array<std::string_view, 1> kKnownMultiplayerKeys = {"enabled"};
         constexpr std::array<std::string_view, 1> kKnownUpdatesKeys = {"check"};
-        constexpr std::array<std::string_view, 7> kKnownTopLevelKeys = {
-            "general", "display", "keybinds", "multiplayer", "updates", "profiles", "quarantine",
+        constexpr std::array<std::string_view, 1> kKnownHttpKeys = {"redirect"};
+        constexpr std::array<std::string_view, 8> kKnownTopLevelKeys = {
+            "general", "display", "keybinds", "multiplayer", "updates", "http", "profiles", "quarantine",
         };
 
         [[nodiscard]] ConfigDiagnostic makeDiagnostic(ConfigError code, const std::filesystem::path& file,
@@ -346,6 +347,18 @@ namespace crabe::domain {
             collectIgnored(*updates, kKnownUpdatesKeys, "updates", config._ignoredKeys);
         }
 
+        if (const auto* http = root["http"].as_table()) {
+            if (const auto* redirect = (*http)["redirect"].as_table()) {
+                for (auto&& entry : *redirect) {
+                    if (auto target = entry.second.value<std::string>())
+                        config._httpRedirects.emplace_back(std::string(entry.first.str()), *target);
+                    else
+                        config._ignoredKeys.push_back(std::format("http.redirect.{} (not a string)", entry.first.str()));
+                }
+            }
+            collectIgnored(*http, kKnownHttpKeys, "http", config._ignoredKeys);
+        }
+
         if (const auto* profiles = root["profiles"].as_table()) {
             for (auto&& entry : *profiles) {
                 const auto* profileTable = entry.second.as_table();
@@ -583,6 +596,12 @@ enabled = false
 
 [updates]
 check = true           # ask GitHub at launch whether a newer CrabeLoader exists; false = never connect
+
+# Sends the game's WinHTTP connections for a server name to another server.
+# Only the host and port change; "http://" also drops TLS, so a local server
+# needs no certificate. One line per server name, for example:
+#[http.redirect]
+#"api.example.com" = "http://127.0.0.1:8080"
 
 # A profile's "enabled" list decides which mods discoverAndLoadMods() even
 # considers -- filtering happens before dependency resolution, so a disabled
