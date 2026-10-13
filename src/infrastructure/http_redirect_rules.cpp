@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Parses HTTP redirect targets and matches server names against the configured rules.
-** Pure string work, unit-tested offline by tests/cpp/test_http_redirect.cpp.
+** Parses HTTP redirect targets and matches server names against configured redirect rules.
+** Validates host syntax and ports, normalising hostnames to lowercase for lookup.
+** Pure string operations with no sockets or WinHTTP calls; unit-tested offline.
 **
 ** Authors: @LucasLhomme
 */

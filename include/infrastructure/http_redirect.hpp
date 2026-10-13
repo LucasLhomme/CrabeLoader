@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the HTTP redirect: sends WinHTTP connections for configured server names to another server.
-** The rules come from crabe.toml [http.redirect]; this file knows no server name of its own.
+** Declares the HTTP redirect: routes WinHTTP connections for configured servers to another host.
+** The rules come from crabe.toml [http.redirect]; hooks WinHttpConnect and OpenRequest.
+** Knows no server names of its own; request paths, headers and bodies are untouched.
 **
 ** Authors: @LucasLhomme
 */

@@ -1,9 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Hooks the shared DirectInput device code and applies the input remap table to what the game reads.
-** The code addresses come from a throwaway keyboard device, so timing against the game's own setup is moot.
-** Unbuffered reads are told apart by buffer size, buffered reads by asking the device what it is.
+** Hooks shared DirectInput device code to apply the input remap table to game inputs.
+** Addresses come from a throwaway keyboard device, avoiding timing issues with game setup.
+** Unbuffered reads are told apart by buffer size, buffered reads by asking the device type.
 **
 ** Authors: @LucasLhomme
 */

@@ -2,8 +2,8 @@
 ** CrabeLoader
 ** File description:
 ** Lua natives that edit the input remap table: set one entry, or clear a device or everything.
-** Numbers only on purpose: a Lua boolean read as a number silently becomes false (see argToBoolean).
-** Devices are 0 keyboard (DIK scan codes), 1 mouse buttons (0-based), 2 pad buttons (XINPUT masks).
+** Numbers only: a Lua boolean read as a number silently becomes false (see argToBoolean).
+** Devices: 0 keyboard (DIK scan codes), 1 mouse buttons (0-based), 2 pad buttons (XINPUT masks).
 **
 ** Authors: @LucasLhomme
 */

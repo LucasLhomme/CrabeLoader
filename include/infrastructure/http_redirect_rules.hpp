@@ -2,7 +2,8 @@
 ** CrabeLoader
 ** File description:
 ** Declares the HTTP host redirect rules: which server names go elsewhere, and where.
-** Pure: parses "http://host[:port]" targets and matches server names; no socket, no hook.
+** Parses "http(s)://host[:port]" targets and matches wide server names case-insensitively.
+** Pure data structures with no sockets or hooks; installation is deferred to HttpRedirect.
 **
 ** Authors: @LucasLhomme
 */

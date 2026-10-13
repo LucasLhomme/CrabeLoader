@@ -1,9 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the DirectInput hook: applies the input remap table to the keyboard and mouse the game reads.
-** The image creates its devices through IDirectInput8A, so that is the interface whose code is hooked.
-** Forwards every call; only the buffers handed back to the game are rewritten, never the devices.
+** Declares the DirectInput hook: remaps keyboard and mouse input data read by the game.
+** Hooks IDirectInput8A devices created by the game image to intercept device state buffers.
+** Forwards every call; only buffers returned to the game are rewritten, never hardware devices.
 **
 ** Authors: @LucasLhomme
 */

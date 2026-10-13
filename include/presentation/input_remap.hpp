@@ -1,9 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the input remap table: which physical key, mouse button or pad button the game sees as another.
-** Lock-free: Lua writes entries from the script thread, the input hooks read them on whichever thread polls.
-** Pure data and arithmetic: it hooks nothing, knows no Win32 and no Lua; the hooks and natives feed on it.
+** Declares the input remap table: swaps physical keys, mouse buttons, or pad buttons for the game.
+** Lock-free: written from the script thread, read concurrently by polling input hook threads.
+** Pure data and arithmetic: hooks nothing and knows no Win32; feeds the hooks and Lua natives.
 **
 ** Authors: @LucasLhomme
 */

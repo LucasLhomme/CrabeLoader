@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares crabe.toml: general settings, display, keybinds, multiplayer, http redirects, profiles, quarantine.
+** Declares crabe.toml: general, display, keybinds, multiplayer, http, profiles, quarantine.
 ** A malformed file is reported and fallen back from, never overwritten; comments survive.
 ** Holds no Win32 type; key names stay strings, resolved by shared/keybind_names.hpp.
 **

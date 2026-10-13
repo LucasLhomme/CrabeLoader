@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Detours WinHttpConnect, WinHttpOpenRequest and WinHttpCloseHandle to apply the [http.redirect] rules.
-** A connection keeps its target from Connect to CloseHandle so OpenRequest knows whether to drop TLS.
+** Detours WinHttpConnect, WinHttpOpenRequest and WinHttpCloseHandle for [http.redirect] rules.
+** Tracks connections from Connect to CloseHandle so OpenRequest knows whether to strip TLS.
+** Leaves request paths, headers and payloads untouched; delegates rule lookup to HttpRedirectRules.
 **
 ** Authors: @LucasLhomme
 */

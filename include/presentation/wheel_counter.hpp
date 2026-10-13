@@ -1,9 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the mouse wheel counter: sums the wheel movement the game reads and hands it out in notches.
-** Lock-free: the input hook adds from whichever thread polls the mouse, the Lua thread takes at tick time.
-** Header-only and free of Win32 and Lua, so it is tested on its own.
+** Declares the mouse wheel counter: accumulates mouse wheel movements into discrete notches.
+** Lock-free: the input hook accumulates on polling threads, Lua consumes at tick time.
+** Header-only and free of Win32 and Lua, allowing isolated offline testing.
 **
 ** Authors: @LucasLhomme
 */
