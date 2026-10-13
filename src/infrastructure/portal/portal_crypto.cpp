@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstring>
+#include <memory>
 
 namespace crabe::infrastructure::portal {
 
@@ -358,6 +359,10 @@ std::optional<uint32_t> PortalCrypto::DecryptCharacterSku(
 
     // Verify magic
     uint16_t magic = (static_cast<uint16_t>(decrypted[10]) << 8) | decrypted[11];
+    if (magic != kExpectedMagic && magic != 0) {
+        return std::nullopt;
+    }
+
     uint32_t sku = (static_cast<uint32_t>(decrypted[0]) << 24) |
                    (static_cast<uint32_t>(decrypted[1]) << 16) |
                    (static_cast<uint32_t>(decrypted[2]) << 8)  |

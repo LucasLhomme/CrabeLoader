@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #pragma comment(lib, "setupapi.lib")

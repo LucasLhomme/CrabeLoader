@@ -24,12 +24,12 @@ PortalService& PortalService::Instance() {
 
 void PortalService::Initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOG_INFO("PortalService: Initialisation du sous-système de portail");
+    crabe::shared::Logger::getInstance().info("PortalService: Initialisation du sous-systeme de portail");
     m_driver = CreatePortalDriver();
     if (m_driver && m_driver->IsConnected()) {
-        LOG_INFO("PortalService: Détecté: %s", m_driver->GetTypeDescription());
+        crabe::shared::Logger::getInstance().info("PortalService: Detecte: {}", m_driver->GetTypeDescription());
     } else {
-        LOG_INFO("PortalService: Aucun portail physique actif au démarrage");
+        crabe::shared::Logger::getInstance().info("PortalService: Aucun portail physique actif au demarrage");
     }
     m_lastScanTime = std::chrono::steady_clock::now();
 }
@@ -53,7 +53,7 @@ void PortalService::ScanForDevice() {
     if (!m_driver || !m_driver->IsConnected()) {
         auto newDriver = CreatePortalDriver();
         if (newDriver && newDriver->IsConnected()) {
-            LOG_INFO("PortalService: Nouveau portail détecté: %s", newDriver->GetTypeDescription());
+            crabe::shared::Logger::getInstance().info("PortalService: Nouveau portail detecte: {}", newDriver->GetTypeDescription());
             m_driver = std::move(newDriver);
         }
     }
@@ -72,12 +72,12 @@ void PortalService::Update() {
 
     for (const auto& ev : events) {
         if (ev.type == PortalTagEvent::Type::Placed) {
-            LOG_INFO("PortalService: Figurine posée sur slot %d (SKU: %u)", ev.slot, ev.sku);
+            crabe::shared::Logger::getInstance().info("PortalService: Figurine posee sur slot {} (SKU: {})", ev.slot, ev.sku);
             if (ev.slot == 1) m_slot1Sku = ev.sku;
             else if (ev.slot == 2) m_slot2Sku = ev.sku;
             else if (ev.slot == 3) m_slot3Sku = ev.sku;
         } else {
-            LOG_INFO("PortalService: Figurine retirée du slot %d", ev.slot);
+            crabe::shared::Logger::getInstance().info("PortalService: Figurine retiree du slot {}", ev.slot);
             if (ev.slot == 1) m_slot1Sku.reset();
             else if (ev.slot == 2) m_slot2Sku.reset();
             else if (ev.slot == 3) m_slot3Sku.reset();
@@ -132,7 +132,7 @@ std::optional<PortalTagEvent> PortalService::PollEvent() {
 
 void PortalService::EmulatePlaceFigure(uint8_t slot, uint32_t sku) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOG_INFO("PortalService [Virtuel]: Pose de la figurine SKU %u sur le slot %d", sku, slot);
+    crabe::shared::Logger::getInstance().info("PortalService [Virtuel]: Pose de la figurine SKU {} sur le slot {}", sku, slot);
     if (slot == 1) m_slot1Sku = sku;
     else if (slot == 2) m_slot2Sku = sku;
     else if (slot == 3) m_slot3Sku = sku;
@@ -146,7 +146,7 @@ void PortalService::EmulatePlaceFigure(uint8_t slot, uint32_t sku) {
 
 void PortalService::EmulateRemoveFigure(uint8_t slot) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    LOG_INFO("PortalService [Virtuel]: Retrait de la figurine du slot %d", slot);
+    crabe::shared::Logger::getInstance().info("PortalService [Virtuel]: Retrait de la figurine du slot {}", slot);
     if (slot == 1) m_slot1Sku.reset();
     else if (slot == 2) m_slot2Sku.reset();
     else if (slot == 3) m_slot3Sku.reset();
