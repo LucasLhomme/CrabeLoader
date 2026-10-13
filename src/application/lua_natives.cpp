@@ -37,6 +37,7 @@
 #if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_natives.hpp"
 #endif
+#include "infrastructure/portal/portal_service.hpp"
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
 
@@ -760,6 +761,96 @@ namespace {
         return 1;
     }
 
+    // Crabe._portalIsConnected() -> bool
+    int __cdecl nativePortalIsConnected(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, crabe::infrastructure::portal::PortalService::Instance().IsConnected());
+        return 1;
+    }
+
+    // Crabe._portalGetStatus() -> connected, typeDesc, slot1Sku, slot2Sku, slot3Sku, diagnostic
+    int __cdecl nativePortalGetStatus(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        auto status = crabe::infrastructure::portal::PortalService::Instance().GetStatus();
+        lua.pushBoolean(L, status.connected);
+        lua.pushString(L, status.typeDescription);
+        lua.pushNumber(L, status.slot1Sku.value_or(0));
+        lua.pushNumber(L, status.slot2Sku.value_or(0));
+        lua.pushNumber(L, status.slot3Sku.value_or(0));
+        lua.pushString(L, status.diagnosticMessage);
+        return 6;
+    }
+
+    // Crabe._portalSetLed(slot, r, g, b) -> bool
+    int __cdecl nativePortalSetLed(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        auto slot = static_cast<uint8_t>(lua.argToNumber(L, 1, 0.0));
+        auto r = static_cast<uint8_t>(lua.argToNumber(L, 2, 0.0));
+        auto g = static_cast<uint8_t>(lua.argToNumber(L, 3, 0.0));
+        auto b = static_cast<uint8_t>(lua.argToNumber(L, 4, 0.0));
+
+        bool ok = crabe::infrastructure::portal::PortalService::Instance().SetLed(slot, r, g, b);
+        lua.pushBoolean(L, ok);
+        return 1;
+    }
+
+    // Crabe._portalPollEvent() -> eventType (0=none, 1=placed, 2=removed), slot, sku
+    int __cdecl nativePortalPollEvent(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        auto ev = crabe::infrastructure::portal::PortalService::Instance().PollEvent();
+        if (!ev.has_value()) {
+            lua.pushNumber(L, 0);
+            lua.pushNumber(L, 0);
+            lua.pushNumber(L, 0);
+            return 3;
+        }
+
+        lua.pushNumber(L, ev->type == crabe::infrastructure::portal::PortalTagEvent::Type::Placed ? 1 : 2);
+        lua.pushNumber(L, ev->slot);
+        lua.pushNumber(L, ev->sku);
+        return 3;
+    }
+
+    // Crabe._portalEmulatePlace(slot, sku) -> bool
+    int __cdecl nativePortalEmulatePlace(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        auto slot = static_cast<uint8_t>(lua.argToNumber(L, 1, 1.0));
+        auto sku = static_cast<uint32_t>(lua.argToNumber(L, 2, 0.0));
+
+        crabe::infrastructure::portal::PortalService::Instance().EmulatePlaceFigure(slot, sku);
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, true);
+            return 1;
+        }
+        return 0;
+    }
+
+    // Crabe._portalEmulateRemove(slot) -> bool
+    int __cdecl nativePortalEmulateRemove(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        auto slot = static_cast<uint8_t>(lua.argToNumber(L, 1, 1.0));
+
+        crabe::infrastructure::portal::PortalService::Instance().EmulateRemoveFigure(slot);
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, true);
+            return 1;
+        }
+        return 0;
+    }
+
 } // namespace
 
 bool crabe::lua_runtime::registerNatives(void* L)
@@ -823,6 +914,12 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsList",               &nativeVfsList },
         { "_vfsGetStats",           &nativeVfsGetStats },
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
+        { "_portalIsConnected",     &nativePortalIsConnected },
+        { "_portalGetStatus",       &nativePortalGetStatus },
+        { "_portalSetLed",          &nativePortalSetLed },
+        { "_portalPollEvent",       &nativePortalPollEvent },
+        { "_portalEmulatePlace",    &nativePortalEmulatePlace },
+        { "_portalEmulateRemove",   &nativePortalEmulateRemove },
     };
 
 #if CRABELOADER_WITH_MULTIPLAYER

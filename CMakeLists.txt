@@ -133,6 +133,9 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/http_redirect_rules.cpp
     src/infrastructure/http_redirect.cpp
     src/infrastructure/update_services.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_driver.cpp
+    src/infrastructure/portal/portal_service.cpp
 
     # Shared Layer
     src/shared/logger.cpp
@@ -258,6 +261,8 @@ endif()
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         dbghelp
+        hid
+        setupapi
         nlohmann_json::nlohmann_json
         tomlplusplus::tomlplusplus
 )
