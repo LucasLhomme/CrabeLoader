@@ -129,6 +129,8 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/lua_symbols.cpp
     src/infrastructure/vfs_override_manager.cpp
     src/infrastructure/vfs_hook.cpp
+    src/infrastructure/http_redirect_rules.cpp
+    src/infrastructure/http_redirect.cpp
     src/infrastructure/update_services.cpp
 
     # Shared Layer
@@ -376,6 +378,19 @@ if(MSVC)
     target_compile_options(test_input_remap PRIVATE /W4 /utf-8)
 else()
     target_compile_options(test_input_remap PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(test_http_redirect
+    tests/cpp/test_http_redirect.cpp
+    src/infrastructure/http_redirect_rules.cpp
+)
+target_include_directories(test_http_redirect PRIVATE
+    include
+)
+if(MSVC)
+    target_compile_options(test_http_redirect PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_http_redirect PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(test_draw_primitives

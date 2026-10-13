@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <windows.h>
 
 #include "application/loader.hpp"
@@ -30,6 +31,7 @@
 #include "infrastructure/engine_meridian.hpp"
 #include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
+#include "infrastructure/http_redirect.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
@@ -545,6 +547,22 @@ void Loader::onKeyEvent(int virtualKey, bool isDown, bool isRepeat)
     }
 }
 
+// Builds the [http.redirect] rules, logs each one it rejects, and hooks WinHTTP when any rule is left.
+// Before the game's online code starts: a redirect installed late misses the requests already sent.
+static void installHttpRedirects(const crabe::domain::Config& config)
+{
+    auto& logger = crabe::shared::Logger::getInstance();
+    crabe::infrastructure::HttpRedirectRules rules;
+    for (const auto& [host, url] : config.httpRedirects()) {
+        if (auto added = rules.add(host, url); !added)
+            logger.error("Loader: crabe.toml [http.redirect] \"{}\": {}; rule ignored.", host, added.error());
+        else
+            logger.info("Loader: crabe.toml [http.redirect] {} -> {}", host, url);
+    }
+    if (!rules.empty() && !crabe::infrastructure::HttpRedirect::get().initialize(std::move(rules)))
+        logger.error("Loader: [http.redirect] is configured but WinHTTP could not be hooked.");
+}
+
 bool Loader::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -606,6 +624,8 @@ bool Loader::initialize()
         logger.error("========================================================================");
         return false;
     }
+
+    installHttpRedirects(config);
 
     if (decision == crabe::domain::LoadDecision::Degraded) {
         const crabe::domain::PeIdentity identity = crabe::domain::runningGameIdentity();
@@ -673,6 +693,7 @@ void Loader::uninitialize()
 #if CRABELOADER_WITH_MULTIPLAYER
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
 #endif
+    crabe::infrastructure::HttpRedirect::get().uninitialize();
     crabe::infrastructure::VfsHook::get().uninitialize();
     crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
