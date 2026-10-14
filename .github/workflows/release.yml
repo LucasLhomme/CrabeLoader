@@ -119,8 +119,9 @@ jobs:
           fi
           cp build/Release/CrabeInstaller.exe package/
 
-          # Copy mod template and EmmyLua documentation
+          # Copy mod template, the two ready-to-use mods, and EmmyLua documentation
           cp -r mods/_template package/mods/
+          cp mods/resolution.lua mods/window_mode.lua package/mods/
           mkdir -p package/docs
           cp docs/crabe_api.def.lua package/docs/
 
@@ -136,7 +137,11 @@ jobs:
           Installation (manual):
           1. Rename the game's bink2w32.dll to bink2w32_orig.dll (next to DisneyInfinity3.exe).
           2. Place this bink2w32.dll in the same directory.
-          3. Place your mods into the 'mods/' subfolder.
+          3. Copy the 'mods/' folder of this zip next to it, then add your own mods to it.
+
+          Ready-to-use mods in 'mods/' (delete a file to turn it off):
+          - resolution.lua: extra resolutions (4K, ultrawide, Steam Deck...) and a frame rate limit in the Video Settings.
+          - window_mode.lua: a Borderless / Windowed choice in the Video Settings.
 
           In-game: press Insert for the CrabeLoader overlay. F5 opens the mod menu if CrabeMenu is installed.
 

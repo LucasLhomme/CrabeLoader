@@ -179,6 +179,26 @@ namespace {
         { "ResolutionList_Contains",                0x0065A010 },
         // EngineResolution recentres full-screen Scaleform movies to 16:9 through this one.
         { "Flash_Movie_SetViewport",                0x003F3C20 },
+        { "g_Gateway",                              0x01D3E278 },
+        { "g_VirtualReader",                        0x01E1CEB8 },
+        { "Gateway::AddTag8",                       0x0003A320 },
+        { "Gateway::RemoveTagByUid",                0x0002AF60 },
+        { "Gateway::MapUIDToTag",                   0x000271E0 },
+        { "Gateway::GetOpenTagSlot",                0x0002A630 },
+        { "VirtualReaderSystem::ChangeAvatar",      0x00773060 },
+        { "VirtualReaderSystem::ReadAvatarTag",     0x007495BC },
+        { "Gateway::WriteExperience",               0x0002A2A0 },
+        { "Gateway::WriteLevel",                    0x0002A320 },
+        { "Gateway::WriteLastPlayedTime",           0x0002A3A0 },
+        { "Gateway::WriteAction",                   0x0002A420 },
+        { "Gateway::WriteOwner",                    0x0002A4A0 },
+        { "Gateway::WriteProgressionData",          0x0002A5B0 },
+        { "MifareMini::WriteExperience",            0x00026C00 },
+        { "MifareMini::WriteLevel",                 0x00026CA0 },
+        { "MifareMini::WriteLastPlayedTime",        0x00026D50 },
+        { "MifareMini::WriteAction",                0x00026DF0 },
+        { "MifareMini::WriteOwner",                 0x00026E70 },
+        { "MifareMini::WriteProgressionData",       0x00026F40 },
     };
 
 

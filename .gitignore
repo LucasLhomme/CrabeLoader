@@ -21,6 +21,7 @@ backups/
 decypted/*
 include/application/embedded_api.hpp
 include/cli/embedded_api_def.hpp
+AUDIT.md
 AUDIT_*.md
 DEVLOG_*.md
 telemetry_report.json

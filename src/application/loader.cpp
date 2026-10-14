@@ -29,6 +29,7 @@
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/engine_asset_loader.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_gateway.hpp"
 #include "infrastructure/engine_meridian.hpp"
 #include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
@@ -45,6 +46,7 @@
 #if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_manager.hpp"
 #endif
+#include "infrastructure/portal/portal_service.hpp"
 #include "presentation/render_hook.hpp"
 #include "domain/config.hpp"
 #include "domain/game_profile.hpp"
@@ -327,6 +329,8 @@ void Loader::runTicks(void* L)
     drainPendingSnippets(L);
     drainLuaOutput(L);
     drainQuarantineReport(L);
+
+    crabe::infrastructure::portal::PortalService::Instance().Update();
 
     crabe::infrastructure::CrashHandler::runGuarded([L]() {
         crabe::domain::ModManager::get().dispatchDraw(L);
@@ -662,11 +666,13 @@ bool Loader::initialize()
     crabe::presentation::DirectInputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
     crabe::infrastructure::EngineFreeCamera::get().initialize();
+    crabe::infrastructure::EngineGateway::get().initialize();
     crabe::infrastructure::EngineMeridian::get().initialize();
     crabe::infrastructure::EngineShaders::get().initialize();
     crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
     crabe::infrastructure::VfsHook::get().initialize();
     crabe::infrastructure::EngineAssetLoader::get().initialize();
+    crabe::infrastructure::portal::PortalService::Instance().Initialize();
 
     // Two independent gates, and both must open. The config gate is the
     // player's stated preference; the profile gate is a safety property --
@@ -692,6 +698,7 @@ bool Loader::initialize()
 
 void Loader::uninitialize()
 {
+    crabe::infrastructure::portal::PortalService::Instance().Shutdown();
 #if CRABELOADER_WITH_MULTIPLAYER
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
 #endif
@@ -702,6 +709,7 @@ void Loader::uninitialize()
     crabe::presentation::InputHook::get().uninitialize();
     crabe::presentation::DirectInputHook::get().uninitialize();
     crabe::infrastructure::EngineFreeCamera::get().uninitialize();
+    crabe::infrastructure::EngineGateway::get().uninitialize();
     crabe::infrastructure::EngineMeridian::get().uninitialize();
     crabe::infrastructure::EngineShaders::get().uninitialize();
     crabe::infrastructure::EngineResolution::get().uninitialize();
