@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** The DLL version resource CMake stamps in from src/version.rc.in; never edit the output.
-** This is what a file properties dialog shows for dinput8.dll, so it must match the build.
+** This is what a file properties dialog shows for CrabeLoader.asi, so it must match the build.
 ** Declares no code; the same values reach C++ through include/shared/version.hpp.in.
 **
 ** Authors: @LucasLhomme
@@ -22,9 +22,9 @@
 
 #define VER_COMPANYNAME_STR         "CrabeLoader Team\0"
 #define VER_FILEDESCRIPTION_STR     "CrabeLoader Proxy DLL for Disney Infinity 3.0\0"
-#define VER_INTERNALNAME_STR        "dinput8\0"
+#define VER_INTERNALNAME_STR        "CrabeLoader\0"
 #define VER_LEGALCOPYRIGHT_STR      "Copyright (C) 2026\0"
-#define VER_ORIGINALFILENAME_STR    "dinput8.dll\0"
+#define VER_ORIGINALFILENAME_STR    "CrabeLoader.asi\0"
 #define VER_PRODUCTNAME_STR         "CrabeLoader\0"
 
 VS_VERSION_INFO VERSIONINFO

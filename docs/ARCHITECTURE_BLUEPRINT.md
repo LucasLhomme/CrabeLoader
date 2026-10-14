@@ -106,7 +106,7 @@ flowchart TD
     end
 
     subgraph L1["Layer 1: Infrastructure Core (C++23) — CrabeLoader"]
-        INJECT["dinput8.dll Proxy (DirectInput forwarding)"]
+        INJECT["dinput8.dll Bootstrap (DirectInput forwarding, starts CrabeLoader.asi at the game entry point)"]
         ASI["Native .asi Plugin Loader (before the game entry point) + C Plugin API"]
         SEH["Hardware Crash Armor (SEH __try / __except)"]
         HOOKS["Neutral System Hooks (MinHook DX11 Present & luaL_loadbuffer)"]

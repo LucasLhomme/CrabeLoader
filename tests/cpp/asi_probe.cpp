@@ -45,6 +45,16 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved)
 #endif
 }
 
+/// Stands in for CrabeLoader.asi's bootstrap export in test_bootstrap; the crashing build faults here too.
+extern "C" __declspec(dllexport) void __cdecl CrabeLoaderBootstrap()
+{
+#if defined(CRABE_ASI_PROBE_INIT_CRASHES)
+    *static_cast<volatile int*>(nullptr) = 2;
+#else
+    SetEnvironmentVariableW(L"CRABE_BOOTSTRAP_CALLED", L"yes");
+#endif
+}
+
 /// Calls every function of the plugin API once, leaving traces the test reads back; the crashing build faults.
 extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginApi* api)
 {

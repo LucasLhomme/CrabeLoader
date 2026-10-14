@@ -50,9 +50,10 @@ git config blame.ignoreRevsFile .git-blame-ignore-revs
 cmake --build build --config Release
 ```
 
-The compiled proxy DLL will be located at:
+The build produces two files, the loader and the bootstrap that starts it:
 
 ```text
+build/Release/CrabeLoader.asi
 build/Release/dinput8.dll
 ```
 
@@ -180,7 +181,7 @@ Do not put comments inside a function body.
 
 ## 🧪 Testing Your Changes
 
-1. **Deploy Locally:** Copy your built `build/Release/dinput8.dll` next to `DisneyInfinity3.exe`. No game file is renamed; deleting `dinput8.dll` removes the loader.
+1. **Deploy Locally:** Copy your built `build/Release/CrabeLoader.asi` and `build/Release/dinput8.dll` next to `DisneyInfinity3.exe`. No game file is renamed; deleting both files removes the loader.
 2. **Verify Logs:** Inspect `loader.log` generated in the game root directory. Verify there are no hook errors, syntax warnings, or unexpected exceptions.
 3. **Hot-Reload Testing:** If you are testing Lua scripts, press **`F4`** in-game to verify that your modifications reload cleanly without leaking state.
 4. **Automated CI:** Every PR triggers our GitHub Actions pipeline (`CI - Build & Test`), building the solution on `windows-latest` MSVC and validating artifact production.

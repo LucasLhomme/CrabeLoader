@@ -15,18 +15,33 @@
 
 namespace crabe::shared {
 
+    namespace {
+
+        /// Reports whether some bytes hold a text as UTF-16.
+        bool containsWideText(const void* bytes, std::size_t size, std::wstring_view wanted) noexcept
+        {
+            const std::size_t needle = wanted.size() * sizeof(wchar_t);
+            if (!bytes || size < needle)
+                return false;
+            const auto* data = static_cast<const unsigned char*>(bytes);
+            const auto* text = reinterpret_cast<const unsigned char*>(wanted.data());
+            for (std::size_t offset = 0; offset + needle <= size; ++offset) {
+                if (data[offset] == text[0] && std::memcmp(data + offset, text, needle) == 0)
+                    return true;
+            }
+            return false;
+        }
+
+    } // namespace
+
     bool containsLoaderMarker(const void* bytes, std::size_t size) noexcept
     {
-        const std::size_t needle = kLoaderDescription.size() * sizeof(wchar_t);
-        if (!bytes || size < needle)
-            return false;
-        const auto* data = static_cast<const unsigned char*>(bytes);
-        const auto* text = reinterpret_cast<const unsigned char*>(kLoaderDescription.data());
-        for (std::size_t offset = 0; offset + needle <= size; ++offset) {
-            if (data[offset] == text[0] && std::memcmp(data + offset, text, needle) == 0)
-                return true;
-        }
-        return false;
+        return containsWideText(bytes, size, kLoaderDescription);
+    }
+
+    bool containsBootstrapMarker(const void* bytes, std::size_t size) noexcept
+    {
+        return containsWideText(bytes, size, kBootstrapDescription);
     }
 
 } // namespace crabe::shared

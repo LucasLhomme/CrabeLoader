@@ -47,7 +47,7 @@ namespace crabe::installer {
                "      check = false\r\n"
                "\r\n"
                "UNINSTALL\r\n"
-               "  Delete dinput8.dll from the game folder. No game file was changed.\r\n"
+               "  Delete dinput8.dll and CrabeLoader.asi from the game folder. No game file was changed.\r\n"
                "\r\n"
                "\r\n"
                "CrabeLoader - LISEZMOI\r\n"
@@ -85,7 +85,8 @@ namespace crabe::installer {
                "      check = false\r\n"
                "\r\n"
                "D\xC3\x89SINSTALLER\r\n"
-               "  Supprimez dinput8.dll du dossier du jeu. Aucun fichier du jeu n'a \xC3\xA9t\xC3\xA9 modifi\xC3\xA9.\r\n";
+               "  Supprimez dinput8.dll et CrabeLoader.asi du dossier du jeu. Aucun fichier du jeu n'a \xC3\xA9t\xC3\xA9 "
+               "modifi\xC3\xA9.\r\n";
     }
 
 } // namespace crabe::installer

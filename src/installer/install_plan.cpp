@@ -16,13 +16,15 @@ namespace crabe::installer {
     {
         switch (plan) {
         case Plan::FreshInstall:
-            return "fresh install: CrabeLoader is added as dinput8.dll";
+            return "fresh install: CrabeLoader.asi and its dinput8.dll bootstrap are added";
         case Plan::Update:
-            return "update: CrabeLoader's dinput8.dll is replaced";
+            return "update: CrabeLoader.asi and its dinput8.dll bootstrap are replaced";
         case Plan::NotAGameFolder:
             return "this folder does not contain the game executable";
-        case Plan::LoaderSlotTaken:
+        case Plan::BootstrapSlotTaken:
             return "dinput8.dll is already there and is not CrabeLoader";
+        case Plan::LoaderSlotTaken:
+            return "CrabeLoader.asi is already there and is not CrabeLoader";
         case Plan::LegacyOriginalMissing:
             return "bink2w32.dll is an old CrabeLoader and the game's original bink2w32_orig.dll is gone";
         }
@@ -33,11 +35,14 @@ namespace crabe::installer {
     {
         if (!facts.hasGameExecutable)
             return Plan::NotAGameFolder;
-        if (facts.loader == FileKind::Other)
+        if (facts.bootstrap == FileKind::Other)
+            return Plan::BootstrapSlotTaken;
+        if (facts.loader == FileKind::Other || facts.loader == FileKind::Bootstrap)
             return Plan::LoaderSlotTaken;
         if (facts.legacyProxy == FileKind::Loader && !facts.hasLegacyBackup)
             return Plan::LegacyOriginalMissing;
-        return facts.loader == FileKind::Loader ? Plan::Update : Plan::FreshInstall;
+        const bool anyInstalled = facts.loader != FileKind::Missing || facts.bootstrap != FileKind::Missing;
+        return anyInstalled ? Plan::Update : Plan::FreshInstall;
     }
 
     bool restoresLegacyOriginal(const FolderFacts& facts) noexcept

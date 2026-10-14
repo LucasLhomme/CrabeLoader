@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the installer's engine: look at a game folder, then put dinput8.dll in place.
+** Declares the installer's engine: inspect a game folder, then put CrabeLoader's files in place.
 ** Every step is a rename or a new file, never a delete of a foreign file, and it rolls back.
 ** Shows no window and picks no folder; installer/main.cpp does.
 **
@@ -25,6 +25,7 @@ namespace crabe::installer {
 
     enum class InstallErrorCode : std::uint8_t {
         NotAGameFolder,
+        BootstrapSlotTaken,
         LoaderSlotTaken,
         LegacyOriginalMissing,
         PayloadInvalid,
@@ -45,18 +46,23 @@ namespace crabe::installer {
         bool readmeCreated{false};
     };
 
+    struct InstallPayload {
+        std::span<const std::byte> loader;
+        std::span<const std::byte> bootstrap;
+    };
+
     class GameInstaller final {
     public:
         explicit GameInstaller(std::filesystem::path gameRoot);
 
         [[nodiscard]] const std::filesystem::path& gameRoot() const noexcept { return _gameRoot; }
 
-        /// Reads the facts planInstall() decides from: a file is CrabeLoader when it carries the loader description.
+        /// Reads the facts planInstall() decides from: a file is CrabeLoader or its bootstrap by its description.
         [[nodiscard]] FolderFacts inspect() const;
 
         /// Applies planInstall() to the folder, then puts a 1.x install's kept Bink DLL back when there is one.
         /// A refusal changes nothing on disk, and a failure part-way restores the folder to how it was found.
-        [[nodiscard]] std::expected<InstallReport, InstallError> install(std::span<const std::byte> payload) const;
+        [[nodiscard]] std::expected<InstallReport, InstallError> install(const InstallPayload& payload) const;
 
     private:
         std::filesystem::path _gameRoot;

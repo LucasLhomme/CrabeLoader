@@ -19,6 +19,7 @@
 #include <optional>
 
 #include "domain/config.hpp"
+#include "shared/loader_marker.hpp"
 #include "shared/logger.hpp"
 
 namespace crabe::infrastructure {
@@ -28,6 +29,7 @@ namespace crabe::infrastructure {
         namespace fs = std::filesystem;
 
         constexpr std::size_t kHeaderBytes = 4096;
+        constexpr std::uintmax_t kLargestInspectedFile = 64ull * 1024 * 1024;
 
         struct GuardedLoad {
             HMODULE module;
@@ -45,6 +47,21 @@ namespace crabe::infrastructure {
             stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
             bytes.resize(static_cast<std::size_t>(stream.gcount()));
             return bytes;
+        }
+
+        /// Whether a file is a CrabeLoader build, such as a renamed copy or a backup left as .asi. Loading it
+        /// would start a second loader beside this one, since two .asi copies have the same rank.
+        bool isLoaderCopy(const fs::path& file)
+        {
+            std::error_code error;
+            const std::uintmax_t size = fs::file_size(file, error);
+            if (error || size > kLargestInspectedFile)
+                return false;
+            std::ifstream stream(file, std::ios::binary);
+            std::vector<char> bytes(static_cast<std::size_t>(size));
+            if (!stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size())))
+                return false;
+            return crabe::shared::containsLoaderMarker(bytes.data(), bytes.size());
         }
 
         /// Returns a path as UTF-8 for the log and Lua, which never throws whatever the file name holds.
@@ -83,6 +100,21 @@ namespace crabe::infrastructure {
                 result.exceptionCode = GetExceptionCode();
             }
             return result;
+        }
+
+        /// Returns the file this code was loaded from, so CrabeLoader.asi never lists or loads itself.
+        fs::path ownModulePath()
+        {
+            HMODULE self = nullptr;
+            if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                    reinterpret_cast<LPCWSTR>(&ownModulePath), &self))
+                return {};
+            std::wstring path(MAX_PATH, L'\0');
+            const DWORD length = GetModuleFileNameW(self, path.data(), static_cast<DWORD>(path.size()));
+            if (length == 0 || length >= path.size())
+                return {};
+            path.resize(length);
+            return fs::path(path);
         }
 
         /// Writes one record to the log, at a level matching how it went.
@@ -149,6 +181,11 @@ namespace crabe::infrastructure {
             record.detail = problem;
             return record;
         }
+        if (isLoaderCopy(candidate.path)) {
+            record.status = AsiLoadStatus::Skipped;
+            record.detail = "another copy of CrabeLoader; only one loader may run";
+            return record;
+        }
 
         const std::wstring path = candidate.path.wstring();
         if (const HMODULE present = GetModuleHandleW(path.c_str())) {
@@ -191,8 +228,12 @@ namespace crabe::infrastructure {
                 _gameRoot = gameRoot;
             }
             const crabe::domain::Config config = crabe::domain::Config::peek(gameRoot);
-            const std::vector<crabe::domain::AsiCandidate> candidates =
-                crabe::domain::discoverAsiPlugins(gameRoot, config);
+            std::vector<crabe::domain::AsiCandidate> candidates = crabe::domain::discoverAsiPlugins(gameRoot, config);
+            const fs::path self = ownModulePath();
+            std::erase_if(candidates, [&](const crabe::domain::AsiCandidate& candidate) {
+                std::error_code error;
+                return !self.empty() && fs::equivalent(candidate.path, self, error);
+            });
 
             std::size_t loaded = 0;
             std::size_t problems = 0;

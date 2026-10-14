@@ -246,6 +246,17 @@ void testLoading(const fs::path& probe, const fs::path& refusingProbe)
     const auto again = crabe::infrastructure::loadAsiPlugin(candidate("probe.asi"));
     require(again.status == AsiLoadStatus::AlreadyLoaded, "a plugin already in the process is not loaded twice");
 
+    fs::copy_file(probe, root / "scripts" / "loader_copy.asi");
+    {
+        std::ofstream copy(root / "scripts" / "loader_copy.asi", std::ios::binary | std::ios::app);
+        const std::wstring_view marker = L"CrabeLoader Proxy DLL for Disney Infinity 3.0";
+        copy.write(reinterpret_cast<const char*>(marker.data()), static_cast<std::streamsize>(marker.size() * 2));
+    }
+    const auto loaderCopy = crabe::infrastructure::loadAsiPlugin(candidate("loader_copy.asi"));
+    require(loaderCopy.status == AsiLoadStatus::Skipped && loaderCopy.detail.find("another copy of CrabeLoader") == 0,
+            "a CrabeLoader copy left as .asi is never started beside the running loader");
+    require(GetModuleHandleW((root / "scripts" / "loader_copy.asi").c_str()) == nullptr, "and it is not loaded");
+
     const auto refused = crabe::infrastructure::loadAsiPlugin(candidate("refuses.asi"));
     require(refused.status == AsiLoadStatus::Failed, "a DllMain returning FALSE fails the load");
     require(refused.detail.find("refused") != std::string::npos, "the refusal is explained: " + refused.detail);

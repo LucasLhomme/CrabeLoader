@@ -23,7 +23,7 @@ option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
 option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
 option(CRABELOADER_BUILD_CLI "Build crabe-cli, the offline mod-authoring tool." OFF)
 option(CRABELOADER_BUILD_INSTALLER "Build CrabeInstaller.exe, the one-click installer." OFF)
-option(CRABELOADER_INSTALLER_EMBED_DLL "Embed dinput8.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
+option(CRABELOADER_INSTALLER_EMBED_DLL "Embed CrabeLoader.asi and dinput8.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
 
 # The test suite exercises the real crabe-cli.exe (new-mod's scaffold is fed
 # straight into validate, end to end), so a test build needs it regardless of
@@ -136,7 +136,6 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/http_redirect_rules.cpp
     src/infrastructure/http_redirect.cpp
     src/infrastructure/update_services.cpp
-    src/infrastructure/dinput8_proxy.cpp
     src/infrastructure/loader_instance.cpp
     src/infrastructure/asi_loader.cpp
     src/infrastructure/entry_point_hook.cpp
@@ -200,11 +199,31 @@ set(CRABELOADER_SOURCES
 
 if(CRABELOADER_AS_SHARED)
     add_library(${PROJECT_NAME} SHARED ${CRABELOADER_SOURCES})
-    # The game imports dinput8.dll and Windows looks in the game folder first,
-    # so the loader answers as dinput8.dll and forwards to the system copy
-    # (src/infrastructure/dinput8_proxy.cpp). proxy.hpp keeps the Bink exports,
-    # so the same file still works as the bink2w32.dll of a 1.x install.
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "dinput8")
+    # The loader is an .asi plugin: the bootstrap dinput8.dll below loads it,
+    # and so does any other ASI loader. proxy.hpp keeps the Bink exports, so the
+    # same file still works as the bink2w32.dll of a 1.x install.
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "CrabeLoader" SUFFIX ".asi")
+
+    # The game imports dinput8.dll and Windows looks in the game folder first:
+    # this small DLL answers as dinput8.dll, forwards DirectInput to the system
+    # copy, and starts CrabeLoader.asi at the game's entry point.
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/bootstrap/bootstrap.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/bootstrap/bootstrap.rc"
+        @ONLY
+    )
+    add_library(CrabeBootstrap SHARED
+        src/bootstrap/bootstrap_main.cpp
+        src/bootstrap/load_loader.cpp
+        src/bootstrap/dinput8_proxy.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/bootstrap/bootstrap.rc"
+    )
+    set_target_properties(CrabeBootstrap PROPERTIES OUTPUT_NAME "dinput8")
+    target_include_directories(CrabeBootstrap PRIVATE include)
+    target_compile_definitions(CrabeBootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(MSVC)
+        target_compile_options(CrabeBootstrap PRIVATE /W4 /utf-8)
+    endif()
 else()
     add_executable(${PROJECT_NAME} ${CRABELOADER_SOURCES})
 endif()
@@ -530,6 +549,22 @@ foreach(probe IN ITEMS asi_probe asi_probe_refuses asi_probe_init_crash)
     endif()
 endforeach()
 
+# test_bootstrap starts a probe as CrabeLoader.asi the way the bootstrap dinput8.dll does,
+# and checks every outcome it reports: started, missing, refused, crashed.
+add_executable(test_bootstrap
+    tests/cpp/test_bootstrap.cpp
+    src/bootstrap/load_loader.cpp
+    src/shared/loader_marker.cpp
+)
+add_dependencies(test_bootstrap asi_probe asi_probe_refuses asi_probe_init_crash)
+target_include_directories(test_bootstrap PRIVATE include)
+target_compile_definitions(test_bootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(MSVC)
+    target_compile_options(test_bootstrap PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_bootstrap PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(test_asi_plugins
     tests/cpp/test_asi_plugins.cpp
     src/domain/asi_plugins.cpp
@@ -539,6 +574,7 @@ add_executable(test_asi_plugins
     src/domain/semver.cpp
     src/infrastructure/asi_loader.cpp
     src/application/plugin_api.cpp
+    src/shared/loader_marker.cpp
     src/shared/logger.cpp
     src/shared/version.cpp
 )
@@ -579,12 +615,12 @@ if(CRABELOADER_BUILD_INSTALLER)
     if(CRABE_INSTALLER_EMBED)
         file(GENERATE
             OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
-            CONTENT "101 RCDATA \"$<TARGET_FILE:${PROJECT_NAME}>\"\n"
+            CONTENT "101 RCDATA \"$<TARGET_FILE:${PROJECT_NAME}>\"\n102 RCDATA \"$<TARGET_FILE:CrabeBootstrap>\"\n"
         )
     else()
         file(GENERATE
             OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
-            CONTENT "/* no embedded payload: the installer looks for dinput8.dll beside itself */\n"
+            CONTENT "/* no embedded payload: the installer looks for CrabeLoader.asi and dinput8.dll beside itself */\n"
         )
     endif()
 
@@ -614,10 +650,10 @@ if(CRABELOADER_BUILD_INSTALLER)
     endif()
 
     if(CRABE_INSTALLER_EMBED)
-        add_dependencies(CrabeInstaller ${PROJECT_NAME})
+        add_dependencies(CrabeInstaller ${PROJECT_NAME} CrabeBootstrap)
         add_custom_command(TARGET CrabeInstaller PRE_BUILD
             COMMAND ${CMAKE_COMMAND} -E touch "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
-            COMMENT "Refreshing the embedded dinput8.dll"
+            COMMENT "Refreshing the embedded CrabeLoader.asi and dinput8.dll"
         )
     endif()
 endif()
@@ -729,6 +765,8 @@ add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
+add_test(NAME test_bootstrap COMMAND test_bootstrap $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>
+    $<TARGET_FILE:asi_probe_init_crash>)
 add_test(NAME test_asi_plugins COMMAND test_asi_plugins $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>
     $<TARGET_FILE:asi_probe_init_crash>)
 add_test(NAME crabe_fate COMMAND crabe_fate)

@@ -104,12 +104,10 @@ jobs:
           mkdir -p package/mods
 
           # Find and copy the loader DLL
-          if [ -f build/Release/dinput8.dll ]; then
-            cp build/Release/dinput8.dll package/
-          elif [ -f build/dinput8.dll ]; then
-            cp build/dinput8.dll package/
+          if [ -f build/Release/CrabeLoader.asi ] && [ -f build/Release/dinput8.dll ]; then
+            cp build/Release/CrabeLoader.asi build/Release/dinput8.dll package/
           else
-            echo "Error: dinput8.dll not found in build output."
+            echo "Error: CrabeLoader.asi or dinput8.dll not found in build output."
             exit 1
           fi
 
@@ -132,12 +130,14 @@ jobs:
           ==================================================
 
           Installation (easiest): run CrabeInstaller.exe and follow the prompts.
-          It finds the game, adds CrabeLoader as dinput8.dll without touching any game file,
+          It finds the game, adds CrabeLoader.asi and its small dinput8.dll starter without
+          touching any game file,
           and creates the 'mods/' folder. Running it again updates CrabeLoader. It also moves
           a 1.0 install (CrabeLoader as bink2w32.dll) over and puts the game's bink2w32.dll back.
 
           Installation (manual):
-          1. Place this dinput8.dll next to DisneyInfinity3.exe. No game file is renamed.
+          1. Place CrabeLoader.asi and dinput8.dll next to DisneyInfinity3.exe. No game file is renamed.
+             Already using an ASI loader as dinput8.dll? Then copy only CrabeLoader.asi.
           2. Coming from 1.0: delete the old bink2w32.dll, then rename bink2w32_orig.dll to bink2w32.dll.
           3. Place your mods into the 'mods/' subfolder.
 
@@ -164,8 +164,9 @@ jobs:
         shell: bash
         run: |
           cp package/dinput8.dll dinput8.dll
+          cp package/CrabeLoader.asi CrabeLoader.asi
           cp package/CrabeInstaller.exe CrabeInstaller.exe
-          sha256sum dinput8.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
+          sha256sum CrabeLoader.asi dinput8.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Prepare GitHub Release (draft)
@@ -181,6 +182,7 @@ jobs:
             **Draft, visible to maintainers only.** Test `CrabeInstaller.exe`, then publish. To roll the version out to players, also untick "Set as a pre-release": the in-game update prompt only sees published, stable releases.
           files: |
             CrabeInstaller.exe
+            CrabeLoader.asi
             dinput8.dll
             CrabeLoader-${{ needs.plan.outputs.tag }}.zip
             SHA256SUMS.txt

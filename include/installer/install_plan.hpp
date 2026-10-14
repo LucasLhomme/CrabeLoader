@@ -1,8 +1,8 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares what the installer may do to a game folder, decided from four facts about it.
-** CrabeLoader installs as dinput8.dll and never overwrites one it did not write, nor a game file.
+** Declares what the installer may do to a game folder, decided from the facts about it.
+** CrabeLoader is CrabeLoader.asi plus a dinput8.dll bootstrap; nothing else is ever replaced.
 ** Touches no file; game_installer.hpp gathers the facts and carries the decision out.
 **
 ** Authors: @LucasLhomme
@@ -17,8 +17,10 @@
 namespace crabe::installer {
 
     constexpr std::string_view kGameExecutable = "DisneyInfinity3.exe";
-    constexpr std::string_view kLoaderName = "dinput8.dll";
-    constexpr std::string_view kStagingName = "dinput8.dll.crabe-new";
+    constexpr std::string_view kLoaderName = "CrabeLoader.asi";
+    constexpr std::string_view kBootstrapName = "dinput8.dll";
+    constexpr std::string_view kStagingSuffix = ".crabe-new";
+    constexpr std::string_view kRetiredSuffix = ".crabe-old";
     constexpr std::string_view kLegacyProxyName = "bink2w32.dll";
     constexpr std::string_view kLegacyBackupName = "bink2w32_orig.dll";
     constexpr std::string_view kLegacyRetiredName = "bink2w32.dll.crabe-old";
@@ -28,12 +30,14 @@ namespace crabe::installer {
     enum class FileKind : std::uint8_t {
         Missing,
         Loader,
+        Bootstrap,
         Other,
     };
 
     struct FolderFacts {
         bool hasGameExecutable{false};
         FileKind loader{FileKind::Missing};
+        FileKind bootstrap{FileKind::Missing};
         FileKind legacyProxy{FileKind::Missing};
         bool hasLegacyBackup{false};
     };
@@ -42,15 +46,16 @@ namespace crabe::installer {
         FreshInstall,
         Update,
         NotAGameFolder,
+        BootstrapSlotTaken,
         LoaderSlotTaken,
         LegacyOriginalMissing,
     };
 
     [[nodiscard]] std::string_view describe(Plan plan) noexcept;
 
-    /// Decides the install from the facts: a dinput8.dll that is not CrabeLoader is never replaced.
-    /// A 1.x install (CrabeLoader as bink2w32.dll) is refused only when its kept original is gone,
-    /// since the game cannot play its videos without it.
+    /// Decides the install from the facts. A dinput8.dll that is neither the bootstrap nor a 1.1 development
+    /// loader is never replaced, nor is a CrabeLoader.asi that is not CrabeLoader. A 1.x install (CrabeLoader
+    /// as bink2w32.dll) is refused only when its kept original is gone, since the game needs it for videos.
     [[nodiscard]] Plan planInstall(const FolderFacts& facts) noexcept;
 
     /// Reports whether the game's own bink2w32.dll, kept as bink2w32_orig.dll by a 1.x install, goes back in place.

@@ -113,18 +113,19 @@ Write-Host "`n[2/5] Checking and terminating previous instances..." -ForegroundC
 Stop-Process -Name "DisneyInfinity3" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 800
 
-Write-Host "[3/5] Deploying dinput8.dll..." -ForegroundColor Yellow
-$dllSrc = Join-Path $projectRoot "build\Release\dinput8.dll"
-$targetDll = Join-Path $gameDir "dinput8.dll"
+Write-Host "[3/5] Deploying CrabeLoader.asi and dinput8.dll..." -ForegroundColor Yellow
+$buildFolder = Join-Path $projectRoot "build\Release"
 $legacyProxy = Join-Path $gameDir "bink2w32.dll"
 $legacyBackup = Join-Path $gameDir "bink2w32_orig.dll"
 
 # A 1.0 install put CrabeLoader in bink2w32.dll and kept the game's own as bink2w32_orig.dll:
-# put the game's file back, since the loader is dinput8.dll now.
+# put the game's file back, since the loader is CrabeLoader.asi started by dinput8.dll now.
 if (Test-Path $legacyBackup) {
     Move-Item -Path $legacyBackup -Destination $legacyProxy -Force
 }
-Copy-Item -Path $dllSrc -Destination $targetDll -Force
+foreach ($file in @("CrabeLoader.asi", "dinput8.dll")) {
+    Copy-Item -Path (Join-Path $buildFolder $file) -Destination (Join-Path $gameDir $file) -Force
+}
 
 Write-Host "[4/5] Injecting concurrent test harnesses (bench & companion)..." -ForegroundColor Yellow
 if (!(Test-Path $benchModDir)) {

@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** Carries out an install plan on a game folder with exclusive writes and no-replace renames.
-** The only overwrites are of CrabeLoader's own files; a game file is never opened for writing.
+** CrabeLoader's own files are retired beside themselves first, so every step can be undone.
 ** Chooses nothing: install_plan.cpp decides, and this file does exactly that.
 **
 ** Authors: @LucasLhomme
@@ -29,7 +29,8 @@ namespace crabe::installer {
 
     namespace {
 
-        constexpr std::size_t kMinimumPayloadBytes = 64 * 1024;
+        constexpr std::size_t kMinimumLoaderBytes = 64 * 1024;
+        constexpr std::size_t kMinimumBootstrapBytes = 4 * 1024;
         constexpr std::uintmax_t kLargestInspectedFile = 64ull * 1024 * 1024;
         constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
 
@@ -77,8 +78,9 @@ namespace crabe::installer {
             std::filesystem::remove(path, ignored);
         }
 
-        /// Tells whether a file is missing, is a CrabeLoader DLL, or is something else.
-        /// A file too large or unreadable is something else, so it is never replaced.
+        /// Tells whether a file is missing, is CrabeLoader, is its bootstrap, or is something else.
+        /// A file too large or unreadable is something else, so it is never replaced. The loader is checked
+        /// first: CrabeLoader.asi quotes the bootstrap description too, in the code that recognises it.
         [[nodiscard]] FileKind kindOf(const std::filesystem::path& path)
         {
             std::error_code error;
@@ -91,7 +93,11 @@ namespace crabe::installer {
             const std::vector<char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
             if (!stream.eof() && stream.fail())
                 return FileKind::Other;
-            return crabe::shared::containsLoaderMarker(bytes.data(), bytes.size()) ? FileKind::Loader : FileKind::Other;
+            if (crabe::shared::containsLoaderMarker(bytes.data(), bytes.size()))
+                return FileKind::Loader;
+            if (crabe::shared::containsBootstrapMarker(bytes.data(), bytes.size()))
+                return FileKind::Bootstrap;
+            return FileKind::Other;
         }
 
         /// Writes a file that must not exist yet, flushed to disk.
@@ -126,43 +132,87 @@ namespace crabe::installer {
             return {};
         }
 
-        /// Renames a file over an existing one; only ever used on CrabeLoader's own files.
-        [[nodiscard]] std::expected<void, InstallError> moveReplacing(const std::filesystem::path& from,
-                                                                      const std::filesystem::path& to)
+        /// Refuses a bundled file that is too small, not a Windows executable, or not the expected kind.
+        [[nodiscard]] std::expected<void, InstallError> checkPayload(std::span<const std::byte> payload,
+                                                                     std::string_view name, std::size_t minimum,
+                                                                     FileKind expected)
         {
-            if (!MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-                return std::unexpected(fromWin32(std::format("replace {} with {}", to.filename().string(),
-                                                             from.filename().string()), GetLastError()));
-            return {};
-        }
-
-        /// Refuses a payload that is too small, not a Windows executable, or not a CrabeLoader DLL.
-        [[nodiscard]] std::expected<void, InstallError> checkPayload(std::span<const std::byte> payload)
-        {
-            if (payload.size() < kMinimumPayloadBytes)
-                return std::unexpected(InstallError{InstallErrorCode::PayloadInvalid, "the bundled DLL is too small"});
-            if (payload[0] != std::byte{'M'} || payload[1] != std::byte{'Z'})
-                return std::unexpected(InstallError{InstallErrorCode::PayloadInvalid, "the bundled file is not a DLL"});
-            if (!crabe::shared::containsLoaderMarker(payload.data(), payload.size()))
+            const auto refuse = [&](std::string_view why) {
                 return std::unexpected(InstallError{InstallErrorCode::PayloadInvalid,
-                                                    "the bundled DLL is not CrabeLoader"});
+                                                    std::format("the bundled {} {}", name, why)});
+            };
+            if (payload.size() < minimum)
+                return refuse("is too small");
+            if (payload[0] != std::byte{'M'} || payload[1] != std::byte{'Z'})
+                return refuse("is not a DLL");
+            const bool isLoader = crabe::shared::containsLoaderMarker(payload.data(), payload.size());
+            const bool isBootstrap = crabe::shared::containsBootstrapMarker(payload.data(), payload.size());
+            if (expected == FileKind::Loader && !isLoader)
+                return refuse("is not CrabeLoader");
+            if (expected == FileKind::Bootstrap && (!isBootstrap || isLoader))
+                return refuse("is not the CrabeLoader bootstrap");
             return {};
         }
 
-        /// Writes the payload beside its final name and checks it reads back identical.
-        [[nodiscard]] std::expected<void, InstallError> stagePayload(const std::filesystem::path& staging,
-                                                                     std::span<const std::byte> payload,
-                                                                     const std::string& expectedSha256)
+        struct Placement {
+            std::filesystem::path target;
+            std::filesystem::path retired;
+            bool hadPrevious{false};
+        };
+
+        /// Moves a staged file to its final name. CrabeLoader's previous copy is retired beside it first,
+        /// so undoPlacement() can bring it back; if the move fails, the folder is left as it was.
+        [[nodiscard]] std::expected<Placement, InstallError> place(const std::filesystem::path& staging,
+                                                                   const std::filesystem::path& target,
+                                                                   bool replacesOwnFile)
         {
+            Placement placement{target, std::filesystem::path(target) += kRetiredSuffix, replacesOwnFile};
+            if (replacesOwnFile) {
+                discardFile(placement.retired);
+                if (auto retired = moveWithoutReplacing(target, placement.retired); !retired)
+                    return std::unexpected(retired.error());
+            }
+            if (auto moved = moveWithoutReplacing(staging, target); !moved) {
+                InstallError error = moved.error();
+                if (replacesOwnFile) {
+                    if (auto back = moveWithoutReplacing(placement.retired, target); !back)
+                        error.detail += std::format("; ALSO could not put back the old {}: {}",
+                                                    target.filename().string(), back.error().detail);
+                }
+                return std::unexpected(std::move(error));
+            }
+            return placement;
+        }
+
+        /// Undoes a placement: the new file goes, and the previous copy comes back if there was one.
+        void undoPlacement(const Placement& placement, InstallError& error)
+        {
+            discardFile(placement.target);
+            if (!placement.hadPrevious)
+                return;
+            if (auto back = moveWithoutReplacing(placement.retired, placement.target); !back)
+                error.detail += std::format("; ALSO could not put back the old {}: {}",
+                                            placement.target.filename().string(), back.error().detail);
+        }
+
+        /// Writes a bundled file beside its final name and checks it reads back identical.
+        [[nodiscard]] std::expected<void, InstallError> stagePayload(const std::filesystem::path& staging,
+                                                                     std::span<const std::byte> payload)
+        {
+            const auto expected = sha256Hex(payload);
+            if (!expected)
+                return std::unexpected(InstallError{InstallErrorCode::PayloadInvalid,
+                                                    "a bundled file could not be hashed"});
             discardFile(staging);
             if (auto written = writeNewFile(staging, payload); !written)
                 return written;
 
             const auto actual = sha256FileHex(staging);
-            if (!actual || *actual != expectedSha256) {
+            if (!actual || *actual != *expected) {
                 discardFile(staging);
                 return std::unexpected(InstallError{InstallErrorCode::IoFailure,
-                                                    "the written file does not match the bundled DLL"});
+                                                    std::format("the written {} does not match the bundled file",
+                                                                staging.filename().string())});
             }
             return {};
         }
@@ -226,24 +276,27 @@ namespace crabe::installer {
         FolderFacts facts;
         facts.hasGameExecutable = pathExists(_gameRoot / kGameExecutable);
         facts.loader = kindOf(_gameRoot / kLoaderName);
+        facts.bootstrap = kindOf(_gameRoot / kBootstrapName);
         facts.legacyProxy = kindOf(_gameRoot / kLegacyProxyName);
         facts.hasLegacyBackup = pathExists(_gameRoot / kLegacyBackupName);
         return facts;
     }
 
-    std::expected<InstallReport, InstallError> GameInstaller::install(std::span<const std::byte> payload) const
+    std::expected<InstallReport, InstallError> GameInstaller::install(const InstallPayload& payload) const
     {
-        if (auto valid = checkPayload(payload); !valid)
+        if (auto valid = checkPayload(payload.loader, kLoaderName, kMinimumLoaderBytes, FileKind::Loader); !valid)
             return std::unexpected(valid.error());
-        const auto payloadHash = sha256Hex(payload);
-        if (!payloadHash)
-            return std::unexpected(InstallError{InstallErrorCode::PayloadInvalid, "the bundled DLL could not be hashed"});
+        if (auto valid = checkPayload(payload.bootstrap, kBootstrapName, kMinimumBootstrapBytes, FileKind::Bootstrap);
+            !valid)
+            return std::unexpected(valid.error());
 
         const FolderFacts facts = inspect();
         const Plan plan = planInstall(facts);
         switch (plan) {
         case Plan::NotAGameFolder:
             return std::unexpected(InstallError{InstallErrorCode::NotAGameFolder, std::string(describe(plan))});
+        case Plan::BootstrapSlotTaken:
+            return std::unexpected(InstallError{InstallErrorCode::BootstrapSlotTaken, std::string(describe(plan))});
         case Plan::LoaderSlotTaken:
             return std::unexpected(InstallError{InstallErrorCode::LoaderSlotTaken, std::string(describe(plan))});
         case Plan::LegacyOriginalMissing:
@@ -254,15 +307,32 @@ namespace crabe::installer {
         }
 
         const std::filesystem::path loader = _gameRoot / kLoaderName;
-        const std::filesystem::path staging = _gameRoot / kStagingName;
+        const std::filesystem::path bootstrap = _gameRoot / kBootstrapName;
+        const std::filesystem::path loaderStaging = std::filesystem::path(loader) += kStagingSuffix;
+        const std::filesystem::path bootstrapStaging = std::filesystem::path(bootstrap) += kStagingSuffix;
+        const auto discardStaging = [&] {
+            discardFile(loaderStaging);
+            discardFile(bootstrapStaging);
+        };
 
-        if (auto staged = stagePayload(staging, payload, *payloadHash); !staged)
+        if (auto staged = stagePayload(loaderStaging, payload.loader); !staged)
             return std::unexpected(staged.error());
+        if (auto staged = stagePayload(bootstrapStaging, payload.bootstrap); !staged) {
+            discardStaging();
+            return std::unexpected(staged.error());
+        }
 
-        const auto placed = plan == Plan::Update ? moveReplacing(staging, loader) : moveWithoutReplacing(staging, loader);
-        if (!placed) {
-            discardFile(staging);
-            return std::unexpected(placed.error());
+        const auto loaderPlaced = place(loaderStaging, loader, facts.loader == FileKind::Loader);
+        if (!loaderPlaced) {
+            discardStaging();
+            return std::unexpected(loaderPlaced.error());
+        }
+        const auto bootstrapPlaced = place(bootstrapStaging, bootstrap, facts.bootstrap != FileKind::Missing);
+        if (!bootstrapPlaced) {
+            InstallError error = bootstrapPlaced.error();
+            undoPlacement(*loaderPlaced, error);
+            discardStaging();
+            return std::unexpected(std::move(error));
         }
 
         InstallReport report;
@@ -270,15 +340,17 @@ namespace crabe::installer {
         if (restoresLegacyOriginal(facts)) {
             if (auto restored = restoreLegacyOriginal(_gameRoot, facts.legacyProxy); !restored) {
                 InstallError error = restored.error();
-                if (plan == Plan::FreshInstall)
-                    discardFile(loader);
-                else
-                    error.detail += "; the new dinput8.dll is in place, the old bink2w32.dll was left as it was";
+                undoPlacement(*bootstrapPlaced, error);
+                undoPlacement(*loaderPlaced, error);
                 return std::unexpected(std::move(error));
             }
             report.legacyOriginalRestored = true;
         }
 
+        for (const Placement* placement : {&*loaderPlaced, &*bootstrapPlaced}) {
+            if (placement->hadPrevious)
+                discardFile(placement->retired);
+        }
         writeModsEnvironment(_gameRoot, report);
         return report;
     }

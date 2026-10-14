@@ -5,6 +5,18 @@ Ultimate ASI Loader does, so most existing plugins work unchanged. Lua mods rema
 features. An `.asi` plugin is for the rare job that needs native code of its own. Through the optional
 [plugin API](#talking-to-crabeloader-the-plugin-api), such a plugin can log, hook and talk to Lua mods.
 
+## CrabeLoader is an `.asi` too
+
+CrabeLoader itself ships as `CrabeLoader.asi`, next to a small bootstrap `dinput8.dll`. The game imports
+`dinput8.dll`, so Windows loads the bootstrap from the game folder. The bootstrap forwards DirectInput to
+the system's copy and, at the game's entry point, loads `CrabeLoader.asi` and calls its exported
+`CrabeLoaderBootstrap()` function. CrabeLoader then loads the other `.asi` plugins right there, before any
+of the game's code runs.
+
+If `CrabeLoader.asi` is missing or fails to start, the bootstrap writes a `Bootstrap:` warning line to
+`loader.log` and the game starts without CrabeLoader. Because CrabeLoader is an ordinary `.asi`, another
+ASI loader can start it instead of the bootstrap; see [Other ASI loaders](#other-asi-loaders).
+
 ## Where to put them
 
 CrabeLoader searches four places, in this order, next to `DisneyInfinity3.exe`:
@@ -17,19 +29,20 @@ CrabeLoader searches four places, in this order, next to `DisneyInfinity3.exe`:
 | `mods/<mod>/` (the mod's own folder, not its subfolders) | `mod <id>` |
 
 Inside one folder, files load in alphabetical order, ignoring case. Subfolders are not searched, and
-mod folders starting with `.` or `_` are skipped, exactly as for Lua mods.
+mod folders starting with `.` or `_` are skipped, exactly as for Lua mods. `CrabeLoader.asi` itself is
+never listed or loaded as a plugin, wherever it sits.
 
 A plugin inside a mod folder belongs to that mod. When the active profile in `crabe.toml` disables the
 mod, its `.asi` files are skipped too. The VFS never serves an `.asi` file as a game asset.
 
 ## When they load
 
-Plugins load **before any of the game's code runs**. That is just before the executable's entry point,
-after every DLL the game imports has started. This is the moment plugins are written for: they can patch
-the game before it reads its settings or opens its window.
+Plugins load **before any of the game's code runs**. That is at the executable's entry point, after every
+DLL the game imports has started, when the bootstrap `dinput8.dll` starts `CrabeLoader.asi`. This is the
+moment plugins are written for: they can patch the game before it reads its settings or opens its window.
 
-If CrabeLoader is loaded later than usual (injected into a running game, for instance), the entry point has
-already passed. Plugins then load from CrabeLoader's own thread as soon as it starts, and the log says so.
+If CrabeLoader is started later than usual (by another ASI loader, or injected into a running game, for
+instance), plugins load from CrabeLoader's own thread as soon as it starts, and the log says so.
 
 Plugins load **once per game launch**. `F4` reloads Lua mods only: native code cannot be safely taken out
 of a running game, so adding or changing an `.asi` needs a restart.
@@ -55,7 +68,7 @@ CrabeLoader checks every file before Windows loads it, and keeps the game runnin
 | :--- | :--- |
 | `loaded` | Started normally. |
 | `already_loaded` | Another loader already loaded this exact file; it is left as it is. |
-| `skipped` | Turned off by `[plugins]` or by a disabled mod. |
+| `skipped` | Turned off by `[plugins]` or by a disabled mod, or the file is another copy of CrabeLoader (only one loader may run). |
 | `failed` | Not a 32-bit DLL (a 64-bit build, a program, a renamed text file), a missing dependency, or a `DllMain` that returned `FALSE`. |
 | `crashed` | Its `DllMain` raised an exception. The plugin is skipped and logged, and the game starts anyway. |
 
@@ -162,7 +175,19 @@ game keeps running.
 
 ## Other ASI loaders
 
-CrabeLoader installs as `dinput8.dll`, the name Ultimate ASI Loader also commonly uses. Only one of them
-can have that name, and CrabeInstaller refuses to replace a `dinput8.dll` it did not write. CrabeLoader
-loads `.asi` plugins itself, so a separate ASI loader is not needed. If one is installed under another
-name anyway, a plugin it has already loaded shows as `already_loaded` and is not started twice.
+CrabeLoader loads `.asi` plugins itself, so a separate ASI loader is not needed. But if you already have
+one, such as Ultimate ASI Loader installed as `dinput8.dll`, you can keep it: because CrabeLoader is itself
+an `.asi`, just copy `CrabeLoader.asi` next to `DisneyInfinity3.exe` (without CrabeLoader's bootstrap
+`dinput8.dll`) and that loader starts it. CrabeInstaller refuses to replace a `dinput8.dll` that is not
+CrabeLoader's, and its message points to this route.
+
+When another ASI loader starts CrabeLoader:
+
+* The `.asi` files in the game folder, `scripts/` and `plugins/` are loaded by that other loader.
+  CrabeLoader lists them as `already_loaded`, does not start them twice, and still hands them the plugin
+  API through `CrabePluginInit`.
+* CrabeLoader itself loads only the `.asi` files inside mod folders, from its own thread, a little later
+  than the bootstrap would.
+* When CrabeLoader starts depends on the other loader, not on CrabeLoader.
+* `loader.log` and the `Crabe/` folder are still written next to `DisneyInfinity3.exe`, even when
+  `CrabeLoader.asi` is loaded from `scripts/` or `plugins/`.

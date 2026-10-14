@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Exports the six functions of dinput8.dll, so the game loads CrabeLoader as dinput8.dll.
+** Exports the six functions of dinput8.dll, so the game loads the bootstrap under that name.
 ** Each call goes to the system's own dinput8.dll, loaded the first time one of them is called.
 ** Never loads anything from DllMain: the loader lock forbids LoadLibrary there.
 **

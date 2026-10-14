@@ -1,6 +1,6 @@
 # Update Check & CrabeInstaller
 
-Two small, optional pieces make CrabeLoader easy to install and keep current: a **launch-time update check** inside the DLL, and **`CrabeInstaller.exe`**, a one-click installer.
+Two small, optional pieces make CrabeLoader easy to install and keep current: a **launch-time update check** inside `CrabeLoader.asi`, and **`CrabeInstaller.exe`**, a one-click installer.
 
 ---
 
@@ -83,34 +83,42 @@ A single executable that installs CrabeLoader without any manual file work.
 
 1. It looks for the game in your Steam libraries and asks **Yes / No / Cancel**. If it finds nothing, or you say **No**, it opens the native Windows folder picker (`IFileOpenDialog`).
 2. It checks that the folder contains `DisneyInfinity3.exe`.
-3. It installs CrabeLoader as `dinput8.dll` next to `DisneyInfinity3.exe`. No game file is renamed or modified.
+3. It installs CrabeLoader's two files next to `DisneyInfinity3.exe`: `dinput8.dll`, a small bootstrap, and `CrabeLoader.asi`, the loader itself. No game file is renamed or modified.
 4. It creates `mods\` and `mods\README.txt` (English first, then French).
 
-### Why `dinput8.dll`
+### The two files
 
-The game imports `DINPUT8.dll`, and Windows looks in the game folder before the system folders, so CrabeLoader's `dinput8.dll` is the one loaded. It forwards the six DirectInput exports (`DirectInput8Create`, `DllCanUnloadNow`, `DllGetClassObject`, `DllRegisterServer`, `DllUnregisterServer`, `GetdfDIJoystick`) to the system's own `dinput8.dll` (System32, which Windows redirects to SysWOW64 for this 32-bit game); see `src/infrastructure/dinput8_proxy.cpp`. Because no game file changes, Steam's *Verify integrity of game files* no longer removes CrabeLoader.
+**`dinput8.dll`, the bootstrap.** The game imports `DINPUT8.dll`, and Windows looks in the game folder before the system folders, so the bootstrap is the one loaded. It forwards the six DirectInput exports (`DirectInput8Create`, `DllCanUnloadNow`, `DllGetClassObject`, `DllRegisterServer`, `DllUnregisterServer`, `GetdfDIJoystick`) to the system's own `dinput8.dll` (System32, which Windows redirects to SysWOW64 for this 32-bit game). At the game's entry point, before any game code runs, it loads `CrabeLoader.asi` from the game folder and calls its exported `CrabeLoaderBootstrap()` function. If `CrabeLoader.asi` is missing or fails to start, the bootstrap appends a `Bootstrap:` warning line to `loader.log` and the game starts without CrabeLoader. The code is in `src/bootstrap/`.
 
-The same DLL still carries the old Bink forwarders (`include/minhook/lib/proxy/proxy.hpp`), so it would still work if named `bink2w32.dll`. If two copies are loaded (for example an old 1.0 `bink2w32.dll` proxy and a new `dinput8.dll`), only one runs the loader: `bink2w32.dll` outranks `dinput8.dll`, which outranks any other name, and the other copy only forwards its exports (`src/infrastructure/loader_instance.cpp`).
+**`CrabeLoader.asi`, the loader.** Everything else lives here: the hooks, the Lua runtime, the overlay, the `.asi` plugin loader and the plugin API. When the bootstrap calls `CrabeLoaderBootstrap()`, CrabeLoader loads the other `.asi` plugins right there, before the game's code runs. Because it is an `.asi`, another ASI loader can start it instead of the bootstrap; see [Other ASI loaders](asi_plugins.md#other-asi-loaders).
+
+Because no game file changes, Steam's *Verify integrity of game files* no longer removes CrabeLoader.
+
+`CrabeLoader.asi` still carries the old Bink forwarders (`include/minhook/lib/proxy/proxy.hpp`). If two CrabeLoader copies are loaded (for example a leftover 1.0 `bink2w32.dll` and `CrabeLoader.asi`), only one runs the loader, chosen by file name: `bink2w32.dll` first, then `dinput8.dll` (a 1.1 development single file), then any other name such as `CrabeLoader.asi` (`src/infrastructure/loader_instance.cpp`). The bootstrap carries a different description, so it never counts as a loader copy. The first line of `loader.log` names the copy that runs, normally `loaded as CrabeLoader.asi`.
 
 ### The rule that protects the game folder
 
-A file is recognised as CrabeLoader by the file description `CrabeLoader Proxy DLL for Disney Infinity 3.0` in its version resource (`include/shared/loader_marker.hpp`); every release since 1.0.0 carries it. The installer **never overwrites a game file or a `dinput8.dll` it did not write**:
+Each file is recognised by the file description in its version resource (`include/shared/loader_marker.hpp`): `CrabeLoader Proxy DLL for Disney Infinity 3.0` for the loader (every release since 1.0.0 carries it) and `CrabeLoader Bootstrap for Disney Infinity 3.0` for the bootstrap. The installer **never overwrites a game file, or a `dinput8.dll` or `CrabeLoader.asi` that is not CrabeLoader's**:
 
 | State of the folder | What happens |
 | :--- | :--- |
-| No `dinput8.dll` | **Fresh install**: `dinput8.dll` is written. |
-| `dinput8.dll` is CrabeLoader | **Update**: CrabeLoader's own `dinput8.dll` is replaced. |
-| `dinput8.dll` is anything else (often an `.asi` plugin loader such as Ultimate ASI Loader) | **Refused, nothing changed.** The player must move or delete that `dinput8.dll`. |
-| `bink2w32.dll` is CrabeLoader (or missing) and `bink2w32_orig.dll` exists | **Migration from 1.0**: the game's original is put back as `bink2w32.dll` (the old CrabeLoader is retired), and `dinput8.dll` is installed. |
-| `bink2w32.dll` is the game's own, beside an old `bink2w32_orig.dll` | Both are left alone; `dinput8.dll` is installed or updated as above. |
-| `bink2w32.dll` is an old CrabeLoader and `bink2w32_orig.dll` is gone | **Refused, nothing changed**, since the game could not play its Bink videos. The message tells the player to use Steam's *Verify integrity of game files*. |
+| Neither `dinput8.dll` nor `CrabeLoader.asi` | **Fresh install**: both files are written. |
+| `dinput8.dll` is the bootstrap and `CrabeLoader.asi` is CrabeLoader (or either one is missing) | **Update**: both files are replaced or added. |
+| `dinput8.dll` is a 1.1 development single-file CrabeLoader | **Update**: it is replaced by the bootstrap, and `CrabeLoader.asi` is added. |
+| `dinput8.dll` is anything else (often an `.asi` plugin loader such as Ultimate ASI Loader) | **Refused (`BootstrapSlotTaken`), nothing changed.** The message says that if this `dinput8.dll` is an ASI loader, the player can simply copy `CrabeLoader.asi` next to the game instead; otherwise they must move or delete that `dinput8.dll`. |
+| `CrabeLoader.asi` is anything other than CrabeLoader | **Refused (`LoaderSlotTaken`), nothing changed.** The player must move or delete that file. |
+| `bink2w32.dll` is CrabeLoader (or missing) and `bink2w32_orig.dll` exists | **Migration from 1.0**: the game's original is put back as `bink2w32.dll` (the old CrabeLoader is retired), and both files are installed. |
+| `bink2w32.dll` is the game's own, beside an old `bink2w32_orig.dll` | Both are left alone; the two files are installed or updated as above. |
+| `bink2w32.dll` is an old CrabeLoader and `bink2w32_orig.dll` is gone | **Refused (`LegacyOriginalMissing`), nothing changed**, since the game could not play its Bink videos. The message tells the player to use Steam's *Verify integrity of game files*. |
 
 How it stays safe even when something goes wrong:
 
-* Renames of the game's files use a **no-replace** move, so they fail rather than overwrite.
-* The loader is first written to `dinput8.dll.crabe-new`, hashed back, and only then moved into place.
-* Any failure part-way puts the folder back as it was found. The one exception is an update that cannot put the game's `bink2w32.dll` back: the new `dinput8.dll` stays and the old `bink2w32.dll` is left as it was, and the error says so.
-* An update while the game is running fails (Windows will not replace a loaded DLL), with a clear message and everything left as found.
+* Both bundled files are checked first: each must be a Windows DLL of a sensible size carrying the right description, so a swapped or damaged payload is refused before anything is written.
+* Each file is first written beside its final name as `<name>.crabe-new` (`CrabeLoader.asi.crabe-new`, `dinput8.dll.crabe-new`), hashed back, and only then moved into place.
+* A previous CrabeLoader file is not deleted straight away: it is retired beside itself as `<name>.crabe-old` and only removed once the whole install has succeeded.
+* Renames use a **no-replace** move, so they fail rather than overwrite.
+* Any failure part-way (a file in use, for example) rolls everything back: the new files are removed, the retired `.crabe-old` files are restored, and the folder is left as it was found. If even a restore fails, the error message says which file could not be put back.
+* While `DisneyInfinity3.exe` is running, the installer refuses before touching anything and asks you to close the game. Windows would let it rename a loaded DLL, so an install would otherwise only half-apply until the next launch.
 * An existing `mods\README.txt` is never overwritten.
 
 The decision itself lives in `include/installer/install_plan.hpp` and `src/installer/install_plan.cpp`; the file operations are in `src/installer/game_installer.cpp`.
@@ -118,14 +126,15 @@ The decision itself lives in `include/installer/install_plan.hpp` and `src/insta
 ### Command line
 
 ```text
-CrabeInstaller [--game-dir <folder>] [--quiet] [--payload <dinput8.dll>]
+CrabeInstaller [--game-dir <folder>] [--quiet] [--loader <CrabeLoader.asi>] [--bootstrap <dinput8.dll>]
 ```
 
 | Option | Effect |
 | :--- | :--- |
 | `--game-dir` | Skip detection and the folder dialog. |
 | `--quiet` | Show no window. Exit code: `0` installed, `1` refused or failed, `2` cancelled. |
-| `--payload` | Install this DLL instead of the bundled one. |
+| `--loader` | Install this `CrabeLoader.asi` instead of the bundled one. `--payload` is kept as an old name for this option. |
+| `--bootstrap` | Install this `dinput8.dll` instead of the bundled one. |
 
 ### Building it
 
@@ -135,26 +144,28 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 `
 cmake --build build --config Release --target CrabeInstaller
 ```
 
-By default the loader DLL is **embedded** in the executable (resource 101), so `CrabeInstaller.exe` is one self-contained file and is rebuilt with the freshest DLL every time. With `-DCRABELOADER_INSTALLER_EMBED_DLL=OFF` the installer instead looks for `dinput8.dll` beside itself, which ships as two files (an installer plus the DLL) and avoids a DLL hidden inside an executable, a pattern some antivirus heuristics dislike.
+By default both files are **embedded** in the executable (`CrabeLoader.asi` as resource 101, `dinput8.dll` as resource 102), so `CrabeInstaller.exe` is one self-contained file and is rebuilt with the freshest files every time. With `-DCRABELOADER_INSTALLER_EMBED_DLL=OFF` the installer instead looks for `CrabeLoader.asi` and `dinput8.dll` beside itself, which ships as three files and avoids DLLs hidden inside an executable, a pattern some antivirus heuristics dislike.
 
-Tests: `tests/cpp/test_installer.cpp` drives the real file operations in a temporary folder, including a locked file. The dialogs themselves can only be checked by eye; see `docs/testing/manual_checklist.md`.
+Tests: `tests/cpp/test_installer.cpp` drives the real file operations in a temporary folder: fresh install, update, the upgrade from a 1.1 single-file `dinput8.dll`, the 1.0 migration, every refusal (including a foreign `dinput8.dll` and a foreign `CrabeLoader.asi`), swapped or bad payloads, and a locked file on each of the two files with a full rollback. `tests/cpp/test_bootstrap.cpp` checks how the bootstrap starts `CrabeLoader.asi`. The dialogs themselves can only be checked by eye; see `docs/testing/manual_checklist.md`.
 
 ### Releases
 
-Each release carries `CrabeInstaller.exe` (Option A), the raw `dinput8.dll` (Option B), a zip with both plus the mod template, and `SHA256SUMS.txt`. GitHub adds the source archives itself.
+Each release carries `CrabeInstaller.exe` (Option A), the raw `dinput8.dll` and `CrabeLoader.asi` (Option B), a zip, and `SHA256SUMS.txt`. The zip holds `dinput8.dll`, `CrabeLoader.asi`, `CrabeInstaller.exe`, `mods/`, `docs/crabe_api.def.lua` and `sdk/crabe_plugin.h`. GitHub adds the source archives itself.
 
 ### Limits worth knowing
 
-* Only one program can be loaded as `dinput8.dll`. If another tool (such as an `.asi` plugin loader) already uses that name, the installer refuses rather than replace it.
+* Only one program can be loaded as `dinput8.dll`. If another tool (such as an `.asi` plugin loader) already uses that name, the installer refuses rather than replace it. If that tool is an ASI loader, copy `CrabeLoader.asi` next to the game by hand instead: the ASI loader starts it (see [Other ASI loaders](asi_plugins.md#other-asi-loaders)).
 * The repository the update check asks is fixed in `include/domain/update_check.hpp`. A fork that publishes its own releases changes the three constants there.
 * There is no uninstall button; the steps are under "Uninstalling" below.
 
 ### Installing by hand
 
-Without the installer: copy CrabeLoader's `dinput8.dll` next to `DisneyInfinity3.exe` and create a `mods` folder.
+Without the installer: copy `dinput8.dll` and `CrabeLoader.asi` next to `DisneyInfinity3.exe` and create a `mods` folder.
 
 Coming from 1.0 by hand: delete the old `bink2w32.dll`, then rename `bink2w32_orig.dll` back to `bink2w32.dll`.
 
+Already have an ASI loader installed as `dinput8.dll`: keep it and copy only `CrabeLoader.asi` next to `DisneyInfinity3.exe`.
+
 ### Uninstalling
 
-Delete `dinput8.dll`. No game file was changed. The `mods\README.txt` the installer writes says the same.
+Delete `dinput8.dll` and `CrabeLoader.asi`. No game file was changed by the install. The `mods\README.txt` the installer writes says the same.

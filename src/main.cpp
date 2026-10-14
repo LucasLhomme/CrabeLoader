@@ -3,7 +3,7 @@
 ** File description:
 ** The DLL entry point: starts the loader thread and finishes installing the crash reporter.
 ** SymInitialize enumerates modules, which deadlocks under the loader lock, so it happens here.
-** Answers as dinput8.dll and keeps the Bink forwarders of include/minhook/lib/proxy for 1.x setups.
+** Built as CrabeLoader.asi, started by the dinput8.dll bootstrap or any ASI loader.
 **
 ** Authors: @LucasLhomme
 */
@@ -11,6 +11,7 @@
 #include "minhook/lib/proxy/proxy.hpp" // BINKW32 PROXY DIRECT LINKER FORWARDING
 #include <windows.h>
 #include <filesystem>
+#include <mutex>
 #include <thread>
 #include <string>
 #include "shared/logger.hpp"
@@ -29,21 +30,6 @@
 #include "presentation/render_hook.hpp"
 
 namespace {
-    std::string moduleDirectory(HMODULE hModule) {
-        char path[MAX_PATH];
-        DWORD len = GetModuleFileNameA(hModule, path, MAX_PATH);
-        std::string dir(path, len);
-
-        auto pos = dir.find_last_of("\\/");
-        dir.resize(pos != std::string::npos ? pos + 1 : 0);
-
-        return dir;
-    }
-
-    std::string moduleLogPath(HMODULE hModule) {
-        return moduleDirectory(hModule) + "loader.log";
-    }
-
     // Returns the folder of the game's executable, or the current folder if Windows cannot name it.
     std::filesystem::path executableDirectory() {
         std::wstring path(MAX_PATH, L'\0');
@@ -69,9 +55,11 @@ namespace {
     }
 }
 
+// Opens loader.log next to the game's executable, wherever this DLL itself was loaded from: an ASI
+// loader may load CrabeLoader.asi from scripts/ or plugins/, and the log and Crabe/ stay in one place.
 void initLogger(HMODULE hModule) {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
-    logger.setLogFile(moduleLogPath(hModule));
+    logger.setLogFile((executableDirectory() / "loader.log").string());
     logger.setLogLevel(crabe::shared::LogLevel::DEBUG);
     logger.info("CrabeLoader v{} initialized (built {} {}, loaded as {}).",
                 crabe::version::String, crabe::version::BuildDate, crabe::version::BuildTime,
@@ -99,15 +87,25 @@ namespace {
     bool g_forwardOnly = false;
     bool g_asiOnScriptThread = false;
     std::filesystem::path g_gameRoot;
+    std::once_flag g_asiOnce;
 }
 
-// Loads the .asi plugins of the folder holding the game's executable, once, then hands the plugin API
-// to each one that exports CrabePluginInit.
+// Loads the .asi plugins of the folder holding the game's executable, then hands the plugin API to each
+// one that exports CrabePluginInit. Runs once: a second caller waits until the first one has finished.
 void loadAsiPlugins() {
-    crabe::infrastructure::CrashReporter::pushBreadcrumb("main: loading .asi plugins");
-    crabe::infrastructure::AsiLoader& loader = crabe::infrastructure::AsiLoader::get();
-    loader.loadAll(g_gameRoot);
-    crabe::application::PluginApi::get().startPlugins(loader.records());
+    std::call_once(g_asiOnce, [] {
+        crabe::infrastructure::CrashReporter::pushBreadcrumb("main: loading .asi plugins");
+        crabe::infrastructure::AsiLoader& loader = crabe::infrastructure::AsiLoader::get();
+        loader.loadAll(g_gameRoot);
+        crabe::application::PluginApi::get().startPlugins(loader.records());
+    });
+}
+
+// Called by the bootstrap dinput8.dll right after it loaded this file at the game's entry point, outside
+// the loader lock and before any game code: the .asi plugins load there and then, as they expect to.
+extern "C" __declspec(dllexport) void __cdecl CrabeLoaderBootstrap() {
+    if (!g_forwardOnly)
+        loadAsiPlugins();
 }
 
 void initMain() {
@@ -123,9 +121,9 @@ void initMain() {
     crabe::application::Loader::get().initialize();
 }
 
-// Loads .asi plugins just before the game's entry point when the game imported this DLL at startup,
-// which is when plugins expect to run. A DLL loaded later finds the entry point already passed, and so
-// do plugins when the detour cannot be installed: both load them from the script thread instead.
+// Loads .asi plugins just before the game's entry point when the game imported this DLL at startup.
+// Loaded later (by the bootstrap or another ASI loader), they load from the script thread, unless the
+// bootstrap calls CrabeLoaderBootstrap first, which it does before the game's code runs.
 void scheduleAsiPlugins(bool loadedAtStartup) {
     g_gameRoot = executableDirectory();
     if (loadedAtStartup && crabe::infrastructure::runBeforeEntryPoint(&loadAsiPlugins))
@@ -136,9 +134,9 @@ void scheduleAsiPlugins(bool loadedAtStartup) {
     g_asiOnScriptThread = true;
 }
 
-// Starts the loader when the game loads this DLL, unless another copy of CrabeLoader outranks it.
-// A copy that steps aside only forwards its exports, so a folder holding a 1.x bink2w32.dll and a
-// dinput8.dll runs exactly one loader.
+// Starts the loader when this DLL is loaded, unless another copy of CrabeLoader outranks it.
+// A copy that steps aside starts nothing, so a folder still holding a 1.x bink2w32.dll loader and
+// CrabeLoader.asi runs exactly one loader.
 bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
@@ -159,7 +157,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         // it as a secondary net; the DbgHelp half waits for the script thread
         // (initCrashReporting above), because SymInitialize under the loader
         // lock deadlocks.
-        const std::string crashFolder = moduleDirectory(hModule) + "Crabe";
+        const std::string crashFolder = (executableDirectory() / "Crabe").string();
         crabe::infrastructure::CrashReporter::install(crashFolder.c_str());
         crabe::infrastructure::CrashReporter::pushBreadcrumb("main: DLL_PROCESS_ATTACH");
 
