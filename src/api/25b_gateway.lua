@@ -31,7 +31,7 @@ function Crabe.Gateway.virtualAvatar()
     return (id and id > 0) and id or nil
 end
 
--- Adds a tag; antenna 0 is Player 1 and 1 is Player 2, and the game reacts before this returns.
+-- Adds a tag; antenna 0 is Player 1, 1 is Player 2 and 2 the playset piece, and the game reacts before this returns.
 -- options: experience, level, lastPlayed, actionFlags, owner, skillBits ({ n, ... }) and watch.
 -- With watch, every write the game makes to this tag is emitted as "gatewayTagWrite".
 function Crabe.Gateway.addTag(uid, characterId, antenna, options)

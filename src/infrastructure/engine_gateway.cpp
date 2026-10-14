@@ -59,6 +59,7 @@ namespace {
     constexpr std::uintptr_t kChangeAvatarRemoveCallOffset = 0x23;
     constexpr std::uintptr_t kChangeAvatarAddCallOffset = 0x41;
     constexpr std::uint8_t kVirtualAvatarTag = 0x2C;
+    constexpr std::uint32_t kNoAvatarTag = 0xFFFFFFFF;
     constexpr std::size_t kMaxQueuedWrites = 256;
 
     using AddTagFn = void(__thiscall*)(void* gateway, std::uint64_t uid, std::uint32_t tagId, std::uint8_t antenna,
@@ -227,6 +228,7 @@ void EngineGateway::uninitialize()
         hook.remove();
     std::lock_guard lock(_mutex);
     _watched.clear();
+    _addedOnAntenna.clear();
     _writes.clear();
 }
 
@@ -271,6 +273,17 @@ bool EngineGateway::addTag(std::uint64_t uid, std::uint32_t characterId, std::ui
     if (!gateway)
         return false;
 
+    std::optional<std::uint64_t> previous;
+    {
+        std::lock_guard lock(_mutex);
+        const auto found = _addedOnAntenna.find(antenna);
+        if (found != _addedOnAntenna.end())
+            previous = found->second;
+    }
+    if (previous && !removeTag(*previous))
+        crabe::shared::Logger::getInstance().warning("EngineGateway: could not remove tag {:014x} before adding {:014x}.",
+                                                     *previous, uid);
+
     if (watch) {
         std::lock_guard lock(_mutex);
         _watched.insert(uid);
@@ -291,9 +304,12 @@ bool EngineGateway::addTag(std::uint64_t uid, std::uint32_t characterId, std::ui
         "EngineGateway::addTag");
     t_ownWrite = false;
 
-    if (!completed) {
+    {
         std::lock_guard lock(_mutex);
-        _watched.erase(uid);
+        if (completed)
+            _addedOnAntenna[antenna] = uid;
+        else
+            _watched.erase(uid);
     }
     crabe::shared::Logger::getInstance().info(
         "EngineGateway: tag {:014x} (character {}, antenna {}, level {}) {}{}.", uid, characterId, antenna, data.level,
@@ -315,6 +331,7 @@ bool EngineGateway::removeTag(std::uint64_t uid)
     {
         std::lock_guard lock(_mutex);
         _watched.erase(uid);
+        std::erase_if(_addedOnAntenna, [uid](const auto& entry) { return entry.second == uid; });
     }
     crabe::shared::Logger::getInstance().info("EngineGateway: tag {:014x} {}.", uid, completed ? "removed" : "faulted");
     return completed;
@@ -327,7 +344,8 @@ std::optional<std::uint32_t> EngineGateway::virtualAvatarTag() const
     const auto reader = readAt<std::uintptr_t>(_virtualReaderPtr);
     if (!reader || !crabe::memory::isReadable(reader + kVirtualAvatarTag, sizeof(std::uint32_t)))
         return std::nullopt;
-    return readAt<std::uint32_t>(reader + kVirtualAvatarTag);
+    const auto id = readAt<std::uint32_t>(reader + kVirtualAvatarTag);
+    return id == kNoAvatarTag ? 0u : id;
 }
 
 std::optional<EngineGateway::TagWrite> EngineGateway::pollWrite()

@@ -14,6 +14,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -51,8 +52,8 @@ public:
     void uninitialize();
 
     /// Adds a tag to the registry the way a reader would, then sets its progression when given.
-    /// The engine announces the tag to the game before this returns, so call it on the game thread.
-    /// With `watch`, the game's later writes to this UID are queued for pollWrite.
+    /// A tag this bridge added earlier on the same antenna is removed first, because the engine holds one avatar per antenna.
+    /// The engine announces the change to the game before this returns, so call it on the game thread.
     [[nodiscard]] bool addTag(std::uint64_t uid, std::uint32_t characterId, std::uint8_t antenna,
                               const TagData& data, bool watch);
 
@@ -62,7 +63,7 @@ public:
     [[nodiscard]] bool removeTag(std::uint64_t uid);
 
     /// Character id of the virtual reader's current avatar tag, whose UID is that same id.
-    /// Zero when the virtual reader holds no avatar, std::nullopt when the bridge is absent.
+    /// Zero when the virtual reader holds no avatar (the engine stores 0xFFFFFFFF then), std::nullopt when the bridge is absent.
     [[nodiscard]] std::optional<std::uint32_t> virtualAvatarTag() const;
 
     /// Takes the oldest write the game made to a watched tag.
@@ -96,6 +97,7 @@ private:
 
     mutable std::mutex _mutex;
     std::set<std::uint64_t> _watched;
+    std::map<std::uint8_t, std::uint64_t> _addedOnAntenna;
     std::deque<TagWrite> _writes;
 };
 

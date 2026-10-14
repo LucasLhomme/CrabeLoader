@@ -590,9 +590,10 @@ function Crabe.Gateway.uidForId(id) end
 function Crabe.Gateway.virtualAvatar() end
 
 --- Adds a tag as a reader would; the game keeps a separate profile record per UID.
+--- A tag added earlier on the same antenna is removed first: the engine holds one tag per antenna.
 ---@param uid string Tag UID in hex (up to 16 digits).
----@param characterId number Character SKU.
----@param antenna number 0 = Player 1, 1 = Player 2.
+---@param characterId number Character or playset piece SKU.
+---@param antenna number 0 = Player 1, 1 = Player 2, 2 = playset piece.
 ---@param options GatewayTagOptions?
 ---@return boolean added
 function Crabe.Gateway.addTag(uid, characterId, antenna, options) end

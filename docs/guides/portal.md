@@ -90,7 +90,8 @@ Events on `Crabe.Events`:
 | `virtualAvatar()` | character id of the virtual reader's avatar tag, or `nil` |
 | `uidForId(id)` | UID of the virtual reader's tag for a character id |
 
-- **`antenna`**: `0` is Player 1 and `1` is Player 2. The PC virtual reader always uses antenna 0.
+- **`antenna`**: `0` is Player 1, `1` is Player 2 and `2` is the playset piece (hexagon). The PC virtual reader always uses antenna 0.
+- The engine holds one tag per antenna, so `addTag` first removes the tag it added earlier on the same antenna.
 - **`options`**: `{ experience, level, lastPlayed, actionFlags, owner, skillBits, watch }`.
   - Giving `skillBits` also sets the tag's progression, which the game needs to load a profile record for the UID.
   - With `watch = true`, every write the game makes to that tag is emitted as **`gatewayTagWrite`** `(uid, field, value)`.
