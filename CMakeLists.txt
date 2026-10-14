@@ -118,6 +118,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/code_cave.cpp
     src/infrastructure/engine_actors.cpp
     src/infrastructure/engine_free_camera.cpp
+    src/infrastructure/engine_gateway.cpp
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_meridian.cpp
     src/infrastructure/engine_resolution.cpp

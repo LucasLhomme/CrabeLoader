@@ -29,6 +29,7 @@
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/engine_asset_loader.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_gateway.hpp"
 #include "infrastructure/engine_meridian.hpp"
 #include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
@@ -665,6 +666,7 @@ bool Loader::initialize()
     crabe::presentation::DirectInputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
     crabe::infrastructure::EngineFreeCamera::get().initialize();
+    crabe::infrastructure::EngineGateway::get().initialize();
     crabe::infrastructure::EngineMeridian::get().initialize();
     crabe::infrastructure::EngineShaders::get().initialize();
     crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
@@ -707,6 +709,7 @@ void Loader::uninitialize()
     crabe::presentation::InputHook::get().uninitialize();
     crabe::presentation::DirectInputHook::get().uninitialize();
     crabe::infrastructure::EngineFreeCamera::get().uninitialize();
+    crabe::infrastructure::EngineGateway::get().uninitialize();
     crabe::infrastructure::EngineMeridian::get().uninitialize();
     crabe::infrastructure::EngineShaders::get().uninitialize();
     crabe::infrastructure::EngineResolution::get().uninitialize();
