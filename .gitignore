@@ -6,6 +6,7 @@ tools/*
 !tools/embed_api.py
 !tools/embed_api_def.py
 !tools/check_headers.py
+!tools/build_stamp.cmake
 herald-report.txt
 mods/*
 !mods/_template/
