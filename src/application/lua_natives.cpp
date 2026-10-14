@@ -8,6 +8,7 @@
 ** Authors: @LucasLhomme
 */
 
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <format>
@@ -770,7 +771,18 @@ namespace {
         return 1;
     }
 
-    // Crabe._portalGetStatus() -> connected, typeDesc, slot1Sku, slot2Sku, slot3Sku, diagnostic
+    const char* portalTypeName(crabe::infrastructure::portal::PortalType type)
+    {
+        using crabe::infrastructure::portal::PortalType;
+        switch (type) {
+            case PortalType::StandardHid: return "hid";
+            case PortalType::Xbox360: return "xbox360";
+            case PortalType::XboxOne: return "xboxone";
+            default: return "none";
+        }
+    }
+
+    // Crabe._portalGetStatus() -> connected, typeDesc, slot1Sku, slot2Sku, slot3Sku, diagnostic, typeName
     int __cdecl nativePortalGetStatus(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -783,7 +795,8 @@ namespace {
         lua.pushNumber(L, status.slot2Sku.value_or(0));
         lua.pushNumber(L, status.slot3Sku.value_or(0));
         lua.pushString(L, status.diagnosticMessage);
-        return 6;
+        lua.pushString(L, portalTypeName(status.type));
+        return 7;
     }
 
     // Crabe._portalSetLed(slot, r, g, b) -> bool
@@ -802,7 +815,11 @@ namespace {
         return 1;
     }
 
-    // Crabe._portalPollEvent() -> eventType (0=none, 1=placed, 2=removed), slot, sku
+    // Crabe._portalPollEvent() -> eventType (0=none, 1=placed, 2=removed), slot, sku, uidHex,
+    //                             level, experience, skillBitsHex, actionFlags, lastPlayed
+    // The UID is 7 bytes, more than a Lua number holds exactly, so it travels as hex text. The last
+    // five come from the progression saved on a character figure; nil when it has none.
+    // skillBitsHex is 8 bytes as on the tag: bit n = byte[n / 8] & (1 << (n % 8)).
     int __cdecl nativePortalPollEvent(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -813,13 +830,57 @@ namespace {
             lua.pushNumber(L, 0);
             lua.pushNumber(L, 0);
             lua.pushNumber(L, 0);
-            return 3;
+            lua.pushString(L, "");
+            return 4;
         }
 
+        char uid[32];
+        std::snprintf(uid, sizeof(uid), "%014llx", static_cast<unsigned long long>(ev->uid));
         lua.pushNumber(L, ev->type == crabe::infrastructure::portal::PortalTagEvent::Type::Placed ? 1 : 2);
         lua.pushNumber(L, ev->slot);
         lua.pushNumber(L, ev->sku);
-        return 3;
+        lua.pushString(L, ev->uid ? uid : "");
+        if (!ev->progress) {
+            for (int i = 0; i < 5; ++i) lua.pushNil(L);
+            return 9;
+        }
+        const auto& progress = *ev->progress;
+        char bits[17];
+        for (std::size_t i = 0; i < progress.skillBits.size(); ++i) {
+            std::snprintf(bits + 2 * i, 3, "%02x", progress.skillBits[i]);
+        }
+        lua.pushNumber(L, progress.level);
+        lua.pushNumber(L, progress.experience);
+        lua.pushString(L, bits);
+        lua.pushNumber(L, progress.actionFlags);
+        lua.pushNumber(L, progress.lastPlayed);
+        return 9;
+    }
+
+    // Crabe._portalWriteProgress(slot, level, experience, skillBitsHex, actionFlags, lastPlayed) -> bool
+    // Saves progression onto the physical figure of a player slot (older copy, verified by read-back).
+    int __cdecl nativePortalWriteProgress(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        crabe::infrastructure::portal::FigureProgress progress;
+        const auto slot = static_cast<std::uint8_t>(lua.argToNumber(L, 1, 0.0));
+        progress.level = static_cast<std::uint8_t>(lua.argToNumber(L, 2, 0.0));
+        progress.experience = static_cast<std::uint32_t>(lua.argToNumber(L, 3, 0.0));
+        const char* bitsArg = lua.argToString(L, 4);
+        const std::string bits = bitsArg ? bitsArg : "";
+        for (std::size_t i = 0; i < progress.skillBits.size() && 2 * i + 1 < bits.size(); ++i) {
+            progress.skillBits[i] = static_cast<std::uint8_t>(std::stoul(bits.substr(2 * i, 2), nullptr, 16));
+        }
+        progress.actionFlags = static_cast<std::uint8_t>(lua.argToNumber(L, 5, 0.0));
+        progress.lastPlayed = static_cast<std::uint32_t>(lua.argToNumber(L, 6, 0.0));
+
+        const bool queued = (slot == 1 || slot == 2) && bits.size() == 16 &&
+                            crabe::infrastructure::portal::PortalService::Instance().WriteProgress(slot, progress);
+        if (lua.hasReturnSupport()) {
+            lua.pushBoolean(L, queued);
+            return 1;
+        }
+        return 0;
     }
 
     // Crabe._portalEmulatePlace(slot, sku) -> bool
@@ -917,6 +978,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_portalIsConnected",     &nativePortalIsConnected },
         { "_portalGetStatus",       &nativePortalGetStatus },
         { "_portalSetLed",          &nativePortalSetLed },
+        { "_portalWriteProgress",   &nativePortalWriteProgress },
         { "_portalPollEvent",       &nativePortalPollEvent },
         { "_portalEmulatePlace",    &nativePortalEmulatePlace },
         { "_portalEmulateRemove",   &nativePortalEmulateRemove },

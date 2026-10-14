@@ -1,8 +1,8 @@
 /*
 ** CrabeLoader
 ** File description:
-** Implements PortalService:
-** Coordinates hardware drivers, handles hotplug scanning, and drives the virtual portal.
+** Implements PortalService: game-thread view of the physical base (worker thread) and of the
+** virtual portal, with one slot table and one event queue.
 **
 ** Authors: @LucasLhomme
 */
@@ -10,9 +10,10 @@
 #include "infrastructure/portal/portal_service.hpp"
 #include "shared/logger.hpp"
 
+#include <algorithm>
+
 namespace crabe::infrastructure::portal {
 
-PortalService::PortalService() = default;
 PortalService::~PortalService() {
     Shutdown();
 }
@@ -23,139 +24,94 @@ PortalService& PortalService::Instance() {
 }
 
 void PortalService::Initialize() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    crabe::shared::Logger::getInstance().info("PortalService: Initialisation du sous-systeme de portail");
-    m_driver = CreatePortalDriver();
-    if (m_driver && m_driver->IsConnected()) {
-        crabe::shared::Logger::getInstance().info("PortalService: Detecte: {}", m_driver->GetTypeDescription());
-    } else {
-        crabe::shared::Logger::getInstance().info("PortalService: Aucun portail physique actif au demarrage");
-    }
-    m_lastScanTime = std::chrono::steady_clock::now();
+    if (m_started) return;
+    crabe::shared::Logger::getInstance().info("PortalService: démarrage du sous-système de portail");
+    m_worker.Start();
+    m_started = true;
 }
 
 void PortalService::Shutdown() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_driver) {
-        m_driver->Close();
-        m_driver.reset();
-    }
-    m_eventQueue.clear();
+    if (!m_started) return;
+    m_worker.Stop();
+    m_started = false;
+    std::lock_guard lock(m_mutex);
+    m_events.clear();
 }
 
-void PortalService::ScanForDevice() {
-    auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration_cast<std::chrono::seconds>(now - m_lastScanTime).count() < 3) {
-        return;
-    }
-    m_lastScanTime = now;
-
-    if (!m_driver || !m_driver->IsConnected()) {
-        auto newDriver = CreatePortalDriver();
-        if (newDriver && newDriver->IsConnected()) {
-            crabe::shared::Logger::getInstance().info("PortalService: Nouveau portail detecte: {}", newDriver->GetTypeDescription());
-            m_driver = std::move(newDriver);
-        }
-    }
+void PortalService::Apply(const PortalTagEvent& event) {
+    if (event.slot < 1 || event.slot > 3) return;
+    if (event.type == PortalTagEvent::Type::Placed) m_slotSku[event.slot] = event.sku;
+    else m_slotSku[event.slot].reset();
+    m_events.push_back(event);
 }
 
 void PortalService::Update() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    ScanForDevice();
+    if (!m_started) return;
+    const auto events = m_worker.TakeEvents();
+    if (events.empty()) return;
 
-    if (!m_driver || !m_driver->IsConnected()) {
-        return;
-    }
-
-    std::vector<PortalTagEvent> events;
-    m_driver->Poll(events);
-
-    for (const auto& ev : events) {
-        if (ev.type == PortalTagEvent::Type::Placed) {
-            crabe::shared::Logger::getInstance().info("PortalService: Figurine posee sur slot {} (SKU: {})", ev.slot, ev.sku);
-            if (ev.slot == 1) m_slot1Sku = ev.sku;
-            else if (ev.slot == 2) m_slot2Sku = ev.sku;
-            else if (ev.slot == 3) m_slot3Sku = ev.sku;
-        } else {
-            crabe::shared::Logger::getInstance().info("PortalService: Figurine retiree du slot {}", ev.slot);
-            if (ev.slot == 1) m_slot1Sku.reset();
-            else if (ev.slot == 2) m_slot2Sku.reset();
-            else if (ev.slot == 3) m_slot3Sku.reset();
-        }
-        m_eventQueue.push_back(ev);
+    std::lock_guard lock(m_mutex);
+    for (const auto& event : events) {
+        crabe::shared::Logger::getInstance().info("PortalService: figurine {} sur le slot {} (SKU {})",
+                                                  event.type == PortalTagEvent::Type::Placed ? "posée" : "retirée",
+                                                  event.slot, event.sku);
+        Apply(event);
     }
 }
 
 bool PortalService::IsConnected() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_driver && m_driver->IsConnected();
+    return m_worker.GetSnapshot().connected;
 }
 
 PortalStatus PortalService::GetStatus() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    PortalStatus status{};
-    status.slot1Sku = m_slot1Sku;
-    status.slot2Sku = m_slot2Sku;
-    status.slot3Sku = m_slot3Sku;
+    const auto snapshot = m_worker.GetSnapshot();
 
-    if (m_driver && m_driver->IsConnected()) {
-        status.connected = true;
-        status.type = m_driver->GetType();
-        status.typeDescription = m_driver->GetTypeDescription();
+    PortalStatus status;
+    status.connected = snapshot.connected;
+    status.type = snapshot.type;
+    status.typeDescription = snapshot.description.empty() ? "Aucun portail physique" : snapshot.description;
+    status.diagnosticMessage = snapshot.diagnostic;
 
-        if (status.type == PortalType::XboxOneGipLocked) {
-            status.diagnosticMessage = "Portail Xbox One détecté (INF-8037059) — Matériellement verrouillé par puce de sécurité Microsoft GIP.";
-        }
-    } else {
-        status.connected = false;
-        status.type = PortalType::None;
-        status.typeDescription = "Aucun portail physique";
-    }
-
+    std::lock_guard lock(m_mutex);
+    status.slot1Sku = m_slotSku[1];
+    status.slot2Sku = m_slotSku[2];
+    status.slot3Sku = m_slotSku[3];
     return status;
 }
 
-bool PortalService::SetLed(uint8_t slot, uint8_t r, uint8_t g, uint8_t b) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_driver || !m_driver->IsConnected()) return false;
-    return m_driver->SetLed(slot, r, g, b);
+bool PortalService::SetLed(std::uint8_t slot, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    return m_worker.SetLed(slot, r, g, b);
+}
+
+bool PortalService::WriteProgress(std::uint8_t slot, const FigureProgress& progress) {
+    return m_worker.WriteProgress(slot, progress);
 }
 
 std::optional<PortalTagEvent> PortalService::PollEvent() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_eventQueue.empty()) return std::nullopt;
-
-    PortalTagEvent ev = m_eventQueue.front();
-    m_eventQueue.erase(m_eventQueue.begin());
-    return ev;
+    std::lock_guard lock(m_mutex);
+    if (m_events.empty()) return std::nullopt;
+    const PortalTagEvent event = m_events.front();
+    m_events.erase(m_events.begin());
+    return event;
 }
 
-void PortalService::EmulatePlaceFigure(uint8_t slot, uint32_t sku) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    crabe::shared::Logger::getInstance().info("PortalService [Virtuel]: Pose de la figurine SKU {} sur le slot {}", sku, slot);
-    if (slot == 1) m_slot1Sku = sku;
-    else if (slot == 2) m_slot2Sku = sku;
-    else if (slot == 3) m_slot3Sku = sku;
-
-    PortalTagEvent ev{};
-    ev.type = PortalTagEvent::Type::Placed;
-    ev.slot = slot;
-    ev.sku = sku;
-    m_eventQueue.push_back(ev);
+void PortalService::EmulatePlaceFigure(std::uint8_t slot, std::uint32_t sku) {
+    crabe::shared::Logger::getInstance().info("PortalService [virtuel]: SKU {} posé sur le slot {}", sku, slot);
+    PortalTagEvent event;
+    event.type = PortalTagEvent::Type::Placed;
+    event.slot = slot;
+    event.sku = sku;
+    std::lock_guard lock(m_mutex);
+    Apply(event);
 }
 
-void PortalService::EmulateRemoveFigure(uint8_t slot) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    crabe::shared::Logger::getInstance().info("PortalService [Virtuel]: Retrait de la figurine du slot {}", slot);
-    if (slot == 1) m_slot1Sku.reset();
-    else if (slot == 2) m_slot2Sku.reset();
-    else if (slot == 3) m_slot3Sku.reset();
-
-    PortalTagEvent ev{};
-    ev.type = PortalTagEvent::Type::Removed;
-    ev.slot = slot;
-    ev.sku = 0;
-    m_eventQueue.push_back(ev);
+void PortalService::EmulateRemoveFigure(std::uint8_t slot) {
+    crabe::shared::Logger::getInstance().info("PortalService [virtuel]: retrait du slot {}", slot);
+    PortalTagEvent event;
+    event.type = PortalTagEvent::Type::Removed;
+    event.slot = slot;
+    std::lock_guard lock(m_mutex);
+    Apply(event);
 }
 
 } // namespace crabe::infrastructure::portal

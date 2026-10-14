@@ -1,19 +1,20 @@
 #pragma once
 
-#include "infrastructure/portal/portal_driver.hpp"
+#include "infrastructure/portal/portal_types.hpp"
+#include "infrastructure/portal/portal_worker.hpp"
 
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace crabe::infrastructure::portal {
 
+// Game-thread facade of the portal subsystem: physical base (through the worker thread) and
+// virtual figures placed from Lua share one slot table and one event queue.
 class PortalService final {
 public:
-    PortalService();
+    PortalService() = default;
     ~PortalService();
 
     PortalService(const PortalService&) = delete;
@@ -25,31 +26,30 @@ public:
 
     void Initialize();
     void Shutdown();
+    // Once per tick: moves figure events from the worker into the slot table and the queue.
     void Update();
 
     [[nodiscard]] bool IsConnected() const;
     [[nodiscard]] PortalStatus GetStatus() const;
-    bool SetLed(uint8_t slot, uint8_t r, uint8_t g, uint8_t b);
+    bool SetLed(std::uint8_t slot, std::uint8_t r, std::uint8_t g, std::uint8_t b);
+    // Saves progression onto the physical figure of a player slot; false when nothing was queued.
+    bool WriteProgress(std::uint8_t slot, const FigureProgress& progress);
 
-    // Pops the next event from the queue (if any)
+    // Pops the next event from the queue (if any).
     [[nodiscard]] std::optional<PortalTagEvent> PollEvent();
 
-    // Virtual Portal API (accessible from CrabeMenu to place/remove virtual figures)
-    void EmulatePlaceFigure(uint8_t slot, uint32_t sku);
-    void EmulateRemoveFigure(uint8_t slot);
+    // Virtual portal: place or remove a figure without hardware.
+    void EmulatePlaceFigure(std::uint8_t slot, std::uint32_t sku);
+    void EmulateRemoveFigure(std::uint8_t slot);
 
 private:
-    void ScanForDevice();
+    void Apply(const PortalTagEvent& event);
 
-    std::unique_ptr<IPortalDriver> m_driver;
+    PortalWorker m_worker;
     mutable std::mutex m_mutex;
-
-    std::optional<uint32_t> m_slot1Sku;
-    std::optional<uint32_t> m_slot2Sku;
-    std::optional<uint32_t> m_slot3Sku;
-
-    std::vector<PortalTagEvent> m_eventQueue;
-    std::chrono::steady_clock::time_point m_lastScanTime;
+    std::optional<std::uint32_t> m_slotSku[4]; // index 1..3
+    std::vector<PortalTagEvent> m_events;
+    bool m_started{false};
 };
 
 } // namespace crabe::infrastructure::portal
