@@ -57,6 +57,14 @@ build/Release/CrabeLoader.asi
 build/Release/dinput8.dll
 ```
 
+Every build is stamped with a label that tells it apart from any other build. A local or CI build reads
+`1.1.0-dev.20261015.0011+46329b2`: the version from `VERSION`, the build's date and time, and the short commit,
+with `-dirty` when uncommitted changes were built in. Only the release workflow passes
+`-DCRABELOADER_RELEASE_BUILD=ON`, which labels the build with the plain version (`1.1.0`). The label is the first
+line of `loader.log`, the overlay title, the `Loader` line of a crash report, the DLL's *Product version*
+property and `Crabe.versionFull` in Lua. Mods and the update check keep comparing the plain `Crabe.version`.
+When someone shares a crash, the label says exactly which build it was.
+
 ---
 
 ## 🔄 Git Workflow & Branching Strategy

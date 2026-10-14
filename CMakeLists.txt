@@ -18,6 +18,27 @@ configure_file(
     @ONLY
 )
 
+# The build label (include/shared/build_info.hpp): restamped at every build, so two
+# builds never look alike in the log, the overlay or a crash report. A release
+# build (the release workflow) is labelled with the plain version.
+option(CRABELOADER_RELEASE_BUILD "Label this build as a release (plain version) instead of a development build." OFF)
+set(CRABE_BUILD_STAMP_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(CRABE_BUILD_STAMP_COMMAND
+    "${CMAKE_COMMAND}"
+    "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DOUTPUT_DIR=${CRABE_BUILD_STAMP_DIR}"
+    "-DVERSION=${CRABELOADER_VERSION}"
+    "-DRELEASE=${CRABELOADER_RELEASE_BUILD}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_stamp.cmake"
+)
+execute_process(COMMAND ${CRABE_BUILD_STAMP_COMMAND})
+add_custom_target(crabe_build_stamp
+    COMMAND ${CRABE_BUILD_STAMP_COMMAND}
+    BYPRODUCTS "${CRABE_BUILD_STAMP_DIR}/build_stamp.cpp" "${CRABE_BUILD_STAMP_DIR}/build_stamp.h"
+    COMMENT "Stamping the build label"
+    VERBATIM
+)
+
 option(CRABELOADER_AS_SHARED "Build CrabeLoader as a shared library (DLL)." OFF)
 option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
 option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
@@ -219,7 +240,8 @@ if(CRABELOADER_AS_SHARED)
         "${CMAKE_CURRENT_BINARY_DIR}/bootstrap/bootstrap.rc"
     )
     set_target_properties(CrabeBootstrap PROPERTIES OUTPUT_NAME "dinput8")
-    target_include_directories(CrabeBootstrap PRIVATE include)
+    target_include_directories(CrabeBootstrap PRIVATE include "${CRABE_BUILD_STAMP_DIR}")
+    add_dependencies(CrabeBootstrap crabe_build_stamp)
     target_compile_definitions(CrabeBootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     if(MSVC)
         target_compile_options(CrabeBootstrap PRIVATE /W4 /utf-8)
@@ -247,6 +269,10 @@ target_compile_definitions(${PROJECT_NAME}
         NOMINMAX
         _CRT_SECURE_NO_WARNINGS
 )
+
+target_sources(${PROJECT_NAME} PRIVATE "${CRABE_BUILD_STAMP_DIR}/build_stamp.cpp")
+target_include_directories(${PROJECT_NAME} PRIVATE "${CRABE_BUILD_STAMP_DIR}")
+add_dependencies(${PROJECT_NAME} crabe_build_stamp)
 if(CRABELOADER_WITH_MULTIPLAYER)
     target_compile_definitions(${PROJECT_NAME} PRIVATE CRABELOADER_WITH_MULTIPLAYER=1)
 endif()
@@ -549,6 +575,20 @@ foreach(probe IN ITEMS asi_probe asi_probe_refuses asi_probe_init_crash)
     endif()
 endforeach()
 
+# test_build_info checks the label this very build was stamped with.
+add_executable(test_build_info
+    tests/cpp/test_build_info.cpp
+    "${CRABE_BUILD_STAMP_DIR}/build_stamp.cpp"
+    src/shared/version.cpp
+)
+add_dependencies(test_build_info crabe_build_stamp)
+target_include_directories(test_build_info PRIVATE include)
+if(MSVC)
+    target_compile_options(test_build_info PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_build_info PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # test_bootstrap starts a probe as CrabeLoader.asi the way the bootstrap dinput8.dll does,
 # and checks every outcome it reports: started, missing, refused, crashed.
 add_executable(test_bootstrap
@@ -765,6 +805,7 @@ add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
+add_test(NAME test_build_info COMMAND test_build_info)
 add_test(NAME test_bootstrap COMMAND test_bootstrap $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>
     $<TARGET_FILE:asi_probe_init_crash>)
 add_test(NAME test_asi_plugins COMMAND test_asi_plugins $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>

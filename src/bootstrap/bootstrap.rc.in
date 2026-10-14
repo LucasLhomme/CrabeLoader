@@ -9,6 +9,7 @@
 */
 
 #include <windows.h>
+#include "build_stamp.h"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
@@ -30,7 +31,7 @@ BEGIN
             VALUE "LegalCopyright",   "Copyright (C) 2026\0"
             VALUE "OriginalFilename", "dinput8.dll\0"
             VALUE "ProductName",      "CrabeLoader\0"
-            VALUE "ProductVersion",   "@PROJECT_VERSION@\0"
+            VALUE "ProductVersion",   CRABE_BUILD_LABEL_RC
         END
     END
     BLOCK "VarFileInfo"

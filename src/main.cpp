@@ -15,6 +15,7 @@
 #include <thread>
 #include <string>
 #include "shared/logger.hpp"
+#include "shared/build_info.hpp"
 #include "shared/version.hpp"
 #include "application/loader.hpp"
 #include "application/plugin_api.hpp"
@@ -61,8 +62,8 @@ void initLogger(HMODULE hModule) {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     logger.setLogFile((executableDirectory() / "loader.log").string());
     logger.setLogLevel(crabe::shared::LogLevel::DEBUG);
-    logger.info("CrabeLoader v{} initialized (built {} {}, loaded as {}).",
-                crabe::version::String, crabe::version::BuildDate, crabe::version::BuildTime,
+    logger.info("CrabeLoader v{} initialized (built {}, commit {}, loaded as {}).",
+                crabe::build::label(), crabe::build::time(), crabe::build::commit(),
                 asciiName(crabe::infrastructure::moduleFileName(hModule)));
 }
 

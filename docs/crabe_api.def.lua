@@ -3,7 +3,9 @@
 --- Place this file in your workspace or mod directory for full IntelliSense autocompletion.
 
 ---@class Crabe
----@field public version string The semver version of CrabeLoader (e.g. "0.2.0").
+---@field public version string The semver version of CrabeLoader (e.g. "1.1.0"); compare against this one.
+---@field public versionFull string The build label: "1.1.0" for a release, "1.1.0-dev.20261015.0011+46329b2" for a development build.
+---@field public buildCommit string The short commit the build came from, with "-dirty" when uncommitted changes were built in.
 ---@field public versionMajor number The major version integer.
 ---@field public versionMinor number The minor version integer.
 ---@field public versionPatch number The patch version integer.

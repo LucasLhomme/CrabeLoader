@@ -32,7 +32,7 @@
 
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/hook_registry.hpp"
-#include "shared/version.hpp"
+#include "shared/build_info.hpp"
 
 #include <windows.h>
 #include <dbghelp.h>
@@ -936,15 +936,15 @@ namespace {
         sink.text("=== CrabeLoader crash report ===");
         sink.line();
 
-        // All three are constexpr std::string_view over string literals, so
-        // data() is NUL terminated and reading them costs nothing.
+        // All three are std::string_view over string literals in the generated
+        // build_stamp.cpp, so data() is NUL terminated and reading them costs nothing.
         sink.column("Loader", 14);
         sink.text(": v");
-        sink.text(crabe::version::String.data());
+        sink.text(crabe::build::label().data());
         sink.text(" (built ");
-        sink.text(crabe::version::BuildDate.data());
-        sink.put(' ');
-        sink.text(crabe::version::BuildTime.data());
+        sink.text(crabe::build::time().data());
+        sink.text(", commit ");
+        sink.text(crabe::build::commit().data());
         sink.put(')');
         sink.line();
 

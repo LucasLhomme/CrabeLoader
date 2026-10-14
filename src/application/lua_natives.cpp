@@ -18,6 +18,7 @@
 #include <vector>
 #include <windows.h>
 
+#include "shared/build_info.hpp"
 #include "shared/version.hpp"
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/dinput_hook.hpp"
@@ -898,8 +899,9 @@ bool crabe::lua_runtime::registerNatives(void* L)
 
     crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
         "Crabe = Crabe or {{}}; Crabe.version = '{}'; Crabe.versionMajor = {}; "
-        "Crabe.versionMinor = {}; Crabe.versionPatch = {};",
-        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch));
+        "Crabe.versionMinor = {}; Crabe.versionPatch = {}; Crabe.versionFull = '{}'; Crabe.buildCommit = '{}';",
+        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch,
+        crabe::build::label(), crabe::build::commit()));
 
     for (const auto& entry : kNatives) {
         if (crabe::infrastructure::LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;
