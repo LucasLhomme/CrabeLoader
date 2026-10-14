@@ -165,6 +165,14 @@ function Input.padHas(buttons, mask)
     return math.floor((buttons or 0) / mask) % 2 == 1
 end
 
+--- Reports whether a key or mouse button is held right now, read from Windows, not from what the game sees.
+--- @param vk number Windows Virtual Key code
+--- @return boolean down
+function Input.isKeyDown(vk)
+    if type(vk) ~= "number" or not Crabe._keyDown then return false end
+    return Crabe._keyDown(vk) == 1
+end
+
 --- Hands the game an idle gamepad while on, so a mod can own the controller.
 --- padState keeps reading the real pad. Call with false to give it back.
 --- @param captured boolean
