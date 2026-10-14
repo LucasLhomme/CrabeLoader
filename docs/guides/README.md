@@ -16,6 +16,7 @@ This directory contains in-depth, structured guides in plain English covering ev
 | **[crabe-cli Reference](cli.md)** | Scaffold a new mod, validate a manifest, run the real dependency resolver, and catch Lua API typos -- all offline, without launching the game. | All Modders & CI Pipelines |
 | **[Loose Texture Overrides & VFS](vfs_textures.md)** | Intercept asset and texture loading via the Virtual File System (VFS), override textures with loose `.tbody` files, and hot-reload in real-time (`F4`). | Texture Artists & Modders |
 | **[Update Check & CrabeInstaller](updates_and_installer.md)** | How the launch-time update prompt works and how to turn it off, plus the one-click installer and the rule that keeps the game's original `bink2w32.dll` safe. | Players & Maintainers |
+| **[Disney Infinity Base & Figure Registry](portal.md)** | Use a physical Disney Infinity base (Xbox One, Xbox 360, PS3/PS4/Wii/Wii U/PC) from Lua with `Crabe.Portal`, and add figures to the engine's own registry with `Crabe.Gateway` so each figure keeps its own progression. | Modders & Hardware Tinkerers |
 
 ---
 
