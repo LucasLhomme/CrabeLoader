@@ -80,6 +80,17 @@ These tests run standalone without requiring the `DisneyInfinity3.exe` game proc
 
 ---
 
+### B3. Native `.asi` Plugins and the Plugin API (`test_asi_plugins.exe`)
+* **Source files:** [`tests/cpp/test_asi_plugins.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_asi_plugins.cpp), [`tests/cpp/asi_probe.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/asi_probe.cpp)
+* **Purpose:** `[plugins]` in `crabe.toml`, discovery order and every skip reason (setting off, `skip` list, mod disabled by profile, ignored folders), the PE check that refuses 64-bit and non-DLL files, and real loads of three probe plugins built by CMake from `asi_probe.cpp`: `asi_probe.asi` starts and calls every function of the plugin API against a fake host, `asi_probe_refuses.asi` returns `FALSE` from `DllMain`, `asi_probe_init_crash.asi` faults in `CrabePluginInit`.
+* **Execution command:** CTest passes the three probe paths; run directly, the real-load cases are skipped without them.
+  ```powershell
+  cmake --build build --config Release --target test_asi_plugins
+  ctest --test-dir build -C Release -R test_asi_plugins --output-on-failure
+  ```
+
+---
+
 ### C. Dependency Graph & DAG Regression Suite (`crabe_fate.exe`)
 * **Source file:** [`tests/cpp/crabe_fate_main.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/crabe_fate_main.cpp)
 * **Test directories:** [`tests/fate/samples/`](file:///e:/Dev/DIM2/CrabeLoader/tests/fate/samples/) and [`tests/fate/ref/`](file:///e:/Dev/DIM2/CrabeLoader/tests/fate/ref/)
@@ -112,6 +123,7 @@ This suite executes all embedded Lua runtime modules inside a standalone emulato
   8. `test_settings.lua`: persistent menu configuration.
   9. `test_vfs_api.lua`: Lua redirection stubs and API bindings.
   10. `test_monitoring.lua`: 100 concurrent scheduled fibers, fiber error containment, frametime pacing statistics.
+  11. `test_plugins_api.lua`: `Crabe.Plugins.list` / `isLoaded` parsing, and `get` / `set` value sharing with native plugins.
 * **Execution command:**
   ```powershell
   python tests/run_lua_tests.py

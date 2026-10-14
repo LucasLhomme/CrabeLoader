@@ -38,6 +38,7 @@ Disney Infinity 3.0 Gold Edition/
 No manual injector or archive repacking is needed: CrabeLoader scans `mods/` automatically:
 * **Standalone Scripts (`mods/*.lua`):** Executed directly in their own isolated sandboxes.
 * **Modular Packages (`mods/<folder>/`):** Read `mod.json`, execute their entry script, register custom characters (`characters/`), and arm skill tree patches (`skilltrees/`).
+* **Native Plugins (`.asi`):** A rare mod that needs native code ships a 32-bit `.asi` next to its `mod.json`. It loads once, before the game starts, and only while the mod is enabled. Standalone plugins can also go in `scripts/` or `plugins/`. See [Native `.asi` Plugins](guides/asi_plugins.md).
 
 
 

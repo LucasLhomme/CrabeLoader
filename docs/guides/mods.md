@@ -30,6 +30,8 @@ Disney Infinity 3.0 Gold Edition/
 
 You can write either a single `.lua` file dropped directly into `mods/`, or create a self-contained multi-file package with a `mod.json` manifest that bundles custom code, characters, and skill trees together.
 
+A package can also carry a native half: a 32-bit `.asi` plugin next to `mod.json`. It loads once, before the game starts, and only while the mod is enabled; `F4` does not reload it. The Lua half checks for it with `Crabe.Plugins.isLoaded("name.asi")`, and the two exchange values through `Crabe.Plugins.get` / `Crabe.Plugins.set` and the C plugin API. See [Native `.asi` Plugins](asi_plugins.md).
+
 ---
 
 ## 2. Mod Manifest (`mod.json`)
