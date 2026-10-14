@@ -52,4 +52,44 @@ suite.cases[#suite.cases + 1] = {
     end,
 }
 
+suite.cases[#suite.cases + 1] = {
+    "get and set do nothing on a loader without the bridge",
+    function(state)
+        state.Crabe._pluginGetValue = nil
+        state.Crabe._pluginSetValue = nil
+        assertEquals(state.Crabe.Plugins.get("k"), nil, "no native, no value")
+        assertFalse(state.Crabe.Plugins.set("k", "v"), "no native, nothing set")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "set stores strings, converts numbers and booleans, and nil erases",
+    function(state)
+        local store = {}
+        state.Crabe._pluginSetValue = function(key, value) store[key] = value end
+        state.Crabe._pluginGetValue = function(key) return store[key] end
+        assertTrue(state.Crabe.Plugins.set("mod.name", "crabe"), "string")
+        assertTrue(state.Crabe.Plugins.set("mod.count", 3), "number")
+        assertTrue(state.Crabe.Plugins.set("mod.on", false), "boolean")
+        assertEquals(state.Crabe.Plugins.get("mod.name"), "crabe", "string kept")
+        assertEquals(state.Crabe.Plugins.get("mod.count"), "3", "number as text")
+        assertEquals(state.Crabe.Plugins.get("mod.on"), "false", "boolean as text")
+        assertTrue(state.Crabe.Plugins.set("mod.name", nil), "nil erases")
+        assertEquals(state.Crabe.Plugins.get("mod.name"), nil, "erased")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "get and set refuse a missing or empty key",
+    function(state)
+        local called = false
+        state.Crabe._pluginSetValue = function() called = true end
+        state.Crabe._pluginGetValue = function() called = true end
+        assertFalse(state.Crabe.Plugins.set("", "v"), "empty key")
+        assertFalse(state.Crabe.Plugins.set(nil, "v"), "no key")
+        assertEquals(state.Crabe.Plugins.get(42), nil, "number key")
+        assertFalse(called, "natives are not called")
+    end,
+}
+
 return suite

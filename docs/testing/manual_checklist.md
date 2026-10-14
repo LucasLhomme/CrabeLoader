@@ -291,6 +291,11 @@ on the game's own entry point and a real plugin running inside the game.
       must give the reason it was refused.
 - [ ] **`[plugins].asi = false` loads nothing.** Set it, launch, and confirm
       every `.asi` is logged as skipped and none is in the process.
+- [ ] **A plugin using the plugin API talks to Lua.** Build a plugin that
+      exports `CrabePluginInit`, calls `setValue(api, "test.key", "hello")` and
+      `runLua(api, "Crabe.write('from plugin')")`. In game, `loader.log` must
+      show `PluginApi: <name> started with plugin API v1` and `from plugin`,
+      and `=Crabe.Plugins.get("test.key")` in the console must print `hello`.
 - [ ] **Lua sees the list.** From the console, run
       `for _, p in ipairs(Crabe.Plugins.list()) do Crabe.write(p.file .. " " .. p.status) end`
       and compare with the log.

@@ -92,6 +92,8 @@ set(CRABELOADER_CORE_SOURCES
     src/application/gateway.cpp
     src/application/lua_runtime.cpp
     src/application/lua_natives.cpp
+    src/application/plugin_api.cpp
+    src/application/plugin_host.cpp
     src/application/update_checker.cpp
     src/application/update_launcher.cpp
 
@@ -515,13 +517,16 @@ else()
     target_compile_options(test_installer PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# test_asi_plugins loads two real plugins built here: asi_probe starts and records that it ran,
-# asi_probe_refuses returns FALSE from DllMain. Both are plain 32-bit DLLs renamed .asi.
-foreach(probe IN ITEMS asi_probe asi_probe_refuses)
+# test_asi_plugins loads three real plugins built here: asi_probe starts and drives the plugin API,
+# asi_probe_refuses returns FALSE from DllMain, asi_probe_init_crash faults in CrabePluginInit.
+foreach(probe IN ITEMS asi_probe asi_probe_refuses asi_probe_init_crash)
     add_library(${probe} SHARED tests/cpp/asi_probe.cpp)
+    target_include_directories(${probe} PRIVATE include)
     set_target_properties(${probe} PROPERTIES SUFFIX ".asi" PREFIX "")
     if(probe STREQUAL "asi_probe_refuses")
         target_compile_definitions(${probe} PRIVATE CRABE_ASI_PROBE_REFUSES=1)
+    elseif(probe STREQUAL "asi_probe_init_crash")
+        target_compile_definitions(${probe} PRIVATE CRABE_ASI_PROBE_INIT_CRASHES=1)
     endif()
 endforeach()
 
@@ -533,10 +538,11 @@ add_executable(test_asi_plugins
     src/domain/mod_id.cpp
     src/domain/semver.cpp
     src/infrastructure/asi_loader.cpp
+    src/application/plugin_api.cpp
     src/shared/logger.cpp
     src/shared/version.cpp
 )
-add_dependencies(test_asi_plugins asi_probe asi_probe_refuses)
+add_dependencies(test_asi_plugins asi_probe asi_probe_refuses asi_probe_init_crash)
 target_include_directories(test_asi_plugins PRIVATE
     include
     include/domain
@@ -723,7 +729,8 @@ add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
-add_test(NAME test_asi_plugins COMMAND test_asi_plugins $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>)
+add_test(NAME test_asi_plugins COMMAND test_asi_plugins $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>
+    $<TARGET_FILE:asi_probe_init_crash>)
 add_test(NAME crabe_fate COMMAND crabe_fate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)

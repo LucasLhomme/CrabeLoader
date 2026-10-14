@@ -151,9 +151,10 @@ namespace crabe::infrastructure {
         }
 
         const std::wstring path = candidate.path.wstring();
-        if (GetModuleHandleW(path.c_str())) {
+        if (const HMODULE present = GetModuleHandleW(path.c_str())) {
             record.status = AsiLoadStatus::AlreadyLoaded;
             record.detail.clear();
+            record.module = present;
             return record;
         }
 
@@ -171,6 +172,7 @@ namespace crabe::infrastructure {
             return record;
         }
         record.status = AsiLoadStatus::Loaded;
+        record.module = load.module;
         record.detail = std::format("at 0x{:08X}", reinterpret_cast<std::uintptr_t>(load.module));
         return record;
     }

@@ -1,8 +1,8 @@
 -- CrabeLoader
 -- File description:
 -- Exposes the native .asi plugins CrabeLoader found under the Crabe.Plugins namespace.
--- Read-only: a plugin loads before the game starts and can never be loaded or unloaded from Lua.
--- Parses the one string Crabe._asiReport returns, since natives cannot build tables.
+-- Also shares string values with plugins that use the plugin API (include/sdk/crabe_plugin.h).
+-- A plugin loads before the game starts and can never be loaded or unloaded from Lua.
 --
 -- Authors: @LucasLhomme
 
@@ -23,6 +23,30 @@ function Crabe.Plugins.list()
         rows[#rows + 1] = { file = file, source = source, status = status, detail = detail }
     end
     return rows
+end
+
+-- A value a native plugin shared through the plugin API (setValue), or a mod through
+-- Crabe.Plugins.set; nil when the key is not set or on a loader without the bridge.
+function Crabe.Plugins.get(key)
+    if type(key) ~= "string" or key == "" or not Crabe._pluginGetValue then
+        return nil
+    end
+    return Crabe._pluginGetValue(key)
+end
+
+-- Shares a value with every native plugin (getValue) and every mod. Values are stored
+-- as strings: numbers and booleans are converted with tostring, nil erases the key.
+-- Returns false when the key is not a non-empty string or the loader lacks the bridge.
+function Crabe.Plugins.set(key, value)
+    if type(key) ~= "string" or key == "" or not Crabe._pluginSetValue then
+        return false
+    end
+    if value == nil then
+        Crabe._pluginSetValue(key)
+    else
+        Crabe._pluginSetValue(key, tostring(value))
+    end
+    return true
 end
 
 -- Whether a plugin of that file name (any folder, any case) is loaded right now.

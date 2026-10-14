@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** Tests .asi plugin support: crabe.toml's [plugins], discovery order and skip reasons, PE classification,
-** and real loads of two probe plugins built next to this test (one starts, one refuses).
+** real loads of three probe plugins built next to this test, and the plugin API they call.
 ** Works in a temporary folder and leaves the real game alone.
 **
 ** Authors: @LucasLhomme
@@ -17,15 +17,59 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <windows.h>
 
+#include "application/plugin_api.hpp"
 #include "domain/asi_plugins.hpp"
 #include "domain/config.hpp"
 #include "infrastructure/asi_loader.hpp"
 
 namespace {
+
+/// Records what the plugin API asked of the loader, instead of logging, hooking or running Lua.
+class FakeHost final : public crabe::application::PluginHost {
+public:
+    struct Hook {
+        std::string owner;
+        std::string name;
+        void* target;
+    };
+
+    std::vector<std::pair<int, std::string>> logs;
+    std::vector<Hook> hooks;
+    std::vector<std::pair<std::string, std::string>> lua;
+
+    /// Keeps the line.
+    void log(int level, std::string_view line) override { logs.emplace_back(level, std::string(line)); }
+
+    /// Keeps the hook and accepts it.
+    bool installHook(const std::string& owner, std::string_view name, void* target, void*, void**) override
+    {
+        hooks.push_back({owner, std::string(name), target});
+        return true;
+    }
+
+    /// Forgets the owner's hooks and says how many there were.
+    std::size_t removeHooks(const std::string& owner) override
+    {
+        return static_cast<std::size_t>(std::erase_if(hooks, [&](const Hook& hook) { return hook.owner == owner; }));
+    }
+
+    /// Keeps the chunk.
+    void queueLua(const std::string& owner, std::string code) override { lua.emplace_back(owner, std::move(code)); }
+
+    /// Whether a logged line contains the text.
+    [[nodiscard]] bool logged(std::string_view text) const
+    {
+        for (const auto& entry : logs)
+            if (entry.second.find(text) != std::string::npos)
+                return true;
+        return false;
+    }
+};
 
 using crabe::domain::AsiCandidate;
 using crabe::domain::Config;
@@ -227,18 +271,62 @@ void testLoading(const fs::path& probe, const fs::path& refusingProbe)
     require(loader.gameRoot() == game, "the searched folder is kept");
 }
 
+/// Hands the plugin API to a real plugin and checks every call it makes, once per plugin,
+/// and that a CrabePluginInit which faults is caught.
+void testPluginApi(const fs::path& probe, const fs::path& crashingProbe)
+{
+    const fs::path root = freshFolder("api");
+    fs::copy_file(probe, root / "api_probe.asi");
+    fs::copy_file(crashingProbe, root / "init_crash.asi");
+
+    const auto record = crabe::infrastructure::loadAsiPlugin(AsiCandidate{root / "api_probe.asi", "game folder", {}});
+    require(record.status == AsiLoadStatus::Loaded && record.module != nullptr, "api_probe.asi loads with its module");
+
+    FakeHost host;
+    crabe::application::PluginApi api(host);
+    require(api.startPlugins({record}) == 1, "the plugin receives the API");
+    require(host.logged("[api_probe.asi] probe started {not a format}"), "log is prefixed and not a format string");
+    require(host.logged("api_probe.asi started with plugin API v1"), "the start is logged");
+    require(api.value("probe.name") == "api_probe.asi", "pluginName and setValue reach the shared values");
+    require(api.value("probe.readBack") == "ok", "getValue returns the full length and cuts the copy short");
+    require(api.value("probe.missing") == "ok", "getValue answers -1 for an unset key");
+    require(api.value("probe.blankLua") == "ok", "runLua refuses a blank chunk");
+    require(api.value("probe.loader").has_value(), "loaderVersion is set");
+
+    require(host.hooks.size() == 1, "installHook reaches the host");
+    require(host.hooks[0].owner == "plugin:api_probe.asi", "the hook is owned by the plugin");
+    require(host.hooks[0].name == "api_probe.asi:target", "the hook is named after the plugin");
+    require(host.lua.size() == 1 && host.lua[0].first == "api_probe.asi", "runLua queues under the plugin's name");
+    require(host.lua[0].second == "Crabe.write('probe')", "runLua queues the chunk unchanged");
+
+    require(api.startPlugins({record}) == 0, "a plugin receives the API only once");
+    crabe::infrastructure::AsiLoadRecord system{};
+    system.module = GetModuleHandleW(L"kernel32.dll");
+    require(api.startPlugins({system}) == 0, "a module without CrabePluginInit is left alone");
+
+    api.setValue("probe.name", std::nullopt);
+    require(!api.value("probe.name").has_value(), "an empty value erases the key");
+
+    const auto crashing = crabe::infrastructure::loadAsiPlugin(AsiCandidate{root / "init_crash.asi", "game folder", {}});
+    require(crashing.status == AsiLoadStatus::Loaded, "init_crash.asi loads");
+    require(api.startPlugins({crashing}) == 0, "a CrabePluginInit that faults is not counted as started");
+    require(host.logged("init_crash.asi raised exception 0xC0000005"), "the fault is logged with its code");
+}
+
 } // namespace
 
-/// Runs every test; the two probe plugins' paths come from CTest.
+/// Runs every test; the three probe plugins' paths come from CTest.
 int main(int argc, char** argv)
 {
     testConfig();
     testClassify();
     testDiscovery();
-    if (argc >= 3) {
+    if (argc >= 4) {
         testLoading(argv[1], argv[2]);
+        testPluginApi(argv[1], argv[3]);
     } else {
-        std::cout << "[SKIP] real loads: pass the asi_probe and asi_probe_refuses paths" << std::endl;
+        std::cout << "[SKIP] real loads: pass the asi_probe, asi_probe_refuses and asi_probe_init_crash paths"
+                  << std::endl;
     }
     std::cout << "[PASS] test_asi_plugins" << std::endl;
     return 0;

@@ -2,7 +2,8 @@
 
 CrabeLoader loads `.asi` plugins: native 32-bit DLLs with a `.asi` extension. It loads them the same way
 Ultimate ASI Loader does, so most existing plugins work unchanged. Lua mods remain the way to build gameplay
-features. An `.asi` plugin is for the rare job that needs native code of its own.
+features. An `.asi` plugin is for the rare job that needs native code of its own. Through the optional
+[plugin API](#talking-to-crabeloader-the-plugin-api), such a plugin can log, hook and talk to Lua mods.
 
 ## Where to put them
 
@@ -110,6 +111,54 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
 
 A plugin's own folder is searched first for the DLLs it depends on. A plugin in `mods/<mod>/` can
 therefore ship its dependencies next to it.
+
+## Talking to CrabeLoader: the plugin API
+
+A plugin can also work with CrabeLoader and Lua mods. Copy the single C header
+[`include/sdk/crabe_plugin.h`](../../include/sdk/crabe_plugin.h) into your sources. It is also in the
+release zip, under `sdk/`. There is no library to link.
+
+Then export `CrabePluginInit`. CrabeLoader calls it once, right after loading your plugin, on the game's main
+thread, before the game's own code runs. It passes a table of functions that stays valid until the game exits:
+
+| Function | What it does |
+| :--- | :--- |
+| `log(api, level, message)` | Writes a line to `loader.log`, prefixed with your plugin's file name. |
+| `installHook(api, target, detour, &original, name)` | Hooks a function through CrabeLoader's hook registry. A target another owner already hooks is refused instead of silently corrupted, and crash reports name your plugin. Returns 1 or 0. |
+| `removeHooks(api)` | Removes every hook your plugin installed. |
+| `runLua(api, code)` | Queues a Lua chunk for the game's Lua state, with `Crabe` and `Game` available. It runs on the next loader tick, and errors are logged under your plugin's name. |
+| `setValue(api, key, value)` / `getValue(api, key, buffer, size)` | Share text values with Lua mods (`Crabe.Plugins.get` / `Crabe.Plugins.set`) and with other plugins. |
+
+Every function takes the table first and can be called from any thread. Strings are UTF-8.
+
+```cpp
+#include <windows.h>
+#include "crabe_plugin.h"
+
+static const CrabePluginApi* g_api = nullptr;
+
+extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginApi* api)
+{
+    if (api->version < CRABE_PLUGIN_API_VERSION)
+        return;
+    g_api = api;
+    api->log(api, CRABE_LOG_INFO, "hello from native code");
+    api->setValue(api, "my_plugin.ready", "yes");
+    api->runLua(api, "Crabe.write('[my_plugin] Lua says hi')");
+}
+```
+
+And from a Lua mod:
+
+```lua
+if Crabe.Plugins.get("my_plugin.ready") == "yes" then
+    Crabe.Plugins.set("my_plugin.speed", 2)
+end
+```
+
+A plugin without `CrabePluginInit` still loads normally: the API is optional. Keys are shared by everyone,
+so prefix them with your plugin or mod name. If `CrabePluginInit` raises an exception, it is logged, and the
+game keeps running.
 
 ## Other ASI loaders
 

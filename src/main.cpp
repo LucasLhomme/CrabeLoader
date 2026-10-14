@@ -16,6 +16,7 @@
 #include "shared/logger.hpp"
 #include "shared/version.hpp"
 #include "application/loader.hpp"
+#include "application/plugin_api.hpp"
 #if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_manager.hpp"
 #endif
@@ -100,10 +101,13 @@ namespace {
     std::filesystem::path g_gameRoot;
 }
 
-// Loads the .asi plugins of the folder holding the game's executable, once.
+// Loads the .asi plugins of the folder holding the game's executable, once, then hands the plugin API
+// to each one that exports CrabePluginInit.
 void loadAsiPlugins() {
     crabe::infrastructure::CrashReporter::pushBreadcrumb("main: loading .asi plugins");
-    crabe::infrastructure::AsiLoader::get().loadAll(g_gameRoot);
+    crabe::infrastructure::AsiLoader& loader = crabe::infrastructure::AsiLoader::get();
+    loader.loadAll(g_gameRoot);
+    crabe::application::PluginApi::get().startPlugins(loader.records());
 }
 
 void initMain() {

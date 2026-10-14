@@ -35,6 +35,7 @@ namespace crabe::infrastructure {
         std::string source;
         AsiLoadStatus status{AsiLoadStatus::Skipped};
         std::string detail;
+        void* module{nullptr};
     };
 
     /// Returns the word Lua and the log use for a status: "loaded", "already_loaded", "skipped", ...

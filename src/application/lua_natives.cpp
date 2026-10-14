@@ -13,6 +13,7 @@
 #include <format>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <windows.h>
@@ -25,6 +26,7 @@
 #include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "application/plugin_api.hpp"
 #include "infrastructure/asi_loader.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
@@ -388,6 +390,35 @@ namespace {
         }
         lua.pushString(L, out);
         return 1;
+    }
+
+    // Crabe._pluginGetValue(key) -> the value a native plugin or a mod shared under key, or nil.
+    int __cdecl nativePluginGetValue(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* key = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        const std::optional<std::string> value =
+            key ? crabe::application::PluginApi::get().value(key) : std::nullopt;
+        if (value)
+            lua.pushString(L, *value);
+        else
+            lua.pushNil(L);
+        return 1;
+    }
+
+    // Crabe._pluginSetValue(key, value) shares value with native plugins; a nil value erases the key.
+    int __cdecl nativePluginSetValue(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* key = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        if (!key || !*key)
+            return 0;
+        const char* value = lua.getTop(L) >= 2 ? lua.argToString(L, 2) : nullptr;
+        crabe::application::PluginApi::get().setValue(
+            key, value ? std::optional<std::string>(value) : std::nullopt);
+        return 0;
     }
 
     // Crabe._vfsList([prefix]) -> one string, a "virtualPath\toriginMod\n" line
@@ -852,6 +883,8 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsResolve",            &nativeVfsResolve },
         { "_vfsList",               &nativeVfsList },
         { "_asiReport",             &nativeAsiReport },
+        { "_pluginGetValue",        &nativePluginGetValue },
+        { "_pluginSetValue",        &nativePluginSetValue },
         { "_vfsGetStats",           &nativeVfsGetStats },
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
     };

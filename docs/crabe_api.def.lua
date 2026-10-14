@@ -271,6 +271,17 @@ Crabe.Plugins = {}
 ---@return CrabePlugin[] plugins
 function Crabe.Plugins.list() end
 
+--- Returns a value a native plugin (setValue) or a mod (set) shared under key.
+---@param key string Shared key; prefix it with your plugin or mod name.
+---@return string? value nil when the key is not set.
+function Crabe.Plugins.get(key) end
+
+--- Shares a value with every native plugin (getValue) and mod; nil erases the key.
+---@param key string Shared key; prefix it with your plugin or mod name.
+---@param value string|number|boolean|nil Stored as a string (tostring); nil erases.
+---@return boolean ok false for a missing key or a loader without the bridge.
+function Crabe.Plugins.set(key, value) end
+
 --- Whether a plugin of that file name (any folder, any case) is loaded.
 ---@param name string File name, e.g. "example.asi".
 ---@return boolean loaded

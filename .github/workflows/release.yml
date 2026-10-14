@@ -123,6 +123,8 @@ jobs:
           cp -r mods/_template package/mods/
           mkdir -p package/docs
           cp docs/crabe_api.def.lua package/docs/
+          mkdir -p package/sdk
+          cp include/sdk/crabe_plugin.h package/sdk/
 
           # Quickstart README for players and modders
           cat << 'ENDREADME' > package/README.txt

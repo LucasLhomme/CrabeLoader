@@ -325,6 +325,7 @@ void Loader::runTicks(void* L)
     drainPendingKeybindCalls(L);
     drainRemoteCommandFile(L);
     drainPendingSnippets(L);
+    drainPluginSnippets(L);
     drainLuaOutput(L);
     drainQuarantineReport(L);
 
@@ -350,6 +351,31 @@ void Loader::drainPendingKeyEvents(void* L)
         crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
             "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}, {}) end",
             event.virtualKey, event.isRepeat ? "true" : "false"));
+    }
+}
+
+// Queues Lua from a native plugin; nothing runs until the next tick on the script thread.
+void Loader::queuePluginSnippet(const std::string& owner, std::string code)
+{
+    std::lock_guard<std::mutex> lock(_pluginSnippetQueueMutex);
+    _pendingPluginSnippets.emplace_back(owner, std::move(code));
+}
+
+// Runs the Lua chunks plugins queued since the last tick, logging only the ones that fail.
+void Loader::drainPluginSnippets(void* L)
+{
+    std::vector<std::pair<std::string, std::string>> pending;
+    {
+        std::lock_guard<std::mutex> lock(_pluginSnippetQueueMutex);
+        if (_pendingPluginSnippets.empty())
+            return;
+        pending.swap(_pendingPluginSnippets);
+    }
+
+    for (const auto& [owner, code] : pending) {
+        std::string result;
+        if (!crabe::infrastructure::LuaCall::get().runSnippet(L, code, result))
+            crabe::shared::Logger::getInstance().error("PluginApi: Lua from {} failed: {}", owner, result);
     }
 }
 

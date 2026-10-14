@@ -2,13 +2,33 @@
 ** CrabeLoader
 ** File description:
 ** A stand-in .asi plugin for test_asi_plugins: a real 32-bit DLL whose start the test can observe.
-** Built twice; the CRABE_ASI_PROBE_REFUSES build returns FALSE from DllMain instead of starting.
+** Built three times: plain (also exercising the plugin API), refusing in DllMain, crashing in CrabePluginInit.
 ** Does nothing else, so loading it into the test process is harmless.
 **
 ** Authors: @LucasLhomme
 */
 
 #include <windows.h>
+
+#include <cstring>
+
+#include "sdk/crabe_plugin.h"
+
+namespace {
+
+    /// A function for the probe to hand to installHook; never called.
+    int __cdecl probeTarget(int value)
+    {
+        return value + 1;
+    }
+
+    /// The detour the probe hands to installHook; never called.
+    int __cdecl probeDetour(int value)
+    {
+        return value + 2;
+    }
+
+} // namespace
 
 /// Records in the process environment that the plugin started, or refuses to start in the refusing build.
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved)
@@ -22,5 +42,31 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved)
 #else
     SetEnvironmentVariableW(L"CRABE_ASI_PROBE", L"started");
     return TRUE;
+#endif
+}
+
+/// Calls every function of the plugin API once, leaving traces the test reads back; the crashing build faults.
+extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginApi* api)
+{
+#if defined(CRABE_ASI_PROBE_INIT_CRASHES)
+    (void)api;
+    *static_cast<volatile int*>(nullptr) = 1;
+#else
+    if (!api || api->size < sizeof(CrabePluginApi) || api->version != CRABE_PLUGIN_API_VERSION)
+        return;
+    api->log(api, CRABE_LOG_INFO, "probe started {not a format}");
+    api->setValue(api, "probe.name", api->pluginName);
+    char cut[8] = {};
+    const int length = api->getValue(api, "probe.name", cut, sizeof(cut));
+    const bool readBack = length == static_cast<int>(std::strlen(api->pluginName)) &&
+                          std::strncmp(cut, api->pluginName, sizeof(cut) - 1) == 0 && cut[sizeof(cut) - 1] == '\0';
+    api->setValue(api, "probe.readBack", readBack ? "ok" : "bad");
+    api->setValue(api, "probe.missing", api->getValue(api, "probe.none", cut, sizeof(cut)) == -1 ? "ok" : "bad");
+    void* original = nullptr;
+    api->installHook(api, reinterpret_cast<void*>(&probeTarget), reinterpret_cast<void*>(&probeDetour), &original,
+                     "target");
+    api->runLua(api, "Crabe.write('probe')");
+    api->setValue(api, "probe.blankLua", api->runLua(api, "  \n") == 0 ? "ok" : "bad");
+    api->setValue(api, "probe.loader", api->loaderVersion);
 #endif
 }
