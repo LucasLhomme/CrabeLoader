@@ -281,6 +281,11 @@ function Crabe.Input.padState(slot) end
 ---@return boolean
 function Crabe.Input.padHas(buttons, mask) end
 
+--- Reports whether a key or mouse button is held right now, read from Windows rather than from the game.
+---@param vk number Windows virtual key code.
+---@return boolean
+function Crabe.Input.isKeyDown(vk) end
+
 --- While true the game reads an idle gamepad; padState keeps reading the real one.
 ---@param captured boolean
 function Crabe.Input.capturePad(captured) end
