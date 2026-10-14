@@ -24,6 +24,9 @@ for (const file of htmlFiles(dist)) {
   pages.set(route, { html, ids });
 }
 
+const skippedFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.skipped-pages.json');
+const skipped = fs.existsSync(skippedFile) ? new Set(JSON.parse(fs.readFileSync(skippedFile, 'utf8'))) : new Set();
+
 const problems = [];
 for (const [route, { html }] of pages) {
   const content = html.split('<main')[1] ?? '';
@@ -33,6 +36,11 @@ for (const [route, { html }] of pages) {
     if (url.host !== 'site') continue;
     const target = pages.get(url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`);
     if (!target) {
+      const relSlug = url.pathname.replace(new RegExp(`^${BASE}/`), '').replace(/\/$/, '');
+      if (skipped.has(relSlug)) {
+        console.warn(`check-links: skipped link to unmerged page ${href}`);
+        continue;
+      }
       problems.push(`${route} -> ${href} (no such page)`);
       continue;
     }

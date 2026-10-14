@@ -5,3 +5,4 @@ dist/
 # Written by scripts/sync-docs.mjs from the repository's Markdown; edit the sources instead.
 src/content/docs/*
 !src/content/docs/index.mdx
+.skipped-pages.json

@@ -314,16 +314,19 @@ function write(page, body) {
 
 function syncPages() {
   let written = 0;
+  const skippedSlugs = [];
   for (const page of PAGES) {
     const source = read(page.src);
     if (source === null) {
       console.log(`  skip  ${page.slug} (${page.src} is not on this branch)`);
+      skippedSlugs.push(page.slug);
       continue;
     }
     const body = page.sections ? extractSections(source, page.sections) : stripTitle(source);
     write(page, transform(body, page.src));
     written++;
   }
+  fs.writeFileSync(path.join(websiteDir, '.skipped-pages.json'), JSON.stringify(skippedSlugs));
   return written;
 }
 
