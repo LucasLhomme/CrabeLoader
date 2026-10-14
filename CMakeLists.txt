@@ -105,6 +105,7 @@ set(CRABELOADER_CORE_SOURCES
     src/domain/mod_manager.cpp
     src/domain/reload_generation.cpp
     src/domain/config.cpp
+    src/domain/asi_plugins.cpp
     src/domain/update_check.cpp
 
     # Infrastructure Layer
@@ -135,6 +136,8 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/update_services.cpp
     src/infrastructure/dinput8_proxy.cpp
     src/infrastructure/loader_instance.cpp
+    src/infrastructure/asi_loader.cpp
+    src/infrastructure/entry_point_hook.cpp
 
     # Shared Layer
     src/shared/logger.cpp
@@ -512,6 +515,49 @@ else()
     target_compile_options(test_installer PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# test_asi_plugins loads two real plugins built here: asi_probe starts and records that it ran,
+# asi_probe_refuses returns FALSE from DllMain. Both are plain 32-bit DLLs renamed .asi.
+foreach(probe IN ITEMS asi_probe asi_probe_refuses)
+    add_library(${probe} SHARED tests/cpp/asi_probe.cpp)
+    set_target_properties(${probe} PROPERTIES SUFFIX ".asi" PREFIX "")
+    if(probe STREQUAL "asi_probe_refuses")
+        target_compile_definitions(${probe} PRIVATE CRABE_ASI_PROBE_REFUSES=1)
+    endif()
+endforeach()
+
+add_executable(test_asi_plugins
+    tests/cpp/test_asi_plugins.cpp
+    src/domain/asi_plugins.cpp
+    src/domain/config.cpp
+    src/domain/mod_manifest.cpp
+    src/domain/mod_id.cpp
+    src/domain/semver.cpp
+    src/infrastructure/asi_loader.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+add_dependencies(test_asi_plugins asi_probe asi_probe_refuses)
+target_include_directories(test_asi_plugins PRIVATE
+    include
+    include/domain
+    include/shared
+    src
+)
+target_compile_definitions(test_asi_plugins PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_asi_plugins PRIVATE
+    nlohmann_json::nlohmann_json
+    tomlplusplus::tomlplusplus
+)
+if(MSVC)
+    target_compile_options(test_asi_plugins PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_asi_plugins PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 if(CRABELOADER_BUILD_INSTALLER)
     set(CRABE_INSTALLER_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/installer")
     set(CRABE_INSTALLER_EMBED OFF)
@@ -677,6 +723,7 @@ add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
+add_test(NAME test_asi_plugins COMMAND test_asi_plugins $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>)
 add_test(NAME crabe_fate COMMAND crabe_fate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)

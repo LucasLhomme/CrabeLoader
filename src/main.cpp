@@ -10,6 +10,7 @@
 
 #include "minhook/lib/proxy/proxy.hpp" // BINKW32 PROXY DIRECT LINKER FORWARDING
 #include <windows.h>
+#include <filesystem>
 #include <thread>
 #include <string>
 #include "shared/logger.hpp"
@@ -19,8 +20,10 @@
 #include "application/multiplayer/multiplayer_manager.hpp"
 #endif
 #include "domain/game_profile.hpp"
+#include "infrastructure/asi_loader.hpp"
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/engine_resolution.hpp"
+#include "infrastructure/entry_point_hook.hpp"
 #include "infrastructure/loader_instance.hpp"
 #include "presentation/render_hook.hpp"
 
@@ -38,6 +41,21 @@ namespace {
 
     std::string moduleLogPath(HMODULE hModule) {
         return moduleDirectory(hModule) + "loader.log";
+    }
+
+    // Returns the folder of the game's executable, or the current folder if Windows cannot name it.
+    std::filesystem::path executableDirectory() {
+        std::wstring path(MAX_PATH, L'\0');
+        for (;;) {
+            const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+            if (length == 0)
+                return std::filesystem::current_path();
+            if (length < path.size()) {
+                path.resize(length);
+                return std::filesystem::path(path).parent_path();
+            }
+            path.resize(path.size() * 2);
+        }
     }
 
     // Narrows a module name for the log, which is UTF-8; a character outside ASCII becomes '?'.
@@ -76,6 +94,18 @@ void initCrashReporting() {
         identity.timeDateStamp, identity.sizeOfImage, identity.checkSum);
 }
 
+namespace {
+    bool g_forwardOnly = false;
+    bool g_asiOnScriptThread = false;
+    std::filesystem::path g_gameRoot;
+}
+
+// Loads the .asi plugins of the folder holding the game's executable, once.
+void loadAsiPlugins() {
+    crabe::infrastructure::CrashReporter::pushBreadcrumb("main: loading .asi plugins");
+    crabe::infrastructure::AsiLoader::get().loadAll(g_gameRoot);
+}
+
 void initMain() {
     crabe::infrastructure::CrashReporter::declareThreadRole(
         crabe::infrastructure::ThreadRole::Script);
@@ -83,11 +113,23 @@ void initMain() {
 
     initCrashReporting();
 
+    if (g_asiOnScriptThread)
+        loadAsiPlugins();
+
     crabe::application::Loader::get().initialize();
 }
 
-namespace {
-    bool g_forwardOnly = false;
+// Loads .asi plugins just before the game's entry point when the game imported this DLL at startup,
+// which is when plugins expect to run. A DLL loaded later finds the entry point already passed, and so
+// do plugins when the detour cannot be installed: both load them from the script thread instead.
+void scheduleAsiPlugins(bool loadedAtStartup) {
+    g_gameRoot = executableDirectory();
+    if (loadedAtStartup && crabe::infrastructure::runBeforeEntryPoint(&loadAsiPlugins))
+        return;
+    if (loadedAtStartup)
+        crabe::shared::Logger::getInstance().warning(
+            "AsiLoader: could not run before the game's entry point; .asi plugins load from the loader thread.");
+    g_asiOnScriptThread = true;
 }
 
 // Starts the loader when the game loads this DLL, unless another copy of CrabeLoader outranks it.
@@ -95,7 +137,6 @@ namespace {
 // dinput8.dll runs exactly one loader.
 bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
-    (void)lpReserved;
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         g_forwardOnly = !crabe::infrastructure::outrankingLoaderCopy(hModule).empty();
@@ -126,6 +167,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             "CrabeLoader: crash reports and minidumps will be written to '{}'.", crashFolder);
 
         crabe::shared::Logger::getInstance().debug("CrabeLoader DLL loaded.");
+        scheduleAsiPlugins(lpReserved != nullptr);
 #if CRABELOADER_WITH_MULTIPLAYER
         crabe::multiplayer::application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
 #endif

@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares crabe.toml: general, display, keybinds, multiplayer, http, profiles, quarantine.
+** Declares crabe.toml: general, display, keybinds, multiplayer, http, plugins, profiles, ...
 ** A malformed file is reported and fallen back from, never overwritten; comments survive.
 ** Holds no Win32 type; key names stay strings, resolved by shared/keybind_names.hpp.
 **
@@ -147,6 +147,11 @@ namespace crabe::domain {
         //  * Valid: parsed normally.
         [[nodiscard]] static Config load(const std::filesystem::path& gameRoot);
 
+        // Reads <gameRoot>/Crabe/crabe.toml without writing anything: built-in
+        // defaults when it is missing or malformed. For readers that run before
+        // the loader thread has called load(), such as the .asi plugin loader.
+        [[nodiscard]] static Config peek(const std::filesystem::path& gameRoot);
+
         [[nodiscard]] bool isValid() const noexcept { return !_diagnostic.has_value(); }
         [[nodiscard]] const std::optional<ConfigDiagnostic>& diagnostic() const noexcept { return _diagnostic; }
         [[nodiscard]] const std::vector<std::string>& getIgnoredKeys() const noexcept { return _ignoredKeys; }
@@ -158,6 +163,10 @@ namespace crabe::domain {
         [[nodiscard]] std::uint32_t frameLimit() const noexcept { return _frameLimit; }
         [[nodiscard]] bool multiplayerEnabled() const noexcept { return _multiplayerEnabled; }
         [[nodiscard]] bool updateCheckEnabled() const noexcept { return _updateCheckEnabled; }
+
+        // [plugins]: whether .asi plugins load at all, and the file names never to load.
+        [[nodiscard]] bool asiEnabled() const noexcept { return _asiEnabled; }
+        [[nodiscard]] const std::vector<std::string>& asiSkipList() const noexcept { return _asiSkip; }
 
         // [http.redirect]: server name -> "http(s)://host[:port]", in file order, unvalidated.
         [[nodiscard]] const std::vector<std::pair<std::string, std::string>>& httpRedirects() const noexcept
@@ -223,6 +232,8 @@ namespace crabe::domain {
         void writeDisplaySection(const std::filesystem::path& gameRoot) const;
         bool _multiplayerEnabled{false};
         bool _updateCheckEnabled{true};
+        bool _asiEnabled{true};
+        std::vector<std::string> _asiSkip;
         std::vector<std::pair<std::string, std::string>> _httpRedirects;
         std::string _hotReloadKeybind{"F4"};
         std::string _devOverlayKeybind{"Insert"};

@@ -272,6 +272,29 @@ Steam's file check.
       the log must again say `loaded as dinput8.dll`. Steam re-downloading
       anything is a sign a game file was changed.
 
+## 1.1 — native .asi plugins
+
+Covered automatically: `[plugins]` in `crabe.toml`, discovery order and every
+skip reason (setting off, `skip` list, mod disabled by profile, ignored mod
+folders), the PE check that refuses 64-bit and non-DLL files, and real loads of
+two probe plugins (one starts, one returns `FALSE` from `DllMain`), in
+`tests/cpp/test_asi_plugins.cpp`; `Crabe.Plugins` in
+`tests/lua/test_plugins_api.lua`. What those suites cannot reach is the detour
+on the game's own entry point and a real plugin running inside the game.
+
+- [ ] **A plugin loads before the game starts.** Put a 32-bit `.asi` in
+      `scripts/` and launch. `loader.log` must show `AsiLoader: loaded <name>
+      (scripts)` before any `RenderHook` line, and no warning that the entry
+      point could not be detoured.
+- [ ] **A broken plugin does not stop the game.** Put a 64-bit `.asi` (or a
+      text file renamed `.asi`) in `plugins/`. The game must start, and the log
+      must give the reason it was refused.
+- [ ] **`[plugins].asi = false` loads nothing.** Set it, launch, and confirm
+      every `.asi` is logged as skipped and none is in the process.
+- [ ] **Lua sees the list.** From the console, run
+      `for _, p in ipairs(Crabe.Plugins.list()) do Crabe.write(p.file .. " " .. p.status) end`
+      and compare with the log.
+
 ## Adding to this file
 
 New work orders append a section of their own, in the same shape:

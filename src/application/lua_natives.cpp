@@ -25,6 +25,7 @@
 #include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "infrastructure/asi_loader.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
@@ -358,6 +359,35 @@ namespace {
             return 1;
         }
         return 0;
+    }
+
+    // Crabe._asiReport() -> one string, a "file\tsource\tstatus\tdetail\n" line per .asi plugin found,
+    // in load order, with the file relative to the game folder. Crabe.Plugins.list parses it.
+    int __cdecl nativeAsiReport(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const crabe::infrastructure::AsiLoader& loader = crabe::infrastructure::AsiLoader::get();
+        const std::filesystem::path root = loader.gameRoot();
+        std::string out;
+        for (const crabe::infrastructure::AsiLoadRecord& record : loader.records()) {
+            std::error_code error;
+            std::filesystem::path shown = std::filesystem::relative(record.path, root, error);
+            if (error || shown.empty() || shown.native().starts_with(L".."))
+                shown = record.path;
+            const std::u8string file = shown.generic_u8string();
+            out.append(file.begin(), file.end());
+            out += '\t';
+            out += record.source;
+            out += '\t';
+            out += crabe::infrastructure::asiStatusName(record.status);
+            out += '\t';
+            out += record.detail;
+            out += '\n';
+        }
+        lua.pushString(L, out);
+        return 1;
     }
 
     // Crabe._vfsList([prefix]) -> one string, a "virtualPath\toriginMod\n" line
@@ -821,6 +851,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
         { "_vfsResolve",            &nativeVfsResolve },
         { "_vfsList",               &nativeVfsList },
+        { "_asiReport",             &nativeAsiReport },
         { "_vfsGetStats",           &nativeVfsGetStats },
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
     };

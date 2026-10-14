@@ -253,6 +253,30 @@ function Crabe.Vfs.stats() end
 function Crabe.Vfs.lastRedirected() end
 
 --------------------------------------------------------------------------------
+-- Crabe.Plugins: Native .asi Plugins
+--------------------------------------------------------------------------------
+
+---@alias CrabePluginStatus "loaded"|"already_loaded"|"skipped"|"failed"|"crashed"
+
+---@class CrabePlugin
+---@field file string Path relative to the game folder, forward slashes (e.g. "scripts/x.asi").
+---@field source string Where it was found: "game folder", "scripts", "plugins" or "mod <id>".
+---@field status CrabePluginStatus What happened when the loader tried it.
+---@field detail string Why it was skipped or failed, or its load address.
+
+---@class CrabePlugins
+Crabe.Plugins = {}
+
+--- Lists every .asi plugin found before the game started, in load order.
+---@return CrabePlugin[] plugins
+function Crabe.Plugins.list() end
+
+--- Whether a plugin of that file name (any folder, any case) is loaded.
+---@param name string File name, e.g. "example.asi".
+---@return boolean loaded
+function Crabe.Plugins.isLoaded(name) end
+
+--------------------------------------------------------------------------------
 -- Crabe.Input: Keybinding Management
 --------------------------------------------------------------------------------
 
