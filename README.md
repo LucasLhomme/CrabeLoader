@@ -134,11 +134,11 @@ Run it and follow the prompts. It finds the game in your Steam libraries (or let
 
 1. In your game installation folder (e.g., `<steam-library>\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
 2. Copy the release `bink2w32.dll` into the game root directory.
-3. Create a `mods/` directory next to it.
+3. Copy the release zip's `mods/` folder next to it. It holds two ready-to-use mods, `resolution.lua` and `window_mode.lua`, and the mod template.
 
 ### Then
 
-1. Place your mods or packages into the `mods/` directory (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
+1. Place your mods or packages into the `mods/` directory (the installer leaves it empty, and the release zip's `mods/` folder carries `resolution.lua` and `window_mode.lua`, which you can copy in) (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
 2. Launch `DisneyInfinity3.exe`.
    * **`Insert`**: Toggle developer debug overlay and log console.
    * **`F4`**: Hot-reload all active mods.
