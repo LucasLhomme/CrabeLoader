@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** WinUSB access to a Disney Infinity base: presence detection, interface lookup through the
-** device interface GUID the WinUSB INF registered, interrupt pipe I/O with timeouts.
+** WinUSB access to a Disney Infinity base for the Xbox 360 and Xbox One transports.
+** Detects presence and the bound driver, and finds the interface through the registered GUID.
+** Reads and writes the interrupt or bulk pipes with per-pipe timeouts.
 **
 ** Authors: @LucasLhomme
 */
@@ -24,14 +25,15 @@ namespace crabe::infrastructure::portal {
 
 namespace {
 
-// GUID_DEVINTERFACE_USB_DEVICE: registered for every USB device, whatever its driver.
-constexpr GUID kUsbDeviceInterface = {0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
+constexpr GUID kGuidDevInterfaceUsbDevice = {0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
 
+// Returns text in lower case, for case-insensitive device path matching.
 std::wstring Lower(std::wstring text) {
     for (auto& c : text) c = static_cast<wchar_t>(std::towlower(c));
     return text;
 }
 
+// Returns the lower-case "vid_xxxx&pid_xxxx" token found in device interface paths.
 std::wstring VidPidToken(std::uint16_t vid, std::uint16_t pid) {
     return Lower(std::format(L"vid_{:04x}&pid_{:04x}", vid, pid));
 }
@@ -107,15 +109,13 @@ UsbDevice::~UsbDevice() {
 
 bool UsbDevice::IsPresent(std::uint16_t vid, std::uint16_t pid) {
     const std::wstring token = VidPidToken(vid, pid);
-    for (const auto& path : EnumeratePaths(kUsbDeviceInterface)) {
+    for (const auto& path : EnumeratePaths(kGuidDevInterfaceUsbDevice)) {
         if (Lower(path).find(token) != std::wstring::npos) return true;
     }
     return false;
 }
 
 bool UsbDevice::HasWinUsbDriver(std::uint16_t vid, std::uint16_t pid) {
-    // The registry GUIDs outlive a driver change (Zadig leaves them behind), so only a present
-    // interface under one of them proves WinUSB is the driver bound right now.
     const std::wstring token = VidPidToken(vid, pid);
     for (const GUID& guid : WinUsbInterfaceGuids(vid, pid)) {
         for (const auto& path : EnumeratePaths(guid)) {

@@ -1,10 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Portal transports and device discovery:
-**  - HID (PS3 / PS4 / Wii / Wii U / PC bases, VID 0x0E6F PID 0x0129): report id 0 + 32 bytes.
-**  - Xbox 360 base (VID 0x24C6 PID 0xFA00) through WinUSB: 32-byte packet [0x0B, 0x15, frame].
-**  - Xbox One base: see portal_transport_gip.cpp.
+** Portal transports for the HID bases (PS3, PS4, Wii, Wii U, PC) and the Xbox 360 base over WinUSB.
+** Also discovers every plugged-in base and builds the transport that fits it.
+** The Xbox One transport lives in portal_transport_gip.cpp.
 **
 ** Authors: @LucasLhomme
 */
@@ -35,7 +34,6 @@ constexpr std::uint16_t kPidXbox360 = 0xFA00;
 
 constexpr unsigned kWriteTimeoutMs = 500;
 
-// ------------------------------------------------------------------- HID
 class HidTransport final : public IPortalTransport {
 public:
     explicit HidTransport(std::wstring path) : m_path(std::move(path)) {}
@@ -46,7 +44,7 @@ public:
         m_device = CreateFileW(m_path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                                OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
         if (m_device == INVALID_HANDLE_VALUE) {
-            m_diagnostic = "Portail USB HID détecté mais impossible de l'ouvrir (déjà utilisé par un autre programme ?).";
+            m_diagnostic = "HID Disney Infinity base found but it cannot be opened (already in use by another program?).";
             return false;
         }
 
@@ -56,7 +54,7 @@ public:
                               HidP_GetCaps(preparsed, &caps) == HIDP_STATUS_SUCCESS;
         if (preparsed) HidD_FreePreparsedData(preparsed);
         if (!haveCaps || caps.InputReportByteLength < kReportSize + 1 || caps.OutputReportByteLength < kReportSize + 1) {
-            m_diagnostic = "Le périphérique HID n'a pas les rapports de 32 octets d'un portail Infinity.";
+            m_diagnostic = "This HID device does not use the 32-byte reports of a Disney Infinity base.";
             Close();
             return false;
         }
@@ -83,10 +81,11 @@ public:
         m_readEvent = m_writeEvent = nullptr;
     }
 
+    // Sends the report behind a zero HID report id byte, giving up after kWriteTimeoutMs.
     bool Write(const Report& report) override {
         if (m_device == INVALID_HANDLE_VALUE) return false;
         std::vector<std::uint8_t> out(m_outLen, 0);
-        std::copy(report.begin(), report.end(), out.begin() + 1); // byte 0 is the HID report id
+        std::copy(report.begin(), report.end(), out.begin() + 1);
 
         OVERLAPPED ov{};
         ov.hEvent = m_writeEvent;
@@ -104,6 +103,7 @@ public:
         return written > 0;
     }
 
+    // Keeps one overlapped read pending across calls and strips the leading report id byte.
     ReadResult Read(Report& report, unsigned timeoutMs) override {
         if (m_device == INVALID_HANDLE_VALUE) return ReadResult::Lost;
 
@@ -132,7 +132,7 @@ public:
     }
 
     PortalType Type() const override { return PortalType::StandardHid; }
-    std::string Description() const override { return "Portail USB HID (PS3 / PS4 / Wii / Wii U / PC)"; }
+    std::string Description() const override { return "USB HID base (PS3 / PS4 / Wii / Wii U / PC)"; }
     std::string Diagnostic() const override { return m_diagnostic; }
 
 private:
@@ -148,21 +148,20 @@ private:
     std::string m_diagnostic;
 };
 
-// ------------------------------------------------------------- Xbox 360
 class Xbox360Transport final : public IPortalTransport {
 public:
     bool Open() override {
         if (!m_usb.Open(kVidXbox360, kPidXbox360)) {
-            m_diagnostic = "Portail Xbox 360 détecté mais impossible de l'ouvrir via WinUSB.";
+            m_diagnostic = "Xbox 360 base found but it cannot be opened through WinUSB.";
             return false;
         }
         return true;
     }
     void Close() override { m_usb.Close(); }
 
+    // Sends a 32-byte packet made of the 0x0B 0x15 header and the first 30 bytes of the report.
+    // No request the protocol builds is longer than 30 bytes.
     bool Write(const Report& report) override {
-        // The 360 link carries the 32-byte report with a two-byte header, which leaves 30 bytes
-        // for the Disney frame; no request the protocol builds is longer than that.
         std::array<std::uint8_t, kReportSize> packet{};
         packet[0] = 0x0B;
         packet[1] = 0x15;
@@ -170,6 +169,7 @@ public:
         return m_usb.Write(packet, kWriteTimeoutMs) == UsbDevice::IoResult::Ok;
     }
 
+    // Reads one packet and copies it into the report without its two-byte header.
     ReadResult Read(Report& report, unsigned timeoutMs) override {
         std::array<std::uint8_t, 64> packet{};
         std::size_t received = 0;
@@ -186,7 +186,7 @@ public:
     }
 
     PortalType Type() const override { return PortalType::Xbox360; }
-    std::string Description() const override { return "Portail Xbox 360 (WinUSB)"; }
+    std::string Description() const override { return "Xbox 360 base (WinUSB)"; }
     std::string Diagnostic() const override { return m_diagnostic; }
 
 private:
@@ -194,6 +194,7 @@ private:
     std::string m_diagnostic;
 };
 
+// Returns text in lower case, for case-insensitive device path matching.
 std::wstring Lower(std::wstring text) {
     for (auto& c : text) c = static_cast<wchar_t>(std::towlower(c));
     return text;
@@ -241,16 +242,15 @@ DiscoveryResult DiscoverTransports() {
         if (UsbDevice::HasWinUsbDriver(kVidXbox360, kPidXbox360)) {
             result.transports.push_back(std::make_unique<Xbox360Transport>());
         } else {
-            result.diagnostic = "Portail Xbox 360 détecté mais sans pilote WinUSB : installez-le avec Zadig (voir le README).";
+            result.diagnostic = "Xbox 360 base found without the WinUSB driver: install it with Zadig (see docs/guides/portal.md).";
         }
     }
 
     if (UsbDevice::IsPresent(kVidPdp, kPidXboxOne)) {
-        // The inbox Xbox driver does not expose the base to applications: WinUSB is required.
         if (UsbDevice::HasWinUsbDriver(kVidPdp, kPidXboxOne)) {
             result.transports.push_back(MakeXboxOneTransport());
         } else {
-            result.diagnostic = "Portail Xbox One détecté mais sans pilote WinUSB : installez-le avec Zadig (voir le README).";
+            result.diagnostic = "Xbox One base found without the WinUSB driver: install it with Zadig (see docs/guides/portal.md).";
         }
     }
     return result;

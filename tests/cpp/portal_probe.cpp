@@ -1,9 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Out-of-game probe for the physical portal: runs the real PortalWorker (discovery, transport,
-** Disney protocol) in a console, prints figure events and cycles the LEDs once a base answers.
-** usage: portal_probe.exe [seconds]
+** Out-of-game probe for the physical portal: runs the real PortalWorker in a console.
+** Prints connection changes and figure events with saved progress, cycles the LEDs once.
+** Usage: portal_probe.exe [seconds], 30 seconds by default.
 **
 ** Authors: @LucasLhomme
 */

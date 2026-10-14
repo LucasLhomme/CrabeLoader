@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares IPortalTransport, the link that moves 32-byte Disney reports to one physical base.
+** Also declares the discovery entry point that lists the transports of the plugged-in bases.
+** Each platform's base (HID, Xbox 360, Xbox One) has its own implementation.
+**
+** Authors: @LucasLhomme
+*/
+
 #pragma once
 
 #include "infrastructure/portal/portal_types.hpp"
@@ -8,9 +18,6 @@
 
 namespace crabe::infrastructure::portal {
 
-// Moves 32-byte Disney reports between the host and one physical base. Blocking calls are
-// bounded by a timeout so the owning worker thread can always be stopped. A transport is used
-// from a single thread.
 class IPortalTransport {
 public:
     enum class ReadResult { Ok, Timeout, Lost };
@@ -22,7 +29,10 @@ public:
     [[nodiscard]] virtual bool Open() = 0;
     virtual void Close() = 0;
 
+    // Sends one 32-byte Disney report to the base, bounded by a write timeout.
     [[nodiscard]] virtual bool Write(const Report& report) = 0;
+    // Waits at most timeoutMs for one report, so the owning worker thread can always be stopped.
+    // A transport is used from a single thread.
     [[nodiscard]] virtual ReadResult Read(Report& report, unsigned timeoutMs) = 0;
 
     [[nodiscard]] virtual PortalType Type() const = 0;
@@ -32,13 +42,13 @@ public:
     [[nodiscard]] virtual std::uint8_t RunningScanInterval() const { return 1; }
 };
 
-// What discovery found: transports ready to try, plus anything the player should know about
-// (a base that is plugged in but cannot be opened, typically for a missing WinUSB driver).
 struct DiscoveryResult {
     std::vector<std::unique_ptr<IPortalTransport>> transports;
     std::string diagnostic;
 };
 
+// Returns a transport for every plugged-in base that can be tried. A base that is present but cannot
+// be opened, typically for a missing WinUSB driver, leaves a player-facing message in diagnostic.
 [[nodiscard]] DiscoveryResult DiscoverTransports();
 
 } // namespace crabe::infrastructure::portal

@@ -1,3 +1,13 @@
+/*
+** CrabeLoader
+** File description:
+** Declares DisneyBaseProtocol, the transport-agnostic Disney Infinity base protocol.
+** It owns no I/O and no thread: the owner feeds it incoming reports, drains the reports
+** it wants sent, and calls Tick() with the clock.
+**
+** Authors: @LucasLhomme
+*/
+
 #pragma once
 
 #include "infrastructure/portal/portal_types.hpp"
@@ -13,7 +23,6 @@
 
 namespace crabe::infrastructure::portal {
 
-// Facts the base reports about itself in its wake response.
 struct BaseInfo {
     std::uint16_t platformId{0};
     std::uint8_t hardwareMajor{0}, hardwareMinor{0};
@@ -21,17 +30,12 @@ struct BaseInfo {
     std::uint8_t firmwareMajor{0}, firmwareMinor{0};
 };
 
-// Transport-agnostic Disney Infinity base protocol (the "Gateway" protocol of the engine).
-// Every request is a 32-byte report [0xFF, len, cmd, id, data..., checksum]; every answer is
-// [0xAA, len, id, data..., checksum] and tag changes arrive unsolicited as [0xAB, 4, antenna,
-// type, lti, insert/remove, checksum]. This class owns no I/O and no thread: the owner feeds
-// it incoming reports, drains the reports it wants sent, and calls Tick() with the clock.
 class DisneyBaseProtocol final {
 public:
     using LogSink = std::function<void(std::string_view)>;
 
     struct Options {
-        std::uint8_t runningScanInterval{1}; // the engine uses 3 on Xbox One, 1 elsewhere
+        std::uint8_t runningScanInterval{1};
     };
 
     DisneyBaseProtocol() = default;
@@ -40,32 +44,40 @@ public:
     void SetLogSink(LogSink sink) { m_log = std::move(sink); }
     void Reset();
 
-    // Feeds one report received from the base (at least 4 bytes; shorter ones are ignored).
+    // Feeds one report from the base: [0xAA, len, id, data..., checksum] answers a pending request
+    // and [0xAB, 4, antenna, type, lti, 0 = inserted, checksum] reports a tag change. Reports shorter
+    // than 4 bytes, with another header or with a bad checksum are dropped.
     void OnReport(std::span<const std::uint8_t> report, std::chrono::steady_clock::time_point now);
-    // Advances timers: wake retries, scan-interval reset, periodic tag list, request timeouts.
+
+    // Advances timers: wake retries, the scan-interval reset, the periodic tag list and request timeouts.
+    // After the wake a forced 0xFF scan interval resets the firmware tag timer, which can wrap negative
+    // and stop scanning, before the running interval is set; unanswered requests are retried or dropped.
     void Tick(std::chrono::steady_clock::time_point now);
 
     // Pops the next report to send to the base. False when the queue is empty.
     [[nodiscard]] bool PopOutgoing(Report& out);
+
     // Hands over and clears the figure events detected so far.
     [[nodiscard]] std::vector<PortalTagEvent> TakeEvents();
 
     // Queues a Removed event for every figure currently reported (the base went away).
     void DropAllTags();
 
-    // Saves progression onto the figure of a player slot the way the engine does: each changed
-    // pair (experience, skill bits) goes to its older copy with the sequence advanced, then the
-    // block is read back and compared. Only sectors 1-2, blocks 0-1 are ever written. False when
-    // nothing could be queued (no figure, no valid saved copy to build on, write in progress).
+    // Saves progression onto the figure of a player slot the way the engine does: each changed pair
+    // (experience, skill bits) is sealed into its older copy with the sequence advanced, then read back
+    // and compared. Only sectors 1-2, blocks 0-1 are ever written; returns false when nothing was queued
+    // (no figure, no valid copy to build on, nothing changed, or a write already in flight).
     bool WriteProgress(std::uint8_t slot, const FigureProgress& progress);
 
-    // slot: 0 = all LEDs, 1 = Player 1, 2 = Player 2, 3 = Playset / hexagon.
+    // Sets the LED colour of a slot: 0 = all, 1 = Player 1, 2 = Player 2, 3 = Playset / hexagon.
+    // Other slot values are ignored.
     void SetLed(std::uint8_t slot, std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
     [[nodiscard]] bool IsAwake() const { return m_phase == Phase::Running || m_phase == Phase::ScanReset; }
     [[nodiscard]] const BaseInfo& Info() const { return m_info; }
 
-    // The engine's antenna numbering mapped to the Lua-facing slot (1 = P1, 2 = P2, 3 = Playset).
+    // Maps the engine's antenna number to the Lua-facing slot: antenna 1 is the Playset (3), antenna 2
+    // is Player 1 (1) and antenna 3 is Player 2 (2). Any other antenna gives 0.
     [[nodiscard]] static std::uint8_t SlotForAntenna(std::uint8_t antenna);
 
 private:
@@ -77,12 +89,10 @@ private:
     struct Pending {
         Kind kind{Kind::None};
         std::uint8_t lti{0};
-        std::uint8_t block{0}; // ReadProgress: index into kProgressBlocks
+        std::uint8_t progressIndex{0};
         Clock::time_point sentAt{};
     };
 
-    // Saved progression of a character figure, two copies each: experience in sector 1/2 block 0,
-    // skill bits in sector 1/2 block 1. Read only.
     static constexpr std::size_t kProgressBlockCount = 4;
     using DataBlock = std::array<std::uint8_t, 16>;
 
@@ -98,7 +108,6 @@ private:
         std::uint32_t sku{0};
         std::array<std::optional<DataBlock>, kProgressBlockCount> progressBlocks{};
         std::uint8_t progressRemaining{0};
-        // Write in flight: sealed bytes per progress block, compared with the read-back.
         std::array<std::optional<DataBlock>, kProgressBlockCount> writeSealed{};
         std::uint8_t writesRemaining{0};
         Clock::time_point since{};
@@ -106,27 +115,55 @@ private:
 
     static constexpr std::size_t kMaxTags = 16;
 
+    // Frames a request as [0xFF, len, cmd, id, data..., checksum] in one report, records it as pending
+    // under the next id and queues it. Data longer than 27 bytes is dropped without sending.
     void Send(std::uint8_t cmd, std::span<const std::uint8_t> data, Kind kind, std::uint8_t lti,
               Clock::time_point now);
     void SendWake(Clock::time_point now);
     void SendGetUid(std::uint8_t lti, Clock::time_point now);
     void SendReadId(std::uint8_t lti, Clock::time_point now);
+
+    // Requests one progression block (an index into the progression block table) and stores that
+    // index in the pending slot Send() just filled.
     void SendReadProgress(std::uint8_t lti, std::uint8_t block, Clock::time_point now);
 
     void HandleResponse(std::span<const std::uint8_t> r, Clock::time_point now);
     void HandleTagChange(std::span<const std::uint8_t> r, Clock::time_point now);
+
+    // Inserts listed tags that were missed and removes, after a grace period, tags the base no longer
+    // lists, which covers lost change notifications. Each entry is (antenna << 4 | lti) then the type.
     void HandleTagList(std::span<const std::uint8_t> r, Clock::time_point now);
+
+    // Stores the 7-byte UID and requests the identity block. A tag-not-found status means the figure
+    // left before the request was served; other errors retry up to the try limit.
     void HandleUid(std::uint8_t lti, std::span<const std::uint8_t> r, Clock::time_point now);
+
+    // Decodes the identity block for the SKU, then requests the four progression blocks.
+    // Non-character pieces have no valid progression copy and are reported without progress.
     void HandleReadId(std::uint8_t lti, std::span<const std::uint8_t> r, Clock::time_point now);
     void HandleReadProgress(std::uint8_t lti, std::uint8_t block, std::span<const std::uint8_t> r);
     void ProgressBlockDone(std::uint8_t lti, std::uint8_t block, std::optional<DataBlock> data);
+
+    // Queues the Placed event, with progression built from the current copy of each pair when one is valid.
     void ReportPlaced(std::uint8_t lti);
+
+    // Sends the sealed bytes of one progression block to the base. Anything outside sectors 1-2,
+    // blocks 0-1 is refused as a hard safety limit.
     void SendWriteBlock(std::uint8_t lti, std::uint8_t block, Clock::time_point now);
+
+    // Reads the block back after an accepted write; a refused write ends that block's write.
     void HandleWriteBlock(std::uint8_t lti, std::uint8_t block, std::span<const std::uint8_t> r, Clock::time_point now);
+
+    // Compares the read-back bytes with the sealed bytes and, on a match, keeps the new copy as current data.
     void HandleVerifyBlock(std::uint8_t lti, std::uint8_t block, std::span<const std::uint8_t> r);
+
+    // Ends one block write and logs the outcome; a failed write leaves the other copy intact.
     void WriteBlockDone(std::uint8_t lti, std::uint8_t block, bool ok, std::string_view why);
 
+    // Starts tracking a tag and requests its UID; a repeated notification for the same antenna is ignored.
     void TagInserted(std::uint8_t lti, std::uint8_t antenna, std::uint8_t type, Clock::time_point now);
+
+    // Forgets a tag and queues a Removed event when its Placed event had been reported.
     void TagRemoved(std::uint8_t lti);
 
     void Log(std::string_view message) const {

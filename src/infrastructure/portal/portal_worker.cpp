@@ -2,6 +2,8 @@
 ** CrabeLoader
 ** File description:
 ** Background session thread of the physical portal: discovery, open, protocol loop, reconnect.
+** The protocol object is only touched under the worker mutex shared with the game thread.
+** A base that does not wake within 15 s or fails 3 writes in a row is closed and rediscovered.
 **
 ** Authors: @LucasLhomme
 */
@@ -100,17 +102,17 @@ void PortalWorker::Run(std::stop_token stop) {
                 continue;
             }
 
-            crabe::shared::Logger::getInstance().info("PortalWorker: portail ouvert: {}", transport->Description());
+            crabe::shared::Logger::getInstance().info("PortalWorker: base opened: {}", transport->Description());
             Publish(true, transport->Type(), transport->Description(), {});
             RunSession(*transport, stop);
             transport->Close();
-            Publish(false, PortalType::None, "Aucun portail physique", "Portail déconnecté.");
-            crabe::shared::Logger::getInstance().info("PortalWorker: session terminée");
-            diagnostic = "Portail déconnecté.";
+            Publish(false, PortalType::None, "No physical base", "Base disconnected.");
+            crabe::shared::Logger::getInstance().info("PortalWorker: session ended");
+            diagnostic = "Base disconnected.";
             break;
         }
 
-        if (diagnostic.empty()) diagnostic = "Aucun portail physique détecté.";
+        if (diagnostic.empty()) diagnostic = "No physical base found.";
         if (diagnostic != lastDiagnostic) {
             crabe::shared::Logger::getInstance().info("PortalWorker: {}", diagnostic);
             lastDiagnostic = diagnostic;
@@ -119,7 +121,7 @@ void PortalWorker::Run(std::stop_token stop) {
             std::lock_guard lock(m_mutex);
             if (!m_snapshot.connected) {
                 m_snapshot.type = PortalType::None;
-                m_snapshot.description = "Aucun portail physique";
+                m_snapshot.description = "No physical base";
                 m_snapshot.diagnostic = diagnostic;
             }
         }
@@ -147,7 +149,7 @@ void PortalWorker::RunSession(IPortalTransport& transport, std::stop_token stop)
             awake = m_protocol.IsAwake();
         }
         if (!awake && now - started > kWakeDeadline) {
-            LogLine("portal: la base ne répond pas au réveil, nouvelle tentative de connexion");
+            LogLine("portal: the base does not answer the wake command; reconnecting");
             break;
         }
 
@@ -160,7 +162,7 @@ void PortalWorker::RunSession(IPortalTransport& transport, std::stop_token stop)
             if (transport.Write(out)) {
                 writeFailures = 0;
             } else if (++writeFailures >= kMaxWriteFailures) {
-                LogLine("portal: écritures en échec, la base est considérée perdue");
+                LogLine("portal: writes failing, the base is considered lost");
                 goto session_end;
             }
         }

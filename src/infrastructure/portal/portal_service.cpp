@@ -1,8 +1,9 @@
 /*
 ** CrabeLoader
 ** File description:
-** Implements PortalService: game-thread view of the physical base (worker thread) and of the
-** virtual portal, with one slot table and one event queue.
+** Implements PortalService, the game-thread view of the physical base and of the virtual portal.
+** Worker events and Lua-placed virtual figures feed one slot table and one event queue.
+** Hardware I/O stays on the worker thread; nothing here waits on the base.
 **
 ** Authors: @LucasLhomme
 */
@@ -25,7 +26,7 @@ PortalService& PortalService::Instance() {
 
 void PortalService::Initialize() {
     if (m_started) return;
-    crabe::shared::Logger::getInstance().info("PortalService: démarrage du sous-système de portail");
+    crabe::shared::Logger::getInstance().info("PortalService: starting the portal subsystem");
     m_worker.Start();
     m_started = true;
 }
@@ -52,8 +53,8 @@ void PortalService::Update() {
 
     std::lock_guard lock(m_mutex);
     for (const auto& event : events) {
-        crabe::shared::Logger::getInstance().info("PortalService: figurine {} sur le slot {} (SKU {})",
-                                                  event.type == PortalTagEvent::Type::Placed ? "posée" : "retirée",
+        crabe::shared::Logger::getInstance().info("PortalService: figure {} slot {} (SKU {})",
+                                                  event.type == PortalTagEvent::Type::Placed ? "placed on" : "removed from",
                                                   event.slot, event.sku);
         Apply(event);
     }
@@ -69,7 +70,7 @@ PortalStatus PortalService::GetStatus() const {
     PortalStatus status;
     status.connected = snapshot.connected;
     status.type = snapshot.type;
-    status.typeDescription = snapshot.description.empty() ? "Aucun portail physique" : snapshot.description;
+    status.typeDescription = snapshot.description.empty() ? "No physical base" : snapshot.description;
     status.diagnosticMessage = snapshot.diagnostic;
 
     std::lock_guard lock(m_mutex);
@@ -96,7 +97,7 @@ std::optional<PortalTagEvent> PortalService::PollEvent() {
 }
 
 void PortalService::EmulatePlaceFigure(std::uint8_t slot, std::uint32_t sku) {
-    crabe::shared::Logger::getInstance().info("PortalService [virtuel]: SKU {} posé sur le slot {}", sku, slot);
+    crabe::shared::Logger::getInstance().info("PortalService [virtual]: SKU {} placed on slot {}", sku, slot);
     PortalTagEvent event;
     event.type = PortalTagEvent::Type::Placed;
     event.slot = slot;
@@ -106,7 +107,7 @@ void PortalService::EmulatePlaceFigure(std::uint8_t slot, std::uint32_t sku) {
 }
 
 void PortalService::EmulateRemoveFigure(std::uint8_t slot) {
-    crabe::shared::Logger::getInstance().info("PortalService [virtuel]: retrait du slot {}", slot);
+    crabe::shared::Logger::getInstance().info("PortalService [virtual]: slot {} emptied", slot);
     PortalTagEvent event;
     event.type = PortalTagEvent::Type::Removed;
     event.slot = slot;

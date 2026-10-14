@@ -1,8 +1,8 @@
 /*
 ** CrabeLoader
 ** File description:
-** Transport-agnostic Disney Infinity base protocol: wake, tag scan setup, tag list audit,
-** UID + identity block reads, LED control. No I/O, no threads.
+** Implements DisneyBaseProtocol: wake, tag scan setup, tag list audit, UID, identity and
+** progression reads, verified progression writes and LED control. No I/O, no threads.
 ** Wire format and constants are those of the engine's Gateway layer.
 **
 ** Authors: @LucasLhomme
@@ -34,13 +34,21 @@ constexpr std::uint8_t kCmdSetTagScanInterval = 0xB5;
 constexpr char kWakeString[] = "(c) Disney 2013";
 constexpr std::size_t kWakeStringLen = sizeof(kWakeString) - 1;
 
-// Identity block position on a tag.
 constexpr std::uint8_t kIdSector = 0;
 constexpr std::uint8_t kIdBlock = 1;
 
-// Progression blocks, in DisneyBaseProtocol::Pending::block order: experience copies in sectors
-// 1 and 2 (block 0), then skill-bit copies (block 1). Engine: Gateway.cpp, EXP sectors 1 and 2.
-constexpr std::array<std::array<std::uint8_t, 2>, 4> kProgressBlocks{{{1, 0}, {2, 0}, {1, 1}, {2, 1}}};
+constexpr std::array<std::array<std::uint8_t, 2>, 4> kProgressSectorBlock{{{1, 0}, {2, 0}, {1, 1}, {2, 1}}};
+constexpr std::size_t kExperienceCopy1 = 0;
+constexpr std::size_t kExperienceCopy2 = 1;
+constexpr std::size_t kSkillsCopy1 = 2;
+constexpr std::size_t kSkillsCopy2 = 3;
+constexpr std::size_t kSequenceOffset = 11;
+
+constexpr std::uint8_t kLedMaskPlayset = 0x01;
+constexpr std::uint8_t kLedMaskPlayer1 = 0x02;
+constexpr std::uint8_t kLedMaskPlayer2 = 0x04;
+constexpr std::uint8_t kLedMaskAll = kLedMaskPlayset | kLedMaskPlayer1 | kLedMaskPlayer2;
+constexpr std::uint8_t kForcedScanInterval = 0xFF;
 
 constexpr std::uint8_t kStatusOk = 0x00;
 constexpr std::uint8_t kStatusTagNotFound = 0x80;
@@ -57,8 +65,8 @@ std::uint32_t ReadBe32(const std::uint8_t* p) {
            (static_cast<std::uint32_t>(p[2]) << 8) | static_cast<std::uint32_t>(p[3]);
 }
 
-// The engine's CompareTimeStamps on the two copies' sequence byte (offset 11): wraps from 0xFF to
-// 0, both zero keeps the first copy, a tie otherwise keeps the second. True = first copy is current.
+// The engine's CompareTimeStamps on the sequence bytes of two copies; true when the first copy is current.
+// The sequence wraps from 0xFF to 0, two zeros keep the first copy, and any other tie keeps the second.
 bool FirstCopyIsCurrent(std::uint8_t first, std::uint8_t second) {
     if (first == 0 && second == 0xFF) return true;
     if (first == 0xFF && second == 0) return false;
@@ -66,13 +74,15 @@ bool FirstCopyIsCurrent(std::uint8_t first, std::uint8_t second) {
     return first > second;
 }
 
+// Returns the current copy of a pair, the only valid one, or an empty optional when neither is valid.
 template <typename Block>
 const std::optional<Block>& CurrentCopy(const std::optional<Block>& first, const std::optional<Block>& second) {
     if (!first) return second;
     if (!second) return first;
-    return FirstCopyIsCurrent((*first)[11], (*second)[11]) ? first : second;
+    return FirstCopyIsCurrent((*first)[kSequenceOffset], (*second)[kSequenceOffset]) ? first : second;
 }
 
+// Report checksum: the low byte of the sum of every preceding byte.
 std::uint8_t Checksum(const std::uint8_t* data, std::size_t count) {
     unsigned sum = 0;
     for (std::size_t i = 0; i < count; ++i) sum += data[i];
@@ -83,9 +93,9 @@ std::uint8_t Checksum(const std::uint8_t* data, std::size_t count) {
 
 std::uint8_t DisneyBaseProtocol::SlotForAntenna(std::uint8_t antenna) {
     switch (antenna) {
-        case 1: return 3; // playset / hexagon
-        case 2: return 1; // player 1
-        case 3: return 2; // player 2
+        case 1: return 3;
+        case 2: return 1;
+        case 3: return 2;
         default: return 0;
     }
 }
@@ -119,8 +129,8 @@ std::vector<PortalTagEvent> DisneyBaseProtocol::TakeEvents() {
 
 void DisneyBaseProtocol::Send(std::uint8_t cmd, std::span<const std::uint8_t> data, Kind kind,
                               std::uint8_t lti, Clock::time_point now) {
-    // 5 bytes of framing (header, length, command, id, checksum) leave 27 for data.
-    if (data.size() > kReportSize - 5) return;
+    constexpr std::size_t kFramingBytes = 5;
+    if (data.size() > kReportSize - kFramingBytes) return;
 
     const std::uint8_t id = ++m_nextId;
     Report report{};
@@ -153,20 +163,18 @@ void DisneyBaseProtocol::SendReadId(std::uint8_t lti, Clock::time_point now) {
 }
 
 void DisneyBaseProtocol::SendReadProgress(std::uint8_t lti, std::uint8_t block, Clock::time_point now) {
-    const std::array<std::uint8_t, 3> data{lti, kProgressBlocks[block][0], kProgressBlocks[block][1]};
+    const std::array<std::uint8_t, 3> data{lti, kProgressSectorBlock[block][0], kProgressSectorBlock[block][1]};
     Send(kCmdReadDataBlock, data, Kind::ReadProgress, lti, now);
-    // Send() records kind and lti; the block index rides along in the same pending slot.
-    m_pending[m_nextId].block = block;
+    m_pending[m_nextId].progressIndex = block;
 }
 
 void DisneyBaseProtocol::SetLed(std::uint8_t slot, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
-    // Engine LED mask: bit 0 = playset, bit 1 = player 1, bit 2 = player 2.
     std::uint8_t mask = 0;
     switch (slot) {
-        case 0: mask = 0x07; break;
-        case 1: mask = 0x02; break;
-        case 2: mask = 0x04; break;
-        case 3: mask = 0x01; break;
+        case 0: mask = kLedMaskAll; break;
+        case 1: mask = kLedMaskPlayer1; break;
+        case 2: mask = kLedMaskPlayer2; break;
+        case 3: mask = kLedMaskPlayset; break;
         default: return;
     }
     std::array<std::uint8_t, 12> data{};
@@ -189,14 +197,12 @@ void DisneyBaseProtocol::Tick(Clock::time_point now) {
             break;
 
         case Phase::ScanReset:
-            // The firmware's tag timer can wrap negative and stop scanning; one forced scan
-            // (0xFF) resets it, then the normal interval is restored.
             if (now - m_phaseSince >= kScanResetWait) {
                 const std::array<std::uint8_t, 1> interval{m_options.runningScanInterval};
                 Send(kCmdSetTagScanInterval, interval, Kind::Scan, 0, now);
                 m_phase = Phase::Running;
                 m_phaseSince = now;
-                m_lastTagList = now - kTagListPeriod; // ask for the tag list right away
+                m_lastTagList = now - kTagListPeriod;
             }
             break;
 
@@ -208,20 +214,19 @@ void DisneyBaseProtocol::Tick(Clock::time_point now) {
             break;
     }
 
-    // Retry or drop requests that were never answered.
     for (std::size_t id = 0; id < m_pending.size(); ++id) {
         Pending& p = m_pending[id];
         if (p.kind == Kind::None || now - p.sentAt < kRequestTimeout) continue;
         const Kind kind = p.kind;
         const std::uint8_t lti = p.lti;
-        const std::uint8_t block = p.block;
+        const std::uint8_t block = p.progressIndex;
         p = {};
         if (kind == Kind::ReadProgress && lti < kMaxTags) {
             ProgressBlockDone(lti, block, std::nullopt);
             continue;
         }
         if ((kind == Kind::WriteBlock || kind == Kind::VerifyBlock) && lti < kMaxTags) {
-            WriteBlockDone(lti, block, false, "pas de réponse de la base");
+            WriteBlockDone(lti, block, false, "no answer from the base");
             continue;
         }
         if ((kind == Kind::Uid || kind == Kind::ReadId) && lti < kMaxTags && m_tags[lti].present &&
@@ -270,8 +275,8 @@ void DisneyBaseProtocol::HandleResponse(std::span<const std::uint8_t> r, Clock::
                             m_info.protocolMajor, m_info.protocolMinor, m_info.firmwareMajor,
                             m_info.firmwareMinor));
             {
-                const std::array<std::uint8_t, 1> force{0xFF};
-                Send(kCmdSetTagScanInterval, force, Kind::Scan, 0, now);
+                const std::array<std::uint8_t, 1> forcedScan{kForcedScanInterval};
+                Send(kCmdSetTagScanInterval, forcedScan, Kind::Scan, 0, now);
             }
             m_phase = Phase::ScanReset;
             m_phaseSince = now;
@@ -279,9 +284,9 @@ void DisneyBaseProtocol::HandleResponse(std::span<const std::uint8_t> r, Clock::
         case Kind::TagList: HandleTagList(r, now); break;
         case Kind::Uid: HandleUid(pending.lti, r, now); break;
         case Kind::ReadId: HandleReadId(pending.lti, r, now); break;
-        case Kind::ReadProgress: HandleReadProgress(pending.lti, pending.block, r); break;
-        case Kind::WriteBlock: HandleWriteBlock(pending.lti, pending.block, r, now); break;
-        case Kind::VerifyBlock: HandleVerifyBlock(pending.lti, pending.block, r); break;
+        case Kind::ReadProgress: HandleReadProgress(pending.lti, pending.progressIndex, r); break;
+        case Kind::WriteBlock: HandleWriteBlock(pending.lti, pending.progressIndex, r, now); break;
+        case Kind::VerifyBlock: HandleVerifyBlock(pending.lti, pending.progressIndex, r); break;
         default: break;
     }
 }
@@ -303,16 +308,15 @@ void DisneyBaseProtocol::HandleTagList(std::span<const std::uint8_t> r, Clock::t
     std::array<bool, kMaxTags> seen{};
 
     for (std::size_t i = 0; i < count && 4 + 2 * i < r.size(); ++i) {
-        const std::uint8_t b = r[3 + 2 * i];
-        const std::uint8_t lti = b & 0x0F;
-        const std::uint8_t antenna = b >> 4;
+        const std::uint8_t antennaAndLti = r[3 + 2 * i];
+        const std::uint8_t lti = antennaAndLti & 0x0F;
+        const std::uint8_t antenna = antennaAndLti >> 4;
         const std::uint8_t type = r[4 + 2 * i];
         if (lti >= kMaxTags) continue;
         seen[lti] = true;
         if (!m_tags[lti].present) TagInserted(lti, antenna, type, now);
     }
 
-    // A figure the base no longer lists was removed while an event got lost.
     for (std::uint8_t lti = 0; lti < kMaxTags; ++lti) {
         if (m_tags[lti].present && !seen[lti] && now - m_tags[lti].since > kRemovalGrace) TagRemoved(lti);
     }
@@ -332,7 +336,6 @@ void DisneyBaseProtocol::HandleUid(std::uint8_t lti, std::span<const std::uint8_
         tag.uid = uid;
         SendReadId(lti, now);
     } else if (status == kStatusTagNotFound) {
-        // Removed between the notification and our request.
         tag = {};
     } else if (tag.readTries < kMaxTries) {
         ++tag.readTries;
@@ -366,7 +369,6 @@ void DisneyBaseProtocol::HandleReadId(std::uint8_t lti, std::span<const std::uin
     Log(std::format("portal: figure sku {} on antenna {} (uid {:014x}, id crc {})", id->sku, tag.antenna,
                     tag.uid, id->crcValid ? "ok" : "mismatch"));
 
-    // Then the saved progression, read only. Non-character pieces simply have no valid copy.
     tag.progressRemaining = static_cast<std::uint8_t>(kProgressBlockCount);
     for (std::uint8_t block = 0; block < kProgressBlockCount; ++block) SendReadProgress(lti, block, now);
 }
@@ -399,7 +401,7 @@ void DisneyBaseProtocol::ReportPlaced(std::uint8_t lti) {
     ev.sku = tag.sku;
     ev.uid = tag.uid;
 
-    const auto& experience = CurrentCopy(tag.progressBlocks[0], tag.progressBlocks[1]);
+    const auto& experience = CurrentCopy(tag.progressBlocks[kExperienceCopy1], tag.progressBlocks[kExperienceCopy2]);
     if (experience) {
         const DataBlock& e = *experience;
         FigureProgress progress;
@@ -407,7 +409,7 @@ void DisneyBaseProtocol::ReportPlaced(std::uint8_t lti) {
         progress.level = e[4];
         progress.lastPlayed = ReadBe32(&e[5]);
         progress.actionFlags = e[9];
-        if (const auto& skills = CurrentCopy(tag.progressBlocks[2], tag.progressBlocks[3])) {
+        if (const auto& skills = CurrentCopy(tag.progressBlocks[kSkillsCopy1], tag.progressBlocks[kSkillsCopy2])) {
             std::copy_n(skills->begin(), progress.skillBits.size(), progress.skillBits.begin());
         }
         Log(std::format("portal: figure sku {} saved progress: level {}, xp {}", tag.sku, progress.level,
@@ -426,17 +428,16 @@ bool DisneyBaseProtocol::WriteProgress(std::uint8_t slot, const FigureProgress& 
     Tag& tag = m_tags[lti];
     if (tag.writesRemaining != 0) return false;
 
-    // Builds the new content of one copy pair: same layout as the current copy, sequence + 1, into
-    // the older copy. A figure with no valid copy at all was never initialised; it is left alone.
-    const auto plan = [&](std::size_t first, std::size_t second, const DataBlock& content) {
+    const auto sealIntoOlderCopy = [&](std::size_t first, std::size_t second, const DataBlock& content) {
         const auto& a = tag.progressBlocks[first];
         const auto& b = tag.progressBlocks[second];
         if (!a && !b) return;
-        const bool firstCurrent = a && (!b || FirstCopyIsCurrent((*a)[11], (*b)[11]));
+        const bool firstCurrent = a && (!b || FirstCopyIsCurrent((*a)[kSequenceOffset], (*b)[kSequenceOffset]));
         const DataBlock& current = firstCurrent ? *a : *b;
-        if (std::equal(content.begin(), content.begin() + 11, current.begin())) return; // unchanged
+        const bool unchanged = std::equal(content.begin(), content.begin() + kSequenceOffset, current.begin());
+        if (unchanged) return;
         DataBlock next = content;
-        next[11] = static_cast<std::uint8_t>(current[11] + 1);
+        next[kSequenceOffset] = static_cast<std::uint8_t>(current[kSequenceOffset] + 1);
         const std::size_t target = firstCurrent ? second : first;
         const auto sealed = SealDataBlock(std::span<const std::uint8_t, 7>(tag.uidBytes), next);
         if (!sealed) return;
@@ -444,8 +445,8 @@ bool DisneyBaseProtocol::WriteProgress(std::uint8_t slot, const FigureProgress& 
         ++tag.writesRemaining;
     };
 
-    const auto& currentExperience = CurrentCopy(tag.progressBlocks[0], tag.progressBlocks[1]);
-    const auto& currentSkills = CurrentCopy(tag.progressBlocks[2], tag.progressBlocks[3]);
+    const auto& currentExperience = CurrentCopy(tag.progressBlocks[kExperienceCopy1], tag.progressBlocks[kExperienceCopy2]);
+    const auto& currentSkills = CurrentCopy(tag.progressBlocks[kSkillsCopy1], tag.progressBlocks[kSkillsCopy2]);
 
     DataBlock experience{};
     for (std::size_t i = 0; i < 4; ++i) {
@@ -455,12 +456,12 @@ bool DisneyBaseProtocol::WriteProgress(std::uint8_t slot, const FigureProgress& 
     experience[4] = progress.level;
     experience[9] = progress.actionFlags;
     if (currentExperience) experience[10] = (*currentExperience)[10];
-    plan(0, 1, experience);
+    sealIntoOlderCopy(kExperienceCopy1, kExperienceCopy2, experience);
 
     DataBlock skills{};
     std::copy(progress.skillBits.begin(), progress.skillBits.end(), skills.begin());
     if (currentSkills) std::copy_n(currentSkills->begin() + 8, 3, skills.begin() + 8);
-    plan(2, 3, skills);
+    sealIntoOlderCopy(kSkillsCopy1, kSkillsCopy2, skills);
 
     if (tag.writesRemaining == 0) return false;
     const auto now = Clock::now();
@@ -473,25 +474,24 @@ bool DisneyBaseProtocol::WriteProgress(std::uint8_t slot, const FigureProgress& 
 }
 
 void DisneyBaseProtocol::SendWriteBlock(std::uint8_t lti, std::uint8_t block, Clock::time_point now) {
-    const auto [sector, index] = kProgressBlocks[block];
-    // Hard limit: only the progression copies (sectors 1-2, blocks 0-1) are ever written.
+    const auto [sector, index] = kProgressSectorBlock[block];
     if (sector < 1 || sector > 2 || index > 1 || !m_tags[lti].writeSealed[block]) return;
     std::array<std::uint8_t, 19> data{lti, sector, index};
     std::copy(m_tags[lti].writeSealed[block]->begin(), m_tags[lti].writeSealed[block]->end(), data.begin() + 3);
     Send(kCmdWriteDataBlock, data, Kind::WriteBlock, lti, now);
-    m_pending[m_nextId].block = block;
+    m_pending[m_nextId].progressIndex = block;
 }
 
 void DisneyBaseProtocol::HandleWriteBlock(std::uint8_t lti, std::uint8_t block, std::span<const std::uint8_t> r,
                                           Clock::time_point now) {
     if (lti >= kMaxTags || block >= kProgressBlockCount) return;
     if (r.size() < 4 || r[3] != kStatusOk) {
-        WriteBlockDone(lti, block, false, std::format("écriture refusée (statut 0x{:02x})", r.size() > 3 ? r[3] : 0));
+        WriteBlockDone(lti, block, false, std::format("write refused (status 0x{:02x})", r.size() > 3 ? r[3] : 0));
         return;
     }
-    const std::array<std::uint8_t, 3> data{lti, kProgressBlocks[block][0], kProgressBlocks[block][1]};
+    const std::array<std::uint8_t, 3> data{lti, kProgressSectorBlock[block][0], kProgressSectorBlock[block][1]};
     Send(kCmdReadDataBlock, data, Kind::VerifyBlock, lti, now);
-    m_pending[m_nextId].block = block;
+    m_pending[m_nextId].progressIndex = block;
 }
 
 void DisneyBaseProtocol::HandleVerifyBlock(std::uint8_t lti, std::uint8_t block, std::span<const std::uint8_t> r) {
@@ -499,7 +499,7 @@ void DisneyBaseProtocol::HandleVerifyBlock(std::uint8_t lti, std::uint8_t block,
     Tag& tag = m_tags[lti];
     if (!tag.writeSealed[block]) return;
     if (r.size() < 20 || r[3] != kStatusOk || !std::equal(tag.writeSealed[block]->begin(), tag.writeSealed[block]->end(), r.begin() + 4)) {
-        WriteBlockDone(lti, block, false, "relecture différente de l'écriture");
+        WriteBlockDone(lti, block, false, "read-back differs from what was written");
         return;
     }
     tag.progressBlocks[block] = DecryptDataBlock(std::span<const std::uint8_t, 7>(tag.uidBytes), *tag.writeSealed[block]);
@@ -511,7 +511,7 @@ void DisneyBaseProtocol::WriteBlockDone(std::uint8_t lti, std::uint8_t block, bo
     if (!tag.present || !tag.writeSealed[block]) return;
     tag.writeSealed[block].reset();
     if (tag.writesRemaining > 0) --tag.writesRemaining;
-    const auto [sector, index] = kProgressBlocks[block];
+    const auto [sector, index] = kProgressSectorBlock[block];
     if (ok) {
         Log(std::format("portal: figure sku {}: sector {} block {} written and verified", tag.sku, sector, index));
     } else {
@@ -523,7 +523,8 @@ void DisneyBaseProtocol::WriteBlockDone(std::uint8_t lti, std::uint8_t block, bo
 void DisneyBaseProtocol::TagInserted(std::uint8_t lti, std::uint8_t antenna, std::uint8_t type,
                                      Clock::time_point now) {
     Tag& tag = m_tags[lti];
-    if (tag.present && tag.antenna == antenna) return; // duplicate notification
+    const bool duplicateNotification = tag.present && tag.antenna == antenna;
+    if (duplicateNotification) return;
 
     tag = {};
     tag.present = true;

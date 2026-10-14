@@ -2,10 +2,8 @@
 ** CrabeLoader
 ** File description:
 ** Xbox One Disney Infinity base (INF-8037059) transport: GIP over WinUSB.
-** Session: IDENTIFY, POWER ON, then the GIP v1 security handshake (RSA key exchange), which the
-** base requires before it accepts anything else. The 32-byte Disney reports then travel as the
-** payload of GIP message 0x21 (non-system), in both directions.
-** Validated on hardware (INF-8037059, firmware of 2014) on 2026-10-14.
+** The session runs IDENTIFY, POWER ON, then the GIP v1 security handshake the base requires.
+** The 32-byte Disney reports then travel as the payload of GIP message 0x21 in both directions.
 **
 ** Authors: @LucasLhomme
 */
@@ -38,12 +36,11 @@ using Clock = std::chrono::steady_clock;
 constexpr std::uint16_t kVid = 0x0E6F;
 constexpr std::uint16_t kPid = 0x0229;
 
-// GIP commands and header options.
 constexpr std::uint8_t kCmdAck = 0x01;
 constexpr std::uint8_t kCmdIdentify = 0x04;
 constexpr std::uint8_t kCmdPower = 0x05;
 constexpr std::uint8_t kCmdAuth = 0x06;
-constexpr std::uint8_t kCmdDisney = 0x21; // InfinityBaseDriver/GenericGip.h: Request/Report ID
+constexpr std::uint8_t kCmdDisney = 0x21;
 constexpr std::uint8_t kOptAck = 0x10;
 constexpr std::uint8_t kOptInternal = 0x20;
 constexpr std::uint8_t kOptChunkStart = 0x40;
@@ -51,7 +48,6 @@ constexpr std::uint8_t kOptChunk = 0x80;
 constexpr std::size_t kChunkSize = 54;
 constexpr std::size_t kPacketSize = 64;
 
-// Security handshake (GIP command 0x06), v1 flavour.
 constexpr std::uint8_t kAuthOptAck = 0x01;
 constexpr std::uint8_t kAuthOptRequest = 0x02;
 constexpr std::uint8_t kAuthOptFromHost = 0x40;
@@ -68,7 +64,6 @@ constexpr unsigned kWriteTimeoutMs = 500;
 constexpr auto kHandshakeDeadline = std::chrono::seconds(8);
 constexpr auto kChunkAckWait = std::chrono::milliseconds(500);
 
-// ------------------------------------------------------------------ crypto (Windows CNG)
 class AlgHandle final {
 public:
     AlgHandle(LPCWSTR id, ULONG flags) {
@@ -143,8 +138,9 @@ Bytes Prf(std::span<const std::uint8_t> secret, std::string_view label, std::spa
     return out;
 }
 
-// The accessory certificate embeds a PKCS#1 RSAPublicKey (SEQUENCE 30 82 01 0A, 2048-bit modulus,
-// exponent) that is not usable through a normal X.509 parser; it is located by its prefix.
+// Encrypts message with PKCS#1 v1.5 padding under the RSA key of the accessory certificate.
+// The key is a PKCS#1 RSAPublicKey (SEQUENCE 30 82 01 0A, 2048-bit INTEGER modulus, INTEGER exponent)
+// that a normal X.509 parser cannot use, so it is located by its byte prefixes.
 std::optional<Bytes> RsaPkcs1Encrypt(std::span<const std::uint8_t> certificate, std::span<const std::uint8_t> message) {
     static constexpr std::array<std::uint8_t, 4> kKeyPrefix{0x30, 0x82, 0x01, 0x0A};
     static constexpr std::array<std::uint8_t, 5> kModulusPrefix{0x02, 0x82, 0x01, 0x01, 0x00};
@@ -157,7 +153,6 @@ std::optional<Bytes> RsaPkcs1Encrypt(std::span<const std::uint8_t> certificate, 
     if (modulus == certificate.end() || certificate.end() - modulusStart < static_cast<std::ptrdiff_t>(kModulusSize + 2)) {
         return std::nullopt;
     }
-    // INTEGER exponent right after the modulus: 02 len bytes...
     const auto exponentHeader = modulusStart + kModulusSize;
     const std::size_t exponentSize = exponentHeader[1];
     if (exponentHeader[0] != 0x02 || certificate.end() - (exponentHeader + 2) < static_cast<std::ptrdiff_t>(exponentSize)) {
@@ -194,7 +189,6 @@ void AppendBe16(Bytes& out, std::size_t value) {
     out.push_back(static_cast<std::uint8_t>(value));
 }
 
-// ------------------------------------------------------------------ GIP framing
 struct GipMessage {
     std::uint8_t command{0};
     std::uint8_t options{0};
@@ -251,6 +245,7 @@ class GipLink final {
 public:
     explicit GipLink(UsbDevice& usb) : m_usb(usb) {}
 
+    // Returns the next sequence number of this command, cycling through 1 to 255.
     std::uint8_t NextSequence(std::uint8_t command) {
         std::uint8_t& seq = m_sequences[command];
         seq = static_cast<std::uint8_t>(seq % 255 + 1);
@@ -280,8 +275,9 @@ public:
         return m_usb.Write(terminator, kWriteTimeoutMs) == UsbDevice::IoResult::Ok;
     }
 
-    // Reads one USB packet. Acknowledges what asks for it, reassembles chunked messages, and
-    // returns a complete message (ACKs from the device included) when one is available.
+    // Reads one USB packet, acknowledges it when asked, and reassembles chunked messages, whose first
+    // chunk carries the total size in its offset field. Returns a complete message, device ACKs
+    // included, when one is available.
     std::optional<GipMessage> Receive(unsigned timeoutMs, bool& lost) {
         lost = false;
         std::array<std::uint8_t, kPacketSize> packet{};
@@ -311,7 +307,6 @@ public:
             return message;
         }
 
-        // Chunked: the first chunk's offset is the total size; an empty chunk ends the transfer.
         Chunk& chunk = m_chunks[message.command];
         if (message.options & kOptChunkStart) {
             chunk = Chunk{offset, Bytes(body.begin(), body.end()), true};
@@ -338,6 +333,7 @@ private:
         bool active{false};
     };
 
+    // Sends the GIP ACK of a received message with the bytes received so far and those still expected.
     void Acknowledge(std::uint8_t command, std::uint8_t options, std::uint8_t sequence, std::uint32_t got,
                      std::uint32_t remaining) {
         const std::array<std::uint8_t, 9> payload{
@@ -367,24 +363,22 @@ private:
     std::array<Chunk, 256> m_chunks{};
 };
 
-// ------------------------------------------------------------------ security handshake
-// GIP v1 handshake as PDP firmwares run it: host hello, client hello, certificate, RSA-encrypted
-// premaster secret, host finish. These bases never send their client finish: they only ACK the
-// request at GIP level, and the host then sends control COMPLETE (as Windows does).
 class SecurityHandshake final {
 public:
     explicit SecurityHandshake(GipLink& link) : m_link(link) {}
 
-    // Runs the whole handshake; false with a reason on failure.
+    // Runs the GIP v1 handshake as PDP firmwares do: host hello, client hello, certificate, RSA-encrypted
+    // premaster secret, host finish. The base never sends its client finish, it only ACKs the request
+    // at GIP level and the host then sends control COMPLETE as Windows does; false with a reason on failure.
     bool Run(std::string& failure) {
         if (!Random(m_hostRandom)) {
-            failure = "générateur aléatoire indisponible";
+            failure = "random generator unavailable";
             return false;
         }
         Bytes hello(m_hostRandom.begin(), m_hostRandom.end());
         hello.resize(kRandomSize + 8, 0);
         if (!SendData(kAuthHostHello, hello)) {
-            failure = "envoi du HOST_HELLO impossible";
+            failure = "could not send HOST_HELLO";
             return false;
         }
 
@@ -404,15 +398,17 @@ public:
             }
             if (message) Handle(*message);
         }
-        if (!m_done && m_failure.empty()) m_failure = "délai dépassé";
+        if (!m_done && m_failure.empty()) m_failure = "timed out";
         failure = m_failure;
         return m_done;
     }
 
 private:
+    // Advances the handshake on one message; a GIP ACK of the CLIENT_FINISH request ends it.
+    // Only control-context auth messages count, a non-zero error byte fails, and a record command that
+    // differs from the header command means the base asks for the unsupported v2 handshake.
     void Handle(const GipMessage& message) {
         if (message.command == kCmdAck) {
-            // GIP-level ACK of our CLIENT_FINISH request: the end of the handshake on these bases.
             if (m_lastRequest == kAuthClientFinish && message.payload.size() > 1 && message.payload[1] == kCmdAuth) {
                 Complete();
             }
@@ -420,9 +416,9 @@ private:
         }
         if (message.command != kCmdAuth || message.payload.size() < 6) return;
         const auto& p = message.payload;
-        if (p[0] != 0) return; // control context
+        if (p[0] != 0) return;
         if (p[2] != 0) {
-            m_failure = std::format("erreur 0x{:02X} renvoyée par la base", p[2]);
+            m_failure = std::format("the base answered error 0x{:02X}", p[2]);
             return;
         }
         if (p[1] & kAuthOptAck) {
@@ -431,7 +427,7 @@ private:
         }
         if (p.size() < 10) return;
         if (p[3] != p[6]) {
-            m_failure = "la base demande le handshake v2 (non pris en charge)";
+            m_failure = "the base asks for handshake v2 (not supported)";
             return;
         }
         const std::span<const std::uint8_t> record(p.data() + 6, p.size() - 6);
@@ -458,6 +454,7 @@ private:
         }
     }
 
+    // Answers the base's ACK of the last data record with the next step of the handshake.
     void OnHandshakeAck() {
         switch (m_lastSent) {
             case kAuthHostHello: Request(kAuthClientHello, kRandomSize + 48); break;
@@ -467,37 +464,42 @@ private:
         }
     }
 
+    // Sends a random 48-byte premaster secret encrypted with the certificate's RSA key, then derives
+    // the master secret from it and both randoms.
     void SendSecret(std::span<const std::uint8_t> certificate) {
         std::array<std::uint8_t, 48> premaster{};
         if (!Random(premaster)) {
-            m_failure = "générateur aléatoire indisponible";
+            m_failure = "random generator unavailable";
             return;
         }
         auto encrypted = RsaPkcs1Encrypt(certificate, premaster);
         if (!encrypted) {
-            m_failure = "clé RSA introuvable dans le certificat de la base";
+            m_failure = "no RSA key in the base's certificate";
             return;
         }
         m_master = Prf(premaster, "Master Secret", Randoms(), 48);
-        if (!SendData(kAuthHostSecret, *encrypted)) m_failure = "envoi du secret impossible";
+        if (!SendData(kAuthHostSecret, *encrypted)) m_failure = "could not send the host secret";
     }
 
+    // Sends HOST_FINISH, the PRF of the master secret over the SHA-256 of the handshake transcript.
     void SendFinish() {
         const auto transcript = Sha256(m_transcript);
         const Bytes finish = Prf(m_master, "Host Finished", transcript, 32);
-        if (!SendData(kAuthHostFinish, finish)) m_failure = "envoi du HOST_FINISH impossible";
+        if (!SendData(kAuthHostFinish, finish)) m_failure = "could not send HOST_FINISH";
     }
 
+    // Sends the control COMPLETE message that closes the handshake and marks it done.
     void Complete() {
-        static constexpr std::array<std::uint8_t, 2> kComplete{0x01, 0x00}; // control context, COMPLETE
-        if (m_link.Send(kCmdAuth, kOptInternal, kComplete)) {
+        static constexpr std::array<std::uint8_t, 2> kControlComplete{0x01, 0x00};
+        if (m_link.Send(kCmdAuth, kOptInternal, kControlComplete)) {
             m_done = true;
         } else {
-            m_failure = "envoi du COMPLETE impossible";
+            m_failure = "could not send COMPLETE";
         }
     }
 
-    // [context, options, error, command, length16] + [command, version, length16] + body + trailer.
+    // Sends a data message laid out as [context, options, error, command, length16], then the record
+    // [command, version, length16, body], then an 8-byte zero trailer. The record joins the transcript.
     bool SendData(std::uint8_t command, std::span<const std::uint8_t> body) {
         Bytes record{command, 0x01};
         AppendBe16(record, body.size());
@@ -511,6 +513,7 @@ private:
         return SendMessage(message);
     }
 
+    // Asks the base for one handshake record, announcing replySize plus 4 as the expected length.
     bool Request(std::uint8_t command, std::size_t replySize) {
         Bytes message{0x00, kAuthOptRequest | kAuthOptFromHost, 0x00, command};
         AppendBe16(message, replySize + 4);
@@ -519,6 +522,8 @@ private:
         return SendMessage(message);
     }
 
+    // Sends a handshake message in one packet when it fits, else in chunks; messages that arrive while
+    // waiting for chunk ACKs are queued for Run.
     bool SendMessage(std::span<const std::uint8_t> message) {
         if (message.size() + 4 <= kPacketSize) return m_link.Send(kCmdAuth, kOptInternal | kOptAck, message);
         return m_link.SendChunked(kCmdAuth, message, m_pending);
@@ -528,6 +533,7 @@ private:
         m_transcript.insert(m_transcript.end(), record.begin(), record.end());
     }
 
+    // Returns the host random followed by the client random, the seed of the master secret.
     Bytes Randoms() const {
         Bytes seed(m_hostRandom.begin(), m_hostRandom.end());
         seed.insert(seed.end(), m_clientRandom.begin(), m_clientRandom.end());
@@ -546,18 +552,18 @@ private:
     std::string m_failure;
 };
 
-// ------------------------------------------------------------------ transport
 class XboxOneTransport final : public IPortalTransport {
 public:
+    // Opens the base, sends IDENTIFY (its descriptor reply is acknowledged by the link) and POWER ON,
+    // then runs the security handshake, without which the base accepts nothing else.
     bool Open() override {
         if (!m_usb.Open(kVid, kPid)) {
-            m_diagnostic = "Portail Xbox One détecté mais impossible de l'ouvrir via WinUSB.";
+            m_diagnostic = "Xbox One base found but it cannot be opened through WinUSB.";
             return false;
         }
         m_link.emplace(m_usb);
         Drain(300);
 
-        // IDENTIFY (the base answers with its descriptor, acknowledged by the link), then POWER ON.
         static_cast<void>(m_link->Send(kCmdIdentify, kOptInternal, {}));
         Drain(1000);
         static constexpr std::array<std::uint8_t, 1> kPowerOn{0x00};
@@ -567,8 +573,8 @@ public:
         std::string failure;
         SecurityHandshake handshake(*m_link);
         if (!handshake.Run(failure)) {
-            m_diagnostic = "Portail Xbox One : authentification refusée (" + failure +
-                           "). Débranchez puis rebranchez le portail.";
+            m_diagnostic = "Xbox One base: authentication failed (" + failure +
+                           "). Unplug the base and plug it back in.";
             crabe::shared::Logger::getInstance().info("Portal: Xbox One handshake failed: {}", failure);
             return false;
         }
@@ -581,10 +587,12 @@ public:
         m_usb.Close();
     }
 
+    // Sends the report as the payload of a non-system GIP 0x21 message.
     bool Write(const Report& report) override {
         return m_link && m_link->Send(kCmdDisney, 0x00, report);
     }
 
+    // Waits for the next GIP 0x21 message and copies its payload into the report.
     ReadResult Read(Report& report, unsigned timeoutMs) override {
         if (!m_link) return ReadResult::Lost;
         const auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -602,11 +610,12 @@ public:
     }
 
     PortalType Type() const override { return PortalType::XboxOne; }
-    std::string Description() const override { return "Portail Xbox One (GIP / WinUSB)"; }
+    std::string Description() const override { return "Xbox One base (GIP / WinUSB)"; }
     std::string Diagnostic() const override { return m_diagnostic; }
     std::uint8_t RunningScanInterval() const override { return 3; }
 
 private:
+    // Reads and discards incoming messages for ms milliseconds, letting the link acknowledge them.
     void Drain(unsigned ms) {
         const auto deadline = Clock::now() + std::chrono::milliseconds(ms);
         while (Clock::now() < deadline) {

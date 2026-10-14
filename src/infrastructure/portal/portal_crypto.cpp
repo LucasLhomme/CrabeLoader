@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Disney Infinity RFID identity block decoding.
+** Disney Infinity RFID block crypto: identity block decoding, data block decrypt and seal.
 ** The per-tag AES-128 key is SHA-1(baseKey || "(c) Disney 2013" || uid) taken in the
 ** engine's "LSB" word order, and the identity block is one AES-128-ECB block.
 **
@@ -31,14 +31,14 @@ constexpr std::array<std::uint8_t, 16> kBaseKey = {
 constexpr char kDisneyCopyright[] = "(c) Disney 2013";
 constexpr std::size_t kCopyrightLen = sizeof(kDisneyCopyright) - 1;
 
-// Identity block layout (decrypted).
-constexpr std::size_t kSkuOffset = 0;
-constexpr std::size_t kMfgOffset = 4;
-constexpr std::size_t kFlagsOffset = 7;
-constexpr std::size_t kVersionOffset = 8;
-constexpr std::size_t kMagicOffset = 10;
+constexpr std::size_t kIdSkuOffset = 0;
+constexpr std::size_t kIdMfgDateOffset = 4;
+constexpr std::size_t kIdFlagsOffset = 7;
+constexpr std::size_t kIdVersionOffset = 8;
+constexpr std::size_t kIdMagicOffset = 10;
 constexpr std::size_t kCrcOffset = 12;
-constexpr std::uint16_t kExpectedMagic = 0xd11f;
+constexpr std::uint16_t kIdBlockMagic = 0xd11f;
+constexpr std::uint32_t kCrc32ReflectedPoly = 0xEDB88320U;
 
 class AlgHandle final {
 public:
@@ -73,8 +73,9 @@ private:
     BCRYPT_KEY_HANDLE m_handle{nullptr};
 };
 
-// The engine's SHA1Result_LSB writes every 32-bit state word least-significant byte first,
-// which is the standard digest with the bytes of each 4-byte group reversed.
+// Derives the per-tag AES-128 key from SHA-1 over base key, "(c) Disney 2013" and UID, keeping 16 bytes.
+// The engine's SHA1Result_LSB writes each 32-bit state word least-significant byte first, so every
+// 4-byte group of the standard digest is reversed.
 bool DeriveKey(std::span<const std::uint8_t, 7> uid, std::array<std::uint8_t, 16>& key) {
     AlgHandle sha(BCRYPT_SHA1_ALGORITHM, 0);
     if (!sha.get()) return false;
@@ -149,13 +150,13 @@ bool AesEcbEncrypt(const std::array<std::uint8_t, 16>& key,
     return written == out.size();
 }
 
-// The engine's crc32_calc: reflected CRC-32 (poly 0xEDB88320), initial value 0, no final xor.
+// The engine's crc32_calc: reflected CRC-32 with initial value 0 and no final xor.
 std::uint32_t Crc32(std::span<const std::uint8_t> data) {
     std::uint32_t crc = 0;
     for (const std::uint8_t byte : data) {
         crc ^= byte;
         for (int bit = 0; bit < 8; ++bit) {
-            crc = (crc & 1U) ? (crc >> 1) ^ 0xEDB88320U : (crc >> 1);
+            crc = (crc & 1U) ? (crc >> 1) ^ kCrc32ReflectedPoly : (crc >> 1);
         }
     }
     return crc;
@@ -176,22 +177,23 @@ std::optional<IdBlock> DecodeIdBlock(std::span<const std::uint8_t, 7> uid,
     std::array<std::uint8_t, 16> plain{};
     if (!AesEcbDecrypt(key, encryptedBlock, plain)) return std::nullopt;
 
-    const std::uint16_t magic = static_cast<std::uint16_t>((plain[kMagicOffset] << 8) | plain[kMagicOffset + 1]);
-    if (magic != kExpectedMagic) return std::nullopt;
+    const std::uint16_t magic = static_cast<std::uint16_t>((plain[kIdMagicOffset] << 8) | plain[kIdMagicOffset + 1]);
+    if (magic != kIdBlockMagic) return std::nullopt;
 
     IdBlock id;
-    id.sku = ReadBe32(&plain[kSkuOffset]);
-    id.mfgDate = ReadBe32(&plain[kMfgOffset]);
-    id.flags = plain[kFlagsOffset];
-    id.version = static_cast<std::uint16_t>((plain[kVersionOffset] << 8) | plain[kVersionOffset + 1]);
+    id.sku = ReadBe32(&plain[kIdSkuOffset]);
+    id.mfgDate = ReadBe32(&plain[kIdMfgDateOffset]);
+    id.flags = plain[kIdFlagsOffset];
+    id.version = static_cast<std::uint16_t>((plain[kIdVersionOffset] << 8) | plain[kIdVersionOffset + 1]);
     id.crcValid = Crc32(std::span<const std::uint8_t>(plain.data(), kCrcOffset)) == ReadBe32(&plain[kCrcOffset]);
     return id;
 }
 
 std::optional<std::array<std::uint8_t, 16>> DecryptDataBlock(std::span<const std::uint8_t, 7> uid,
                                                              std::span<const std::uint8_t, 16> encryptedBlock) {
-    // The engine treats an all-zero block on the tag as never written.
-    if (std::all_of(encryptedBlock.begin(), encryptedBlock.end(), [](std::uint8_t b) { return b == 0; })) {
+    const bool neverWritten =
+        std::all_of(encryptedBlock.begin(), encryptedBlock.end(), [](std::uint8_t b) { return b == 0; });
+    if (neverWritten) {
         return std::nullopt;
     }
     std::array<std::uint8_t, 16> key{};
