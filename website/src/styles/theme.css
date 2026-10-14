@@ -1,0 +1,73 @@
+/* CrabeLoader colours on top of Starlight's defaults: a coral accent and slightly warm greys. */
+
+:root {
+  --sl-color-accent-low: #3b1209;
+  --sl-color-accent: #f0603f;
+  --sl-color-accent-high: #ffd0c2;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eeeaea;
+  --sl-color-gray-2: #c4bebe;
+  --sl-color-gray-3: #968c8b;
+  --sl-color-gray-4: #5f5655;
+  --sl-color-gray-5: #3f3736;
+  --sl-color-gray-6: #2b2524;
+  --sl-color-black: #191514;
+  --crabe-glow: rgba(240, 96, 63, 0.18);
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #ffe1d8;
+  --sl-color-accent: #c63b1f;
+  --sl-color-accent-high: #5a170a;
+  --sl-color-white: #191514;
+  --sl-color-gray-1: #2b2524;
+  --sl-color-gray-2: #3f3736;
+  --sl-color-gray-3: #5f5655;
+  --sl-color-gray-4: #968c8b;
+  --sl-color-gray-5: #c4bebe;
+  --sl-color-gray-6: #eeeaea;
+  --sl-color-gray-7: #f8f5f4;
+  --sl-color-black: #ffffff;
+  --crabe-glow: rgba(198, 59, 31, 0.1);
+}
+
+/* Landing page */
+
+[data-has-hero] .page {
+  background:
+    radial-gradient(60rem 30rem at 50% -8rem, var(--crabe-glow), transparent 70%),
+    var(--sl-color-black);
+}
+
+[data-has-hero] .hero h1 {
+  background: linear-gradient(120deg, var(--sl-color-white) 30%, var(--sl-color-accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  letter-spacing: -0.02em;
+}
+
+.hero .sl-link-button.primary {
+  background: var(--sl-color-accent);
+  border-color: var(--sl-color-accent);
+  color: #ffffff;
+}
+
+.hero img {
+  filter: drop-shadow(0 1.5rem 3rem var(--crabe-glow));
+}
+
+/* Reference pages */
+
+.sl-markdown-content table code {
+  white-space: nowrap;
+}
+
+/* Diagrams keep a light panel in both themes: the sources colour some nodes for a light page. */
+.sl-markdown-content pre.mermaid {
+  background: #fbf8f7;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+}
