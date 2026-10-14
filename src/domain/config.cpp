@@ -31,8 +31,9 @@ namespace crabe::domain {
         constexpr std::array<std::string_view, 1> kKnownMultiplayerKeys = {"enabled"};
         constexpr std::array<std::string_view, 1> kKnownUpdatesKeys = {"check"};
         constexpr std::array<std::string_view, 1> kKnownHttpKeys = {"redirect"};
-        constexpr std::array<std::string_view, 8> kKnownTopLevelKeys = {
-            "general", "display", "keybinds", "multiplayer", "updates", "http", "profiles", "quarantine",
+        constexpr std::array<std::string_view, 2> kKnownPluginsKeys = {"asi", "skip"};
+        constexpr std::array<std::string_view, 9> kKnownTopLevelKeys = {
+            "general", "display", "keybinds", "multiplayer", "updates", "http", "plugins", "profiles", "quarantine",
         };
 
         [[nodiscard]] ConfigDiagnostic makeDiagnostic(ConfigError code, const std::filesystem::path& file,
@@ -347,6 +348,20 @@ namespace crabe::domain {
             collectIgnored(*updates, kKnownUpdatesKeys, "updates", config._ignoredKeys);
         }
 
+        if (const auto* plugins = root["plugins"].as_table()) {
+            if (auto value = (*plugins)["asi"].value<bool>())
+                config._asiEnabled = *value;
+            if (const auto* skip = (*plugins)["skip"].as_array()) {
+                for (auto&& element : *skip) {
+                    if (auto name = element.value<std::string>())
+                        config._asiSkip.push_back(*name);
+                    else
+                        config._ignoredKeys.push_back("plugins.skip (an entry that is not a string)");
+                }
+            }
+            collectIgnored(*plugins, kKnownPluginsKeys, "plugins", config._ignoredKeys);
+        }
+
         if (const auto* http = root["http"].as_table()) {
             if (const auto* redirect = (*http)["redirect"].as_table()) {
                 for (auto&& entry : *redirect) {
@@ -402,6 +417,16 @@ namespace crabe::domain {
         // described that run's counters, which do not exist yet in this one.
 
         return config;
+    }
+
+    Config Config::peek(const std::filesystem::path& gameRoot)
+    {
+        const std::filesystem::path configPath = gameRoot / "Crabe" / "crabe.toml";
+        const std::optional<std::string> content = readWholeFile(configPath);
+        if (!content)
+            return Config{};
+        auto parsed = parse(*content, configPath);
+        return parsed ? std::move(*parsed) : Config{};
     }
 
     Config Config::load(const std::filesystem::path& gameRoot)
@@ -596,6 +621,12 @@ enabled = false
 
 [updates]
 check = true           # ask GitHub at launch whether a newer CrabeLoader exists; false = never connect
+
+# .asi plugins are native DLLs loaded before the game starts, from the game
+# folder, scripts/, plugins/ and the folder of every enabled mod.
+[plugins]
+asi  = true            # false = load no .asi plugin at all
+skip = []              # file names never to load, e.g. ["example.asi"]
 
 # Sends the game's WinHTTP connections for a server name to another server.
 # Only the host and port change; "http://" also drops TLS, so a local server

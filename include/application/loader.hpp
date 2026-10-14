@@ -52,6 +52,12 @@ class Loader {
         void drainPendingKeyEvents(void* L);
         void queueConsoleSnippet(const std::string& code);
         void drainPendingSnippets(void* L);
+
+        // Queues Lua sent by a native plugin through the plugin API; `owner`
+        // names it in an error. Runs quietly on the next tick, unlike console
+        // snippets, which echo their input and result.
+        void queuePluginSnippet(const std::string& owner, std::string code);
+        void drainPluginSnippets(void* L);
         void drainLuaOutput(void* L);
 
         // Polls crabe_remote_cmd.txt for a new command and queues it as if
@@ -147,6 +153,8 @@ class Loader {
         std::mutex _luaCallQueueMutex;
         std::vector<std::string> _pendingSnippets;
         std::mutex _snippetQueueMutex;
+        std::vector<std::pair<std::string, std::string>> _pendingPluginSnippets;
+        std::mutex _pluginSnippetQueueMutex;
         // Bounded: a key held down while the script thread is stalled must not
         // grow this queue without limit.
         static constexpr std::size_t kMaxPendingKeyEvents = 64;

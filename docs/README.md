@@ -12,6 +12,7 @@ A dedicated suite of structured guides in plain English explaining every modding
 * **[Mod Development Guide](guides/mods.md)** — Lifecycle hooks (`onInit`, `onUpdate`, `onDraw`, `onShutdown`), sandboxing, Dear ImGui UI creation, memory patching (`Crabe.Memory.patchBytes`, `Crabe.Hooks.installCodeCave`), and live hot-reloading (`F4`).
 * **[Skill Tree Modding Guide](guides/skilltrees.md)** — How character progression works in the engine, writing `.patch` chunk modifications and `.lua` full source overrides, structure of `SkillTree.Nodes` and `CharacterStats`.
 * **[Character & Figurine Guide](guides/characters.md)** — The 5-stage actor resolution pipeline (`SKU -> AvatarData -> Name -> ActorList -> DNA`), adding cosmetic variants (`addCharacter`), exposing standalone unreleased heroes (`exposeCharacter`, e.g. Mace Windu, Thanos), and SKU numbering ranges.
+* **[Native `.asi` Plugins](guides/asi_plugins.md)** — Where native 32-bit `.asi` plugins load from and when, `[plugins]` in `crabe.toml`, `Crabe.Plugins`, and the C plugin API (`include/sdk/crabe_plugin.h`) for logging, hooks, Lua and values shared with mods.
 * **[Guides Overview](guides/README.md)** — Summary index of all modding guides.
 
 ### 2. Getting Started

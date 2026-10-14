@@ -86,7 +86,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -S . -A Win32 -DCRABELOADER_AS_SHARED=ON -DCRABELOADER_BUILD_INSTALLER=ON -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -S . -A Win32 -DCRABELOADER_AS_SHARED=ON -DCRABELOADER_BUILD_INSTALLER=ON -DCRABELOADER_RELEASE_BUILD=ON -DCMAKE_BUILD_TYPE=Release
 
       - name: Build CrabeLoader and CrabeInstaller (Release)
         run: |
@@ -103,13 +103,11 @@ jobs:
         run: |
           mkdir -p package/mods
 
-          # Find and copy the proxy DLL
-          if [ -f build/Release/bink2w32.dll ]; then
-            cp build/Release/bink2w32.dll package/
-          elif [ -f build/bink2w32.dll ]; then
-            cp build/bink2w32.dll package/
+          # Find and copy the loader DLL
+          if [ -f build/Release/CrabeLoader.asi ] && [ -f build/Release/dinput8.dll ]; then
+            cp build/Release/CrabeLoader.asi build/Release/dinput8.dll package/
           else
-            echo "Error: bink2w32.dll not found in build output."
+            echo "Error: CrabeLoader.asi or dinput8.dll not found in build output."
             exit 1
           fi
 
@@ -124,6 +122,8 @@ jobs:
           cp mods/resolution.lua mods/window_mode.lua package/mods/
           mkdir -p package/docs
           cp docs/crabe_api.def.lua package/docs/
+          mkdir -p package/sdk
+          cp include/sdk/crabe_plugin.h package/sdk/
 
           # Quickstart README for players and modders
           cat << 'ENDREADME' > package/README.txt
@@ -131,13 +131,16 @@ jobs:
           ==================================================
 
           Installation (easiest): run CrabeInstaller.exe and follow the prompts.
-          It finds the game, keeps your original bink2w32.dll as bink2w32_orig.dll,
-          and creates the 'mods/' folder. Running it again updates CrabeLoader.
+          It finds the game, adds CrabeLoader.asi and its small dinput8.dll starter without
+          touching any game file,
+          and creates the 'mods/' folder. Running it again updates CrabeLoader. It also moves
+          a 1.0 install (CrabeLoader as bink2w32.dll) over and puts the game's bink2w32.dll back.
 
           Installation (manual):
-          1. Rename the game's bink2w32.dll to bink2w32_orig.dll (next to DisneyInfinity3.exe).
-          2. Place this bink2w32.dll in the same directory.
-          3. Copy the 'mods/' folder of this zip next to it, then add your own mods to it.
+          1. Place CrabeLoader.asi and dinput8.dll next to DisneyInfinity3.exe. No game file is renamed.
+             Already using an ASI loader as dinput8.dll? Then copy only CrabeLoader.asi.
+          2. Coming from 1.0: delete the old bink2w32.dll, then rename bink2w32_orig.dll to bink2w32.dll.
+          3. Copy the 'mods/' folder of this zip next to them, then add your own mods to it.
 
           Ready-to-use mods in 'mods/' (delete a file to turn it off):
           - resolution.lua: extra resolutions (4K, ultrawide, Steam Deck...) and a frame rate limit in the Video Settings.
@@ -148,9 +151,14 @@ jobs:
           Updates: at launch CrabeLoader checks GitHub for a newer release and asks before opening
           anything. To disable it, set 'check = false' under [updates] in Crabe/crabe.toml.
 
+          Native .asi plugins: 32-bit .asi files placed next to DisneyInfinity3.exe, in 'scripts/',
+          in 'plugins/' or in a mod's folder load before the game starts. To disable them, set
+          'asi = false' under [plugins] in Crabe/crabe.toml.
+
           Mod Development:
           - Mod template is provided under 'mods/_template/' with mod.json.
           - Full VS Code autocompletion definitions are in 'docs/crabe_api.def.lua'.
+          - Native plugins: 'sdk/crabe_plugin.h' is the C plugin API (log, hooks, Lua, shared values).
           ENDREADME
 
           # Compress package into zip
@@ -160,9 +168,10 @@ jobs:
       - name: Stage release assets and checksums
         shell: bash
         run: |
-          cp package/bink2w32.dll bink2w32.dll
+          cp package/dinput8.dll dinput8.dll
+          cp package/CrabeLoader.asi CrabeLoader.asi
           cp package/CrabeInstaller.exe CrabeInstaller.exe
-          sha256sum bink2w32.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
+          sha256sum CrabeLoader.asi dinput8.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Prepare GitHub Release (draft)
@@ -178,6 +187,7 @@ jobs:
             **Draft, visible to maintainers only.** Test `CrabeInstaller.exe`, then publish. To roll the version out to players, also untick "Set as a pre-release": the in-game update prompt only sees published, stable releases.
           files: |
             CrabeInstaller.exe
-            bink2w32.dll
+            CrabeLoader.asi
+            dinput8.dll
             CrabeLoader-${{ needs.plan.outputs.tag }}.zip
             SHA256SUMS.txt

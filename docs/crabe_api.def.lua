@@ -3,7 +3,9 @@
 --- Place this file in your workspace or mod directory for full IntelliSense autocompletion.
 
 ---@class Crabe
----@field public version string The semver version of CrabeLoader (e.g. "0.2.0").
+---@field public version string The semver version of CrabeLoader (e.g. "1.1.0"); compare against this one.
+---@field public versionFull string The build label: "1.1.0" for a release, "1.1.0-dev.20261015.0011+46329b2" for a development build.
+---@field public buildCommit string The short commit the build came from, with "-dirty" when uncommitted changes were built in.
 ---@field public versionMajor number The major version integer.
 ---@field public versionMinor number The minor version integer.
 ---@field public versionPatch number The patch version integer.
@@ -251,6 +253,41 @@ function Crabe.Vfs.stats() end
 --- Returns the virtual path of the most recently redirected file.
 ---@return string lastPath
 function Crabe.Vfs.lastRedirected() end
+
+--------------------------------------------------------------------------------
+-- Crabe.Plugins: Native .asi Plugins
+--------------------------------------------------------------------------------
+
+---@alias CrabePluginStatus "loaded"|"already_loaded"|"skipped"|"failed"|"crashed"
+
+---@class CrabePlugin
+---@field file string Path relative to the game folder, forward slashes (e.g. "scripts/x.asi").
+---@field source string Where it was found: "game folder", "scripts", "plugins" or "mod <id>".
+---@field status CrabePluginStatus What happened when the loader tried it.
+---@field detail string Why it was skipped or failed, or its load address.
+
+---@class CrabePlugins
+Crabe.Plugins = {}
+
+--- Lists every .asi plugin found before the game started, in load order.
+---@return CrabePlugin[] plugins
+function Crabe.Plugins.list() end
+
+--- Returns a value a native plugin (setValue) or a mod (set) shared under key.
+---@param key string Shared key; prefix it with your plugin or mod name.
+---@return string? value nil when the key is not set.
+function Crabe.Plugins.get(key) end
+
+--- Shares a value with every native plugin (getValue) and mod; nil erases the key.
+---@param key string Shared key; prefix it with your plugin or mod name.
+---@param value string|number|boolean|nil Stored as a string (tostring); nil erases.
+---@return boolean ok false for a missing key or a loader without the bridge.
+function Crabe.Plugins.set(key, value) end
+
+--- Whether a plugin of that file name (any folder, any case) is loaded.
+---@param name string File name, e.g. "example.asi".
+---@return boolean loaded
+function Crabe.Plugins.isLoaded(name) end
 
 --------------------------------------------------------------------------------
 -- Crabe.Input: Keybinding Management

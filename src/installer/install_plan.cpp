@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** Decides between a fresh install, an update, and a refusal from the facts about a game folder.
-** Anything it does not recognise ends in a refusal, never in a guess.
+** Anything it does not recognise as CrabeLoader is never replaced; that ends in a refusal.
 ** Reads no file and renames nothing; it only returns the decision.
 **
 ** Authors: @LucasLhomme
@@ -16,15 +16,17 @@ namespace crabe::installer {
     {
         switch (plan) {
         case Plan::FreshInstall:
-            return "fresh install: the original bink2w32.dll is kept as bink2w32_orig.dll";
+            return "fresh install: CrabeLoader.asi and its dinput8.dll bootstrap are added";
         case Plan::Update:
-            return "update: bink2w32.dll is replaced, bink2w32_orig.dll is left alone";
+            return "update: CrabeLoader.asi and its dinput8.dll bootstrap are replaced";
         case Plan::NotAGameFolder:
             return "this folder does not contain the game executable";
-        case Plan::ProxyMissing:
-            return "bink2w32.dll is missing and there is no backup to rely on";
-        case Plan::ProxyUnrecognized:
-            return "bink2w32.dll is not a known original and there is no backup";
+        case Plan::BootstrapSlotTaken:
+            return "dinput8.dll is already there and is not CrabeLoader";
+        case Plan::LoaderSlotTaken:
+            return "CrabeLoader.asi is already there and is not CrabeLoader";
+        case Plan::LegacyOriginalMissing:
+            return "bink2w32.dll is an old CrabeLoader and the game's original bink2w32_orig.dll is gone";
         }
         return "unknown";
     }
@@ -33,18 +35,19 @@ namespace crabe::installer {
     {
         if (!facts.hasGameExecutable)
             return Plan::NotAGameFolder;
-        if (facts.hasBackup)
-            return Plan::Update;
+        if (facts.bootstrap == FileKind::Other)
+            return Plan::BootstrapSlotTaken;
+        if (facts.loader == FileKind::Other || facts.loader == FileKind::Bootstrap)
+            return Plan::LoaderSlotTaken;
+        if (facts.legacyProxy == FileKind::Loader && !facts.hasLegacyBackup)
+            return Plan::LegacyOriginalMissing;
+        const bool anyInstalled = facts.loader != FileKind::Missing || facts.bootstrap != FileKind::Missing;
+        return anyInstalled ? Plan::Update : Plan::FreshInstall;
+    }
 
-        switch (facts.proxy) {
-        case ProxySlot::KnownOriginal:
-            return Plan::FreshInstall;
-        case ProxySlot::Missing:
-            return Plan::ProxyMissing;
-        case ProxySlot::Other:
-            return Plan::ProxyUnrecognized;
-        }
-        return Plan::ProxyUnrecognized;
+    bool restoresLegacyOriginal(const FolderFacts& facts) noexcept
+    {
+        return facts.hasLegacyBackup && facts.legacyProxy != FileKind::Other;
     }
 
 } // namespace crabe::installer

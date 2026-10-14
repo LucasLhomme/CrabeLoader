@@ -69,7 +69,7 @@ These tests run standalone without requiring the `DisneyInfinity3.exe` game proc
 
 ### B2. Update Check (`test_update_checker.exe`) and Installer (`test_installer.exe`)
 * **Source files:** [`tests/cpp/test_update_checker.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_update_checker.cpp), [`tests/cpp/test_installer.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_installer.cpp)
-* **Purpose:** The update check runs against fake network, prompt and browser ports (up to date, offline, draft, declined, accepted, unreadable answer, `[updates]` config key). The installer suite drives the real file operations in a temporary folder: fresh install, update, every refusal leaving the folder untouched, a locked file, SHA-256 vectors, and the Steam library parser.
+* **Purpose:** The update check runs against fake network, prompt and browser ports (up to date, offline, draft, declined, accepted, unreadable answer, `[updates]` config key). The installer suite drives the real file operations on the two installed files (`CrabeLoader.asi` and its `dinput8.dll` bootstrap) in a temporary folder: fresh install, update, the upgrade from a 1.1 development single-file `dinput8.dll`, the 1.0 migration, every refusal leaving the folder untouched (including a foreign `dinput8.dll` and a foreign `CrabeLoader.asi`), swapped or bad payloads, a locked file on each of the two files with a full rollback, SHA-256 vectors, and the Steam library parser.
 * **Execution command:**
   ```powershell
   cmake --build build --config Release --target test_update_checker test_installer
@@ -77,6 +77,38 @@ These tests run standalone without requiring the `DisneyInfinity3.exe` game proc
   .\build\Release\test_installer.exe
   ```
 * **Manual probe:** `update_probe.exe` runs the real check outside the game (see [`docs/guides/updates_and_installer.md`](file:///e:/Dev/DIM2/CrabeLoader/docs/guides/updates_and_installer.md)).
+
+---
+
+### B3. Native `.asi` Plugins and the Plugin API (`test_asi_plugins.exe`)
+* **Source files:** [`tests/cpp/test_asi_plugins.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_asi_plugins.cpp), [`tests/cpp/asi_probe.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/asi_probe.cpp)
+* **Purpose:** `[plugins]` in `crabe.toml`, discovery order and every skip reason (setting off, `skip` list, mod disabled by profile, ignored folders), the PE check that refuses 64-bit and non-DLL files, and real loads of three probe plugins built by CMake from `asi_probe.cpp`: `asi_probe.asi` starts and calls every function of the plugin API against a fake host, `asi_probe_refuses.asi` returns `FALSE` from `DllMain`, `asi_probe_init_crash.asi` faults in `CrabePluginInit`.
+* **Execution command:** CTest passes the three probe paths; run directly, the real-load cases are skipped without them.
+  ```powershell
+  cmake --build build --config Release --target test_asi_plugins
+  ctest --test-dir build -C Release -R test_asi_plugins --output-on-failure
+  ```
+
+---
+
+### B4. Bootstrap (`test_bootstrap.exe`)
+* **Source files:** [`tests/cpp/test_bootstrap.cpp`](file:///e:/Dev/DIM2/CrabeLoader/tests/cpp/test_bootstrap.cpp), [`src/bootstrap/load_loader.cpp`](file:///e:/Dev/DIM2/CrabeLoader/src/bootstrap/load_loader.cpp)
+* **Purpose:** Starts the probe plugins as `CrabeLoader.asi` the way the bootstrap `dinput8.dll` does, and checks each outcome it reports: started (`CrabeLoaderBootstrap` called), missing, `DllMain` refused, a crash inside the export, and a broken file. It also checks the two version-resource markers, so the bootstrap is never taken for a copy of the loader and the loader never for the bootstrap. The entry-point patch itself is only checked in game.
+* **Execution command:** CTest passes the three probe paths; run directly, only the marker checks run.
+  ```powershell
+  cmake --build build --config Release --target test_bootstrap
+  ctest --test-dir build -C Release -R test_bootstrap --output-on-failure
+  ```
+
+---
+
+### Running every suite with CTest
+
+CTest registers 10 suites: `test_vfs_override`, `test_input_remap`, `test_draw_primitives`, `test_telemetry`, `test_update_checker`, `test_installer`, `test_bootstrap`, `test_asi_plugins`, `crabe_fate` and `test_lua_suite` (the last one only when Python 3 is found). All of them must pass.
+
+```powershell
+ctest --test-dir build -C Release --output-on-failure
+```
 
 ---
 
@@ -112,6 +144,7 @@ This suite executes all embedded Lua runtime modules inside a standalone emulato
   8. `test_settings.lua`: persistent menu configuration.
   9. `test_vfs_api.lua`: Lua redirection stubs and API bindings.
   10. `test_monitoring.lua`: 100 concurrent scheduled fibers, fiber error containment, frametime pacing statistics.
+  11. `test_plugins_api.lua`: `Crabe.Plugins.list` / `isLoaded` parsing, and `get` / `set` value sharing with native plugins.
 * **Execution command:**
   ```powershell
   python tests/run_lua_tests.py
@@ -124,7 +157,7 @@ This suite executes all embedded Lua runtime modules inside a standalone emulato
 
 ## 4. In-Game Multi-Workload & Endurance Bench (`tests/test_bench.ps1`)
 
-The in-game test bench is the definitive endurance and performance benchmark. It deploys the compiled DLL ([`build/Release/bink2w32.dll`](file:///e:/Dev/DIM2/CrabeLoader/build/Release/bink2w32.dll)) into the *Disney Infinity 3.0* game directory as a proxy, injects concurrent test mods, boots the game, and continuously tracks memory and frametime metrics.
+The in-game test bench is the definitive endurance and performance benchmark. It deploys the compiled loader ([`build/Release/CrabeLoader.asi`](file:///e:/Dev/DIM2/CrabeLoader/build/Release/CrabeLoader.asi)) and its bootstrap ([`build/Release/dinput8.dll`](file:///e:/Dev/DIM2/CrabeLoader/build/Release/dinput8.dll)) into the *Disney Infinity 3.0* game directory, injects concurrent test mods, boots the game, and continuously tracks memory and frametime metrics.
 
 * **Script:** [`tests/test_bench.ps1`](file:///e:/Dev/DIM2/CrabeLoader/tests/test_bench.ps1)
 * **Launcher Script:** [`tests/test_game.ps1`](file:///e:/Dev/DIM2/CrabeLoader/tests/test_game.ps1)

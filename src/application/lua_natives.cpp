@@ -21,6 +21,7 @@
 #include <vector>
 #include <windows.h>
 
+#include "shared/build_info.hpp"
 #include "shared/version.hpp"
 #include "presentation/imgui_bindings.hpp"
 #include "presentation/dinput_hook.hpp"
@@ -29,6 +30,8 @@
 #include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "application/plugin_api.hpp"
+#include "infrastructure/asi_loader.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
@@ -363,6 +366,64 @@ namespace {
             lua.pushString(L, resolved.string());
             return 1;
         }
+        return 0;
+    }
+
+    // Crabe._asiReport() -> one string, a "file\tsource\tstatus\tdetail\n" line per .asi plugin found,
+    // in load order, with the file relative to the game folder. Crabe.Plugins.list parses it.
+    int __cdecl nativeAsiReport(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const crabe::infrastructure::AsiLoader& loader = crabe::infrastructure::AsiLoader::get();
+        const std::filesystem::path root = loader.gameRoot();
+        std::string out;
+        for (const crabe::infrastructure::AsiLoadRecord& record : loader.records()) {
+            std::error_code error;
+            std::filesystem::path shown = std::filesystem::relative(record.path, root, error);
+            if (error || shown.empty() || shown.native().starts_with(L".."))
+                shown = record.path;
+            const std::u8string file = shown.generic_u8string();
+            out.append(file.begin(), file.end());
+            out += '\t';
+            out += record.source;
+            out += '\t';
+            out += crabe::infrastructure::asiStatusName(record.status);
+            out += '\t';
+            out += record.detail;
+            out += '\n';
+        }
+        lua.pushString(L, out);
+        return 1;
+    }
+
+    // Crabe._pluginGetValue(key) -> the value a native plugin or a mod shared under key, or nil.
+    int __cdecl nativePluginGetValue(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* key = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        const std::optional<std::string> value =
+            key ? crabe::application::PluginApi::get().value(key) : std::nullopt;
+        if (value)
+            lua.pushString(L, *value);
+        else
+            lua.pushNil(L);
+        return 1;
+    }
+
+    // Crabe._pluginSetValue(key, value) shares value with native plugins; a nil value erases the key.
+    int __cdecl nativePluginSetValue(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* key = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        if (!key || !*key)
+            return 0;
+        const char* value = lua.getTop(L) >= 2 ? lua.argToString(L, 2) : nullptr;
+        crabe::application::PluginApi::get().setValue(
+            key, value ? std::optional<std::string>(value) : std::nullopt);
         return 0;
     }
 
@@ -1066,6 +1127,9 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
         { "_vfsResolve",            &nativeVfsResolve },
         { "_vfsList",               &nativeVfsList },
+        { "_asiReport",             &nativeAsiReport },
+        { "_pluginGetValue",        &nativePluginGetValue },
+        { "_pluginSetValue",        &nativePluginSetValue },
         { "_vfsGetStats",           &nativeVfsGetStats },
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
         { "_portalIsConnected",     &nativePortalIsConnected },
@@ -1090,8 +1154,9 @@ bool crabe::lua_runtime::registerNatives(void* L)
 
     crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
         "Crabe = Crabe or {{}}; Crabe.version = '{}'; Crabe.versionMajor = {}; "
-        "Crabe.versionMinor = {}; Crabe.versionPatch = {};",
-        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch));
+        "Crabe.versionMinor = {}; Crabe.versionPatch = {}; Crabe.versionFull = '{}'; Crabe.buildCommit = '{}';",
+        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch,
+        crabe::build::label(), crabe::build::commit()));
 
     for (const auto& entry : kNatives) {
         if (crabe::infrastructure::LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;

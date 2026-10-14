@@ -143,6 +143,8 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
             std::string relStr = relPath.generic_string();
             if (relStr == "mod.json" || relStr == "manifest.json")
                 continue;
+            if (relPath.extension() == ".asi" || relPath.extension() == ".ASI")
+                continue;
 
             std::string virtualKey = normalizeVirtualPath(relStr);
             if (virtualKey.empty())

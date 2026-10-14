@@ -20,8 +20,9 @@ In CrabeLoader V2, **all user content lives strictly inside the `mods/` director
 
 ```text
 Disney Infinity 3.0 Gold Edition/
-├── bink2w32.dll              <- CrabeLoader V2 proxy DLL (embedded API)
-├── bink2w32_orig.dll         <- Original game Bink DLL
+├── dinput8.dll               <- Bootstrap, starts CrabeLoader.asi
+├── CrabeLoader.asi           <- The loader (embedded API)
+├── bink2w32.dll              <- Game's own Bink DLL (untouched)
 └── mods/                     <- Everything lives inside mods/
     ├── hello.lua             <- Standalone single-file mod
     └── hero_overhaul/        <- Modular mod package
@@ -38,6 +39,7 @@ Disney Infinity 3.0 Gold Edition/
 No manual injector or archive repacking is needed: CrabeLoader scans `mods/` automatically:
 * **Standalone Scripts (`mods/*.lua`):** Executed directly in their own isolated sandboxes.
 * **Modular Packages (`mods/<folder>/`):** Read `mod.json`, execute their entry script, register custom characters (`characters/`), and arm skill tree patches (`skilltrees/`).
+* **Native Plugins (`.asi`):** A rare mod that needs native code ships a 32-bit `.asi` next to its `mod.json`. It loads once, before the game starts, and only while the mod is enabled. Standalone plugins can also go in `scripts/` or `plugins/`. See [Native `.asi` Plugins](guides/asi_plugins.md).
 
 
 

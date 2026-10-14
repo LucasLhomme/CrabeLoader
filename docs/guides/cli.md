@@ -2,7 +2,7 @@
 
 `crabe-cli` is a standalone console tool for checking a mod without launching Disney Infinity 3.0. It links CrabeLoader's domain layer only (manifest parsing, SemVer, the dependency resolver) — no Win32 API, no Direct3D, no Dear ImGui, no Lua runtime — so it runs anywhere a CrabeLoader checkout builds, and it is the same logic the loader itself uses, not a reimplementation of it.
 
-It is a developer/CI convenience, not part of the shipped `bink2w32.dll`. Configure with `-DCRABELOADER_BUILD_CLI=ON` to build it (the test suite turns this on automatically); a plain configure without it produces the DLL alone, exactly as before.
+It is a developer/CI convenience, not part of the shipped `CrabeLoader.asi` or its `dinput8.dll` bootstrap. Configure with `-DCRABELOADER_BUILD_CLI=ON` to build it (the test suite turns this on automatically); a plain configure without it produces the loader and its bootstrap alone, exactly as before.
 
 ```
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCRABELOADER_BUILD_CLI=ON
