@@ -13,8 +13,8 @@ test of anything.
 
 ## How to use this file
 
-1. Build `bink2w32.dll` and drop it into the game folder alongside
-   `bink2w32_orig.dll`.
+1. Build `dinput8.dll` and drop it into the game folder next to
+   `DisneyInfinity3.exe`.
 2. Work through every unchecked item under the work orders your change touches.
 3. Record the date and the game build you checked against.
 
@@ -233,8 +233,44 @@ running game.
       an English Windows UI language. No `?` or mojibake in either, and the
       readme in `mods/` must show its accents in Notepad.
 - [ ] **A running game blocks an update cleanly.** With the game open, run the
-      installer to update. It must say it cannot write, and `bink2w32.dll`,
-      `bink2w32_orig.dll` and the game must be exactly as before.
+      installer to update. It must say it cannot write, and `dinput8.dll`,
+      the game's `bink2w32.dll` and the game must be exactly as before.
+
+## 1.1 — CrabeLoader installs as dinput8.dll
+
+Covered automatically: every install plan (fresh install, update, a foreign
+`dinput8.dll`, migration from 1.0, an old CrabeLoader whose backup is gone), the
+roll-back on a failure part-way, and the name ranking that decides which of two
+loaded copies runs the loader,
+in `tests/cpp/test_installer.cpp`. What that suite cannot reach is the game
+itself loading the DLL under its new name, DirectInput going through it, and
+Steam's file check.
+
+- [ ] **A fresh install works on a vanilla folder.** Start from a folder Steam
+      has just verified, run the installer, and confirm `dinput8.dll` and
+      `mods/` appear and no game file changed (`bink2w32.dll` keeps its size and
+      date, no `bink2w32_orig.dll` appears). A failure is any renamed game file.
+- [ ] **A 1.0 install migrates.** Start from a 1.0 install (CrabeLoader in
+      `bink2w32.dll`, the game's own in `bink2w32_orig.dll`) and run the
+      installer. Afterwards `bink2w32_orig.dll` must be gone, `bink2w32.dll`
+      must be the game's own again (no CrabeLoader description in its file
+      properties), and `dinput8.dll` must be there. The game must still play
+      its Bink videos.
+- [ ] **A foreign `dinput8.dll` is refused untouched.** Put any `dinput8.dll`
+      that is not CrabeLoader (an `.asi` loader, or a copy of the system one)
+      in the folder and run the installer. It must refuse and tell you to move
+      or delete that file, and the folder must be exactly as before.
+- [ ] **The log names the new file.** Launch the game and read the first line
+      of `loader.log`. It must say `loaded as dinput8.dll`. Any other name means
+      a different copy is running the loader.
+- [ ] **Keyboard and mouse still work in game.** Move, open the menus and click
+      through them with keyboard and mouse. The game reaches DirectInput through
+      CrabeLoader's forwarding now, so dead input, or a crash on the first key
+      press, means a forwarder is wrong.
+- [ ] **Steam's file check leaves CrabeLoader in place.** Run *Verify integrity
+      of game files* in Steam, then launch. `dinput8.dll` must still be there and
+      the log must again say `loaded as dinput8.dll`. Steam re-downloading
+      anything is a sign a game file was changed.
 
 ## Adding to this file
 

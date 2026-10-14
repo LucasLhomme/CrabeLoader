@@ -15,7 +15,7 @@ This directory contains in-depth, structured guides in plain English covering ev
 | **[Character & Figurine Guide](characters.md)** | Master the game's figurine resolution pipeline (`SKU -> AvatarData -> Name -> ActorList -> DNA`). Learn how to expose unreleased figures (Mace Windu, Thanos) and register custom character variants using `Crabe.VirtualReader`. | All Modders & Roster Creators |
 | **[crabe-cli Reference](cli.md)** | Scaffold a new mod, validate a manifest, run the real dependency resolver, and catch Lua API typos -- all offline, without launching the game. | All Modders & CI Pipelines |
 | **[Loose Texture Overrides & VFS](vfs_textures.md)** | Intercept asset and texture loading via the Virtual File System (VFS), override textures with loose `.tbody` files, and hot-reload in real-time (`F4`). | Texture Artists & Modders |
-| **[Update Check & CrabeInstaller](updates_and_installer.md)** | How the launch-time update prompt works and how to turn it off, plus the one-click installer and the rule that keeps the game's original `bink2w32.dll` safe. | Players & Maintainers |
+| **[Update Check & CrabeInstaller](updates_and_installer.md)** | How the launch-time update prompt works and how to turn it off, plus the one-click installer and the rule that it never overwrites a game file or a `dinput8.dll` it did not write. | Players & Maintainers |
 
 ---
 
@@ -52,7 +52,7 @@ flowchart TD
 1. **Zero Gameplay in C++:** `CrabeLoader` contains no hardcoded cheats, speedhacks, or menus. It is purely an engine platform.
 2. **Crash-Resilient:** All mod hooks and UI rendering run inside SEH-guarded wrappers. A bug in a mod will log an error without crashing the game to desktop.
 3. **Deep Sandbox:** Each mod runs in an isolated environment. Core tables (`Game`, `table`, `string`, `math`, `_G`) are protected by read-only proxy metatables.
-4. **Single-File Setup:** All standard API modules are compiled directly into `bink2w32.dll`. No loose `api/` scripts are required.
+4. **Single-File Setup:** All standard API modules are compiled directly into `dinput8.dll`. No loose `api/` scripts are required.
 5. **Instant Iteration:** Press **F4** in-game to hot-reload all mods in under 50 milliseconds without restarting the game.
 
 ---

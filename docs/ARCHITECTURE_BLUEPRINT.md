@@ -106,7 +106,7 @@ flowchart TD
     end
 
     subgraph L1["Layer 1: Infrastructure Core (C++23) — CrabeLoader"]
-        INJECT["bink2w32.dll Proxy Forwarding"]
+        INJECT["dinput8.dll Proxy (DirectInput forwarding)"]
         SEH["Hardware Crash Armor (SEH __try / __except)"]
         HOOKS["Neutral System Hooks (MinHook DX11 Present & luaL_loadbuffer)"]
         SANDBOX_CORE["Sandbox Isolation & Fiber Scheduler"]

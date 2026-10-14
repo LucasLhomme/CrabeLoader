@@ -57,9 +57,9 @@ function Resolve-GameDirectory {
 $resolvedGameDir = Resolve-GameDirectory -ExplicitPath $GameDir
 $gameExe = Join-Path $resolvedGameDir "DisneyInfinity3.exe"
 $dllCandidates = @(
-    (Join-Path $projectRoot "build\Release\bink2w32.dll"),
-    (Join-Path $projectRoot "Release\bink2w32.dll"),
-    (Join-Path $projectRoot "build\vs2022-dll\Release\bink2w32.dll")
+    (Join-Path $projectRoot "build\Release\dinput8.dll"),
+    (Join-Path $projectRoot "Release\dinput8.dll"),
+    (Join-Path $projectRoot "build\vs2022-dll\Release\dinput8.dll")
 )
 
 Write-Host "=== 1. Closing Game (if running) ===" -ForegroundColor Cyan
@@ -74,15 +74,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "=== 3. Deploying artifacts ===" -ForegroundColor Cyan
-$origDll = Join-Path $resolvedGameDir "bink2w32_orig.dll"
-$targetDll = Join-Path $resolvedGameDir "bink2w32.dll"
-if (!(Test-Path $origDll) -and (Test-Path $targetDll)) {
-    Copy-Item -Path $targetDll -Destination $origDll -Force
+$legacyBackup = Join-Path $resolvedGameDir "bink2w32_orig.dll"
+$legacyProxy = Join-Path $resolvedGameDir "bink2w32.dll"
+$targetDll = Join-Path $resolvedGameDir "dinput8.dll"
+# A 1.0 install put CrabeLoader in bink2w32.dll and kept the game's own as bink2w32_orig.dll:
+# put the game's file back, since the loader is dinput8.dll now.
+if (Test-Path $legacyBackup) {
+    Move-Item -Path $legacyBackup -Destination $legacyProxy -Force
 }
 
 $dllSrc = $dllCandidates | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTime } -Descending | Select-Object -First 1
 Copy-Item -Path $dllSrc -Destination $targetDll -Force
-Write-Host "[OK] bink2w32.dll -> $resolvedGameDir" -ForegroundColor Green
+Write-Host "[OK] dinput8.dll -> $resolvedGameDir" -ForegroundColor Green
 
 # Clean legacy API folder if present (Lua API is compiled into the DLL)
 $apiDir = Join-Path $resolvedGameDir "api"

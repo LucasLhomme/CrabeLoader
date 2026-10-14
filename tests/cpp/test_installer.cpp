@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -10,10 +11,12 @@
 
 #include <windows.h>
 
+#include "infrastructure/loader_instance.hpp"
 #include "installer/game_installer.hpp"
 #include "installer/install_plan.hpp"
 #include "installer/sha256.hpp"
 #include "installer/steam_locator.hpp"
+#include "shared/loader_marker.hpp"
 
 namespace {
 
@@ -29,6 +32,7 @@ void require(bool condition, const char* message)
     }
 }
 
+/// Builds deterministic bytes, optionally starting like a Windows executable.
 std::vector<std::byte> makeBytes(std::size_t size, unsigned char seed, bool windowsExecutable)
 {
     std::vector<std::byte> bytes(size);
@@ -41,6 +45,16 @@ std::vector<std::byte> makeBytes(std::size_t size, unsigned char seed, bool wind
     return bytes;
 }
 
+/// Builds a stand-in CrabeLoader DLL: executable bytes carrying the loader description as UTF-16.
+std::vector<std::byte> makeLoader(std::size_t size, unsigned char seed)
+{
+    std::vector<std::byte> bytes = makeBytes(size, seed, true);
+    const auto description = crabe::shared::kLoaderDescription;
+    std::memcpy(bytes.data() + size / 2, description.data(), description.size() * sizeof(wchar_t));
+    return bytes;
+}
+
+/// Writes bytes to a file, replacing it.
 void writeFile(const fs::path& path, const std::vector<std::byte>& bytes)
 {
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
@@ -48,6 +62,7 @@ void writeFile(const fs::path& path, const std::vector<std::byte>& bytes)
     require(static_cast<bool>(stream), "test helper could not write a file");
 }
 
+/// Reads a whole file.
 std::vector<std::byte> readFile(const fs::path& path)
 {
     std::ifstream stream(path, std::ios::binary);
@@ -56,6 +71,22 @@ std::vector<std::byte> readFile(const fs::path& path)
     std::ranges::transform(raw, bytes.begin(), [](char c) { return static_cast<std::byte>(c); });
     return bytes;
 }
+
+/// Opens a file the way a running game holds a loaded DLL, so it cannot be renamed.
+HANDLE holdOpen(const fs::path& path)
+{
+    HANDLE held = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(held != INVALID_HANDLE_VALUE, "test helper could not hold a file open");
+    return held;
+}
+
+struct GameFiles {
+    const std::vector<std::byte>* loader{nullptr};
+    const std::vector<std::byte>* legacyProxy{nullptr};
+    const std::vector<std::byte>* legacyBackup{nullptr};
+    bool withExecutable{true};
+};
 
 class TempFolder final {
 public:
@@ -79,28 +110,25 @@ public:
 
     [[nodiscard]] const fs::path& path() const noexcept { return _path; }
 
-    [[nodiscard]] fs::path makeGameFolder(const std::string& name, const std::vector<std::byte>* proxy,
-                                          const std::vector<std::byte>* backup, bool withExecutable) const
+    /// Creates a game folder holding the given files.
+    [[nodiscard]] fs::path makeGameFolder(const std::string& name, const GameFiles& files) const
     {
         const fs::path folder = _path / name;
         fs::create_directories(folder);
-        if (withExecutable)
+        if (files.withExecutable)
             writeFile(folder / std::string(kGameExecutable), makeBytes(2048, 1, true));
-        if (proxy)
-            writeFile(folder / std::string(kProxyName), *proxy);
-        if (backup)
-            writeFile(folder / std::string(kBackupName), *backup);
+        if (files.loader)
+            writeFile(folder / std::string(kLoaderName), *files.loader);
+        if (files.legacyProxy)
+            writeFile(folder / std::string(kLegacyProxyName), *files.legacyProxy);
+        if (files.legacyBackup)
+            writeFile(folder / std::string(kLegacyBackupName), *files.legacyBackup);
         return folder;
     }
 
 private:
     fs::path _path;
 };
-
-std::vector<std::string> knownOriginalsOf(const std::vector<std::byte>& original)
-{
-    return {*sha256Hex(original)};
-}
 
 /// Verifies SHA-256 against published vectors, over bytes and over a file.
 void testSha256(const TempFolder& temp)
@@ -121,153 +149,203 @@ void testSha256(const TempFolder& temp)
     require(!sha256FileHex(temp.path() / "missing.bin").has_value(), "a missing file has no hash");
 }
 
-/// Verifies the decision table that protects the original DLL.
-void testPlan()
+/// Verifies the marker that tells a CrabeLoader DLL from any other file.
+void testLoaderMarker()
 {
-    require(planInstall({true, ProxySlot::KnownOriginal, false}) == Plan::FreshInstall,
-            "a known original with no backup is a fresh install");
-    require(planInstall({true, ProxySlot::Other, true}) == Plan::Update,
-            "any proxy with a backup beside it is an update");
-    require(planInstall({true, ProxySlot::KnownOriginal, true}) == Plan::Update,
-            "an original that reappeared beside a backup is still replaced, never renamed over the backup");
-    require(planInstall({true, ProxySlot::Missing, true}) == Plan::Update,
-            "a missing proxy with a backup is restored by an update");
-    require(planInstall({true, ProxySlot::Other, false}) == Plan::ProxyUnrecognized,
-            "an unknown file with no backup is never renamed");
-    require(planInstall({true, ProxySlot::Missing, false}) == Plan::ProxyMissing,
-            "no proxy and no backup is a refusal");
-    require(planInstall({false, ProxySlot::KnownOriginal, true}) == Plan::NotAGameFolder,
-            "a folder without the game executable is a refusal whatever else it holds");
+    const std::vector<std::byte> loader = makeLoader(80 * 1024, 5);
+    const std::vector<std::byte> other = makeBytes(80 * 1024, 5, true);
+    require(crabe::shared::containsLoaderMarker(loader.data(), loader.size()), "a CrabeLoader DLL carries the marker");
+    require(!crabe::shared::containsLoaderMarker(other.data(), other.size()), "another file does not");
+    require(!crabe::shared::containsLoaderMarker(nullptr, 100), "no bytes hold no marker");
+    require(!crabe::shared::containsLoaderMarker(loader.data(), 10), "a short block holds no marker");
 }
 
-/// Verifies a fresh install, then an update, byte for byte.
+/// Verifies which copy runs the loader when two are loaded.
+void testLoaderRank()
+{
+    using crabe::infrastructure::loaderRank;
+    require(loaderRank(L"bink2w32.dll") < loaderRank(L"dinput8.dll"), "a 1.x bink2w32.dll copy outranks dinput8.dll");
+    require(loaderRank(L"DINPUT8.DLL") == loaderRank(L"dinput8.dll"), "names compare without case");
+    require(loaderRank(L"dinput8.dll") < loaderRank(L"CrabeLoader.asi"), "dinput8.dll outranks any other name");
+}
+
+/// Verifies the decision table.
+void testPlan()
+{
+    require(planInstall({true, FileKind::Missing, FileKind::Other, false}) == Plan::FreshInstall,
+            "a vanilla folder is a fresh install");
+    require(planInstall({true, FileKind::Loader, FileKind::Other, false}) == Plan::Update,
+            "our own dinput8.dll is an update");
+    require(planInstall({true, FileKind::Other, FileKind::Other, false}) == Plan::LoaderSlotTaken,
+            "a foreign dinput8.dll is never replaced");
+    require(planInstall({true, FileKind::Missing, FileKind::Loader, true}) == Plan::FreshInstall,
+            "a 1.x install with its kept original migrates");
+    require(planInstall({true, FileKind::Missing, FileKind::Loader, false}) == Plan::LegacyOriginalMissing,
+            "a 1.x install whose original is gone is refused");
+    require(planInstall({true, FileKind::Missing, FileKind::Missing, false}) == Plan::FreshInstall,
+            "a missing bink2w32.dll does not stop the install");
+    require(planInstall({false, FileKind::Missing, FileKind::Other, false}) == Plan::NotAGameFolder,
+            "a folder without the game executable is refused");
+
+    require(restoresLegacyOriginal({true, FileKind::Missing, FileKind::Loader, true}), "a 1.x proxy gives way to the original");
+    require(restoresLegacyOriginal({true, FileKind::Missing, FileKind::Missing, true}), "a missing proxy is restored");
+    require(!restoresLegacyOriginal({true, FileKind::Missing, FileKind::Other, true}), "a game file is left alone");
+    require(!restoresLegacyOriginal({true, FileKind::Missing, FileKind::Loader, false}), "nothing to restore without a backup");
+}
+
+/// Verifies a fresh install, then an update, byte for byte, with the game's own files untouched.
 void testFreshInstallThenUpdate(const TempFolder& temp)
 {
-    const std::vector<std::byte> original = makeBytes(40 * 1024, 3, true);
-    const std::vector<std::byte> payloadV1 = makeBytes(80 * 1024, 5, true);
-    const std::vector<std::byte> payloadV2 = makeBytes(90 * 1024, 7, true);
-    const fs::path folder = temp.makeGameFolder("fresh", &original, nullptr, true);
-    const GameInstaller installer(folder, knownOriginalsOf(original));
+    const std::vector<std::byte> bink = makeBytes(40 * 1024, 3, true);
+    const std::vector<std::byte> payloadV1 = makeLoader(80 * 1024, 5);
+    const std::vector<std::byte> payloadV2 = makeLoader(90 * 1024, 7);
+    const fs::path folder = temp.makeGameFolder("fresh", {nullptr, &bink, nullptr, true});
+    const GameInstaller installer(folder);
 
-    require(installer.inspect().proxy == ProxySlot::KnownOriginal, "the original must be recognised by its hash");
+    const FolderFacts facts = installer.inspect();
+    require(facts.loader == FileKind::Missing && facts.legacyProxy == FileKind::Other, "the facts of a vanilla folder");
 
     const auto first = installer.install(payloadV1);
-    require(first.has_value(), "a fresh install on a known original must succeed");
-    require(first->performed == Plan::FreshInstall, "the first install is a fresh install");
+    require(first.has_value(), "a fresh install must succeed");
+    require(first->performed == Plan::FreshInstall && !first->legacyOriginalRestored, "the first install is a fresh install");
     require(first->modsFolderCreated && first->readmeCreated, "the mods folder and readme are created");
-    require(readFile(folder / std::string(kProxyName)) == payloadV1, "bink2w32.dll must now be the loader");
-    require(readFile(folder / std::string(kBackupName)) == original, "the original must be kept byte for byte");
+    require(readFile(folder / std::string(kLoaderName)) == payloadV1, "dinput8.dll must now be the loader");
+    require(readFile(folder / std::string(kLegacyProxyName)) == bink, "the game's bink2w32.dll is never touched");
+    require(!fs::exists(folder / std::string(kLegacyBackupName)), "no backup is made any more");
     require(!fs::exists(folder / std::string(kStagingName)), "no staging file may be left behind");
-    require(fs::is_directory(folder / std::string(kModsFolderName)), "the mods folder must exist");
-    require(fs::exists(folder / std::string(kModsFolderName) / std::string(kReadmeName)), "the readme must exist");
 
     writeFile(folder / std::string(kModsFolderName) / std::string(kReadmeName), makeBytes(10, 0, false));
     const auto second = installer.install(payloadV2);
-    require(second.has_value(), "an update must succeed");
-    require(second->performed == Plan::Update, "the second install is an update");
+    require(second.has_value() && second->performed == Plan::Update, "the second install is an update");
     require(!second->modsFolderCreated && !second->readmeCreated, "an update creates nothing that exists");
-    require(readFile(folder / std::string(kProxyName)) == payloadV2, "bink2w32.dll must be the new loader");
-    require(readFile(folder / std::string(kBackupName)) == original, "an update must never touch the backup");
+    require(readFile(folder / std::string(kLoaderName)) == payloadV2, "dinput8.dll must be the new loader");
     require(readFile(folder / std::string(kModsFolderName) / std::string(kReadmeName)) == makeBytes(10, 0, false),
             "an existing readme must never be overwritten");
-    require(!fs::exists(folder / std::string(kStagingName)), "no staging file may be left after an update");
 
     const auto third = installer.install(payloadV2);
-    require(third.has_value() && readFile(folder / std::string(kBackupName)) == original,
+    require(third.has_value() && readFile(folder / std::string(kLegacyProxyName)) == bink,
             "installing the same version twice is harmless");
+}
+
+/// Verifies that a 1.x install becomes a dinput8.dll install with the game's own Bink DLL back in place.
+void testMigrationFrom1x(const TempFolder& temp)
+{
+    const std::vector<std::byte> bink = makeBytes(40 * 1024, 3, true);
+    const std::vector<std::byte> oldLoader = makeLoader(70 * 1024, 4);
+    const std::vector<std::byte> payload = makeLoader(80 * 1024, 5);
+
+    {
+        const fs::path folder = temp.makeGameFolder("from_1x", {nullptr, &oldLoader, &bink, true});
+        const auto report = GameInstaller(folder).install(payload);
+        require(report.has_value() && report->legacyOriginalRestored, "a 1.x install migrates");
+        require(readFile(folder / std::string(kLoaderName)) == payload, "dinput8.dll is the loader");
+        require(readFile(folder / std::string(kLegacyProxyName)) == bink, "bink2w32.dll is the game's own again");
+        require(!fs::exists(folder / std::string(kLegacyBackupName)), "the kept original is no longer a separate file");
+        require(!fs::exists(folder / std::string(kLegacyRetiredName)), "the old loader is gone");
+    }
+    {
+        const fs::path folder = temp.makeGameFolder("from_1x_verified", {nullptr, nullptr, &bink, true});
+        const auto report = GameInstaller(folder).install(payload);
+        require(report.has_value() && report->legacyOriginalRestored, "a missing bink2w32.dll is restored from the backup");
+        require(readFile(folder / std::string(kLegacyProxyName)) == bink, "the backup became bink2w32.dll");
+    }
+    {
+        const std::vector<std::byte> steamBink = makeBytes(41 * 1024, 9, true);
+        const fs::path folder = temp.makeGameFolder("from_1x_steam", {nullptr, &steamBink, &bink, true});
+        const auto report = GameInstaller(folder).install(payload);
+        require(report.has_value() && !report->legacyOriginalRestored, "a game bink2w32.dll beside an old backup stays");
+        require(readFile(folder / std::string(kLegacyProxyName)) == steamBink, "the game's file is untouched");
+        require(readFile(folder / std::string(kLegacyBackupName)) == bink, "and so is the old backup");
+    }
 }
 
 /// Verifies that every refusal leaves the folder exactly as it was found.
 void testRefusalsChangeNothing(const TempFolder& temp)
 {
-    const std::vector<std::byte> original = makeBytes(40 * 1024, 3, true);
-    const std::vector<std::byte> stranger = makeBytes(41 * 1024, 11, true);
-    const std::vector<std::byte> payload = makeBytes(80 * 1024, 5, true);
+    const std::vector<std::byte> bink = makeBytes(40 * 1024, 3, true);
+    const std::vector<std::byte> asiLoader = makeBytes(41 * 1024, 11, true);
+    const std::vector<std::byte> oldLoader = makeLoader(70 * 1024, 4);
+    const std::vector<std::byte> payload = makeLoader(80 * 1024, 5);
 
     {
-        const fs::path folder = temp.makeGameFolder("stranger", &stranger, nullptr, true);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        const auto result = installer.install(payload);
-        require(!result.has_value() && result.error().code == InstallErrorCode::ProxyUnrecognized,
-                "an unknown bink2w32.dll with no backup must be refused");
-        require(readFile(folder / std::string(kProxyName)) == stranger, "a refused install must not touch the file");
-        require(!fs::exists(folder / std::string(kBackupName)), "a refused install must not create a backup");
+        const fs::path folder = temp.makeGameFolder("foreign_dinput8", {&asiLoader, &bink, nullptr, true});
+        const auto result = GameInstaller(folder).install(payload);
+        require(!result.has_value() && result.error().code == InstallErrorCode::LoaderSlotTaken,
+                "a foreign dinput8.dll must be refused");
+        require(readFile(folder / std::string(kLoaderName)) == asiLoader, "a refused install must not touch it");
         require(!fs::exists(folder / std::string(kStagingName)), "a refused install must not leave a staging file");
         require(!fs::exists(folder / std::string(kModsFolderName)), "a refused install must not create mods");
     }
     {
-        const fs::path folder = temp.makeGameFolder("ours_without_backup", &payload, nullptr, true);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        const auto result = installer.install(payload);
-        require(!result.has_value() && result.error().code == InstallErrorCode::ProxyUnrecognized,
-                "our own DLL with no backup must never be renamed into the backup slot");
-        require(!fs::exists(folder / std::string(kBackupName)), "no backup may be fabricated from our own DLL");
+        const fs::path folder = temp.makeGameFolder("old_without_backup", {nullptr, &oldLoader, nullptr, true});
+        const auto result = GameInstaller(folder).install(payload);
+        require(!result.has_value() && result.error().code == InstallErrorCode::LegacyOriginalMissing,
+                "a 1.x install without its original must be refused");
+        require(readFile(folder / std::string(kLegacyProxyName)) == oldLoader, "the old loader stays");
+        require(!fs::exists(folder / std::string(kLoaderName)), "no dinput8.dll is written");
     }
     {
-        const fs::path folder = temp.makeGameFolder("no_proxy", nullptr, nullptr, true);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        const auto result = installer.install(payload);
-        require(!result.has_value() && result.error().code == InstallErrorCode::ProxyMissing,
-                "a missing bink2w32.dll with no backup must be refused");
-    }
-    {
-        const fs::path folder = temp.makeGameFolder("no_exe", &original, nullptr, false);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        const auto result = installer.install(payload);
+        const fs::path folder = temp.makeGameFolder("no_exe", {nullptr, &bink, nullptr, false});
+        const auto result = GameInstaller(folder).install(payload);
         require(!result.has_value() && result.error().code == InstallErrorCode::NotAGameFolder,
                 "a folder without the game must be refused");
-        require(readFile(folder / std::string(kProxyName)) == original, "a non game folder must not be touched");
+        require(!fs::exists(folder / std::string(kLoaderName)), "a non game folder must not be touched");
     }
     {
-        const fs::path folder = temp.makeGameFolder("bad_payloads", &original, nullptr, true);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        require(installer.install(original).error().code == InstallErrorCode::PayloadInvalid,
-                "installing the game's own DLL as the loader must be refused");
+        const fs::path folder = temp.makeGameFolder("bad_payloads", {nullptr, &bink, nullptr, true});
+        const GameInstaller installer(folder);
+        require(installer.install(bink).error().code == InstallErrorCode::PayloadInvalid,
+                "a DLL that is not CrabeLoader must be refused as the payload");
         require(installer.install(makeBytes(100, 1, true)).error().code == InstallErrorCode::PayloadInvalid,
                 "a tiny payload must be refused");
-        require(installer.install(makeBytes(80 * 1024, 1, false)).error().code == InstallErrorCode::PayloadInvalid,
+        std::vector<std::byte> notExecutable = makeLoader(80 * 1024, 1);
+        notExecutable[0] = std::byte{'X'};
+        require(installer.install(notExecutable).error().code == InstallErrorCode::PayloadInvalid,
                 "a payload that is not a Windows executable must be refused");
-        require(readFile(folder / std::string(kProxyName)) == original, "a bad payload must not touch the folder");
-        require(!fs::exists(folder / std::string(kBackupName)), "a bad payload must not create a backup");
+        require(!fs::exists(folder / std::string(kLoaderName)), "a bad payload must not touch the folder");
     }
 }
 
-/// Verifies that a held-open file makes the install fail without losing the original.
+/// Verifies that a held-open file makes the install fail without losing anything.
 void testLockedFilesAreSurvived(const TempFolder& temp)
 {
-    const std::vector<std::byte> original = makeBytes(40 * 1024, 3, true);
-    const std::vector<std::byte> payloadV1 = makeBytes(80 * 1024, 5, true);
-    const std::vector<std::byte> payloadV2 = makeBytes(90 * 1024, 7, true);
+    const std::vector<std::byte> bink = makeBytes(40 * 1024, 3, true);
+    const std::vector<std::byte> oldLoader = makeLoader(70 * 1024, 4);
+    const std::vector<std::byte> payloadV1 = makeLoader(80 * 1024, 5);
+    const std::vector<std::byte> payloadV2 = makeLoader(90 * 1024, 7);
 
     {
-        const fs::path folder = temp.makeGameFolder("locked_fresh", &original, nullptr, true);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        HANDLE held = CreateFileW((folder / std::string(kProxyName)).c_str(), GENERIC_READ, FILE_SHARE_READ,
-                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        require(held != INVALID_HANDLE_VALUE, "test helper could not hold the file open");
-        const auto result = installer.install(payloadV1);
+        const fs::path folder = temp.makeGameFolder("locked_update", {&payloadV1, &bink, nullptr, true});
+        HANDLE held = holdOpen(folder / std::string(kLoaderName));
+        const auto result = GameInstaller(folder).install(payloadV2);
         CloseHandle(held);
-
-        require(!result.has_value(), "a locked original must make the install fail");
+        require(!result.has_value(), "a loaded dinput8.dll must make the update fail");
         require(result.error().code == InstallErrorCode::FileInUse || result.error().code == InstallErrorCode::AccessDenied,
-                "a locked original must be reported as in use or denied");
-        require(readFile(folder / std::string(kProxyName)) == original, "the original must be intact after the failure");
-        require(!fs::exists(folder / std::string(kBackupName)), "no backup may exist when nothing was renamed");
+                "a locked loader must be reported as in use or denied");
+        require(readFile(folder / std::string(kLoaderName)) == payloadV1, "the loader must be intact after the failure");
         require(!fs::exists(folder / std::string(kStagingName)), "the staging file must be cleaned up");
     }
     {
-        const fs::path folder = temp.makeGameFolder("locked_update", &payloadV1, &original, true);
-        const GameInstaller installer(folder, knownOriginalsOf(original));
-        HANDLE held = CreateFileW((folder / std::string(kProxyName)).c_str(), GENERIC_READ, FILE_SHARE_READ,
-                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        require(held != INVALID_HANDLE_VALUE, "test helper could not hold the loader open");
-        const auto result = installer.install(payloadV2);
+        const fs::path folder = temp.makeGameFolder("locked_migration", {nullptr, &oldLoader, &bink, true});
+        HANDLE held = holdOpen(folder / std::string(kLegacyProxyName));
+        const auto result = GameInstaller(folder).install(payloadV1);
         CloseHandle(held);
-
-        require(!result.has_value(), "a locked loader must make the update fail");
-        require(readFile(folder / std::string(kProxyName)) == payloadV1, "the loader must be intact after the failure");
-        require(readFile(folder / std::string(kBackupName)) == original, "the backup must be intact after the failure");
-        require(!fs::exists(folder / std::string(kStagingName)), "the staging file must be cleaned up after an update failure");
+        require(!result.has_value(), "a loaded 1.x bink2w32.dll must make the migration fail");
+        require(!fs::exists(folder / std::string(kLoaderName)), "the new dinput8.dll is taken back");
+        require(readFile(folder / std::string(kLegacyProxyName)) == oldLoader, "the old loader is where it was");
+        require(readFile(folder / std::string(kLegacyBackupName)) == bink, "the kept original is intact");
+        require(!fs::exists(folder / std::string(kLegacyRetiredName)), "nothing is left half moved");
+    }
+    {
+        const fs::path folder = temp.makeGameFolder("locked_backup", {nullptr, &oldLoader, &bink, true});
+        HANDLE held = holdOpen(folder / std::string(kLegacyBackupName));
+        const auto result = GameInstaller(folder).install(payloadV1);
+        CloseHandle(held);
+        require(!result.has_value(), "a held backup must make the migration fail");
+        require(!fs::exists(folder / std::string(kLoaderName)), "the new dinput8.dll is taken back");
+        require(readFile(folder / std::string(kLegacyProxyName)) == oldLoader, "the old loader was put back");
+        require(readFile(folder / std::string(kLegacyBackupName)) == bink, "the kept original is intact");
+        require(!fs::exists(folder / std::string(kLegacyRetiredName)), "no retired copy is left behind");
     }
 }
 
@@ -301,8 +379,11 @@ int main()
 {
     const TempFolder temp;
     testSha256(temp);
+    testLoaderMarker();
+    testLoaderRank();
     testPlan();
     testFreshInstallThenUpdate(temp);
+    testMigrationFrom1x(temp);
     testRefusalsChangeNothing(temp);
     testLockedFilesAreSurvived(temp);
     testSteamLocator(temp);

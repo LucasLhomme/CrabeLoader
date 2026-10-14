@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the installer's engine: look at a game folder, then put the proxy DLL in place.
+** Declares the installer's engine: look at a game folder, then put dinput8.dll in place.
 ** Every step is a rename or a new file, never a delete of a foreign file, and it rolls back.
 ** Shows no window and picks no folder; installer/main.cpp does.
 **
@@ -18,7 +18,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "installer/install_plan.hpp"
 
@@ -26,8 +25,8 @@ namespace crabe::installer {
 
     enum class InstallErrorCode : std::uint8_t {
         NotAGameFolder,
-        ProxyMissing,
-        ProxyUnrecognized,
+        LoaderSlotTaken,
+        LegacyOriginalMissing,
         PayloadInvalid,
         FileInUse,
         AccessDenied,
@@ -41,6 +40,7 @@ namespace crabe::installer {
 
     struct InstallReport {
         Plan performed{Plan::FreshInstall};
+        bool legacyOriginalRestored{false};
         bool modsFolderCreated{false};
         bool readmeCreated{false};
     };
@@ -48,24 +48,21 @@ namespace crabe::installer {
     class GameInstaller final {
     public:
         explicit GameInstaller(std::filesystem::path gameRoot);
-        GameInstaller(std::filesystem::path gameRoot, std::vector<std::string> knownOriginalSha256);
 
         [[nodiscard]] const std::filesystem::path& gameRoot() const noexcept { return _gameRoot; }
 
+        /// Reads the facts planInstall() decides from: a file is CrabeLoader when it carries the loader description.
         [[nodiscard]] FolderFacts inspect() const;
 
-        // Applies planInstall() to the folder. A refusal changes nothing on disk, and a failure
-        // part-way restores the folder to how it was found.
+        /// Applies planInstall() to the folder, then puts a 1.x install's kept Bink DLL back when there is one.
+        /// A refusal changes nothing on disk, and a failure part-way restores the folder to how it was found.
         [[nodiscard]] std::expected<InstallReport, InstallError> install(std::span<const std::byte> payload) const;
 
     private:
-        [[nodiscard]] bool isKnownOriginal(std::string_view sha256) const noexcept;
-
         std::filesystem::path _gameRoot;
-        std::vector<std::string> _knownOriginals;
     };
 
-    // The text written to mods/README.txt, in English then French.
+    /// Returns the text written to mods/README.txt, in English then French.
     [[nodiscard]] std::string_view modsReadmeText() noexcept;
 
 } // namespace crabe::installer

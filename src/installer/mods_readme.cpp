@@ -41,8 +41,7 @@ namespace crabe::installer {
                "      check = false\r\n"
                "\r\n"
                "UNINSTALL\r\n"
-               "  Delete bink2w32.dll, then rename bink2w32_orig.dll to bink2w32.dll.\r\n"
-               "  (Or, in Steam: Verify integrity of game files.)\r\n"
+               "  Delete dinput8.dll from the game folder. No game file was changed.\r\n"
                "\r\n"
                "\r\n"
                "CrabeLoader - LISEZMOI\r\n"
@@ -73,8 +72,7 @@ namespace crabe::installer {
                "      check = false\r\n"
                "\r\n"
                "D\xC3\x89SINSTALLER\r\n"
-               "  Supprimez bink2w32.dll puis renommez bink2w32_orig.dll en bink2w32.dll.\r\n"
-               "  (Ou, dans Steam : V\xC3\xA9rifier l'int\xC3\xA9grit\xC3\xA9 des fichiers du jeu.)\r\n";
+               "  Supprimez dinput8.dll du dossier du jeu. Aucun fichier du jeu n'a \xC3\xA9t\xC3\xA9 modifi\xC3\xA9.\r\n";
     }
 
 } // namespace crabe::installer

@@ -20,8 +20,8 @@ In CrabeLoader V2, **all user content lives strictly inside the `mods/` director
 
 ```text
 Disney Infinity 3.0 Gold Edition/
-├── bink2w32.dll              <- CrabeLoader V2 proxy DLL (embedded API)
-├── bink2w32_orig.dll         <- Original game Bink DLL
+├── dinput8.dll               <- CrabeLoader V2 proxy DLL (embedded API)
+├── bink2w32.dll              <- Game's own Bink DLL (untouched)
 └── mods/                     <- Everything lives inside mods/
     ├── hello.lua             <- Standalone single-file mod
     └── hero_overhaul/        <- Modular mod package

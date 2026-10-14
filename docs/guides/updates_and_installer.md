@@ -83,34 +83,42 @@ A single executable that installs CrabeLoader without any manual file work.
 
 1. It looks for the game in your Steam libraries and asks **Yes / No / Cancel**. If it finds nothing, or you say **No**, it opens the native Windows folder picker (`IFileOpenDialog`).
 2. It checks that the folder contains `DisneyInfinity3.exe`.
-3. It installs `bink2w32.dll` (the proxy) and keeps the game's own DLL as `bink2w32_orig.dll`.
+3. It installs CrabeLoader as `dinput8.dll` next to `DisneyInfinity3.exe`. No game file is renamed or modified.
 4. It creates `mods\` and `mods\README.txt` (English first, then French).
 
-### The rule that protects the original DLL
+### Why `dinput8.dll`
 
-The installer **never overwrites the game's real `bink2w32.dll`**. The real file is recognised by its SHA-256, and only then renamed:
+The game imports `DINPUT8.dll`, and Windows looks in the game folder before the system folders, so CrabeLoader's `dinput8.dll` is the one loaded. It forwards the six DirectInput exports (`DirectInput8Create`, `DllCanUnloadNow`, `DllGetClassObject`, `DllRegisterServer`, `DllUnregisterServer`, `GetdfDIJoystick`) to the system's own `dinput8.dll` (System32, which Windows redirects to SysWOW64 for this 32-bit game); see `src/infrastructure/dinput8_proxy.cpp`. Because no game file changes, Steam's *Verify integrity of game files* no longer removes CrabeLoader.
+
+The same DLL still carries the old Bink forwarders (`include/minhook/lib/proxy/proxy.hpp`), so it would still work if named `bink2w32.dll`. If two copies are loaded (for example an old 1.0 `bink2w32.dll` proxy and a new `dinput8.dll`), only one runs the loader: `bink2w32.dll` outranks `dinput8.dll`, which outranks any other name, and the other copy only forwards its exports (`src/infrastructure/loader_instance.cpp`).
+
+### The rule that protects the game folder
+
+A file is recognised as CrabeLoader by the file description `CrabeLoader Proxy DLL for Disney Infinity 3.0` in its version resource (`include/shared/loader_marker.hpp`); every release since 1.0.0 carries it. The installer **never overwrites a game file or a `dinput8.dll` it did not write**:
 
 | State of the folder | What happens |
 | :--- | :--- |
-| `bink2w32_orig.dll` exists | A real original is already safe. Only `bink2w32.dll` is replaced (an **update**). The backup is never touched. |
-| No backup, `bink2w32.dll` is the known original | **Fresh install**: it is renamed to `bink2w32_orig.dll`, then the loader takes its place. |
-| No backup, `bink2w32.dll` is anything else (including CrabeLoader's own DLL) | **Refused, nothing changed.** The message tells the player to use Steam's *Verify integrity of game files*. |
-| No backup, no `bink2w32.dll` | Refused, nothing changed. |
+| No `dinput8.dll` | **Fresh install**: `dinput8.dll` is written. |
+| `dinput8.dll` is CrabeLoader | **Update**: CrabeLoader's own `dinput8.dll` is replaced. |
+| `dinput8.dll` is anything else (often an `.asi` plugin loader such as Ultimate ASI Loader) | **Refused, nothing changed.** The player must move or delete that `dinput8.dll`. |
+| `bink2w32.dll` is CrabeLoader (or missing) and `bink2w32_orig.dll` exists | **Migration from 1.0**: the game's original is put back as `bink2w32.dll` (the old CrabeLoader is retired), and `dinput8.dll` is installed. |
+| `bink2w32.dll` is the game's own, beside an old `bink2w32_orig.dll` | Both are left alone; `dinput8.dll` is installed or updated as above. |
+| `bink2w32.dll` is an old CrabeLoader and `bink2w32_orig.dll` is gone | **Refused, nothing changed**, since the game could not play its Bink videos. The message tells the player to use Steam's *Verify integrity of game files*. |
 
 How it stays safe even when something goes wrong:
 
-* Every rename uses a **no-replace** move, so it fails rather than overwrite.
-* The loader is first written to `bink2w32.dll.crabe-new`, hashed back, and only then moved into place.
-* If the final move fails after the original was renamed, the original is renamed back.
+* Renames of the game's files use a **no-replace** move, so they fail rather than overwrite.
+* The loader is first written to `dinput8.dll.crabe-new`, hashed back, and only then moved into place.
+* Any failure part-way puts the folder back as it was found. The one exception is an update that cannot put the game's `bink2w32.dll` back: the new `dinput8.dll` stays and the old `bink2w32.dll` is left as it was, and the error says so.
 * An update while the game is running fails (Windows will not replace a loaded DLL), with a clear message and everything left as found.
 * An existing `mods\README.txt` is never overwritten.
 
-The recognised original lives in `include/installer/install_plan.hpp` (`kKnownOriginalSha256`). If another edition of the game ships a different `bink2w32.dll`, add its hash there.
+The decision itself lives in `include/installer/install_plan.hpp` and `src/installer/install_plan.cpp`; the file operations are in `src/installer/game_installer.cpp`.
 
 ### Command line
 
 ```text
-CrabeInstaller [--game-dir <folder>] [--quiet] [--payload <bink2w32.dll>]
+CrabeInstaller [--game-dir <folder>] [--quiet] [--payload <dinput8.dll>]
 ```
 
 | Option | Effect |
@@ -127,24 +135,26 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 `
 cmake --build build --config Release --target CrabeInstaller
 ```
 
-By default the loader DLL is **embedded** in the executable (resource 101), so `CrabeInstaller.exe` is one self-contained file and is rebuilt with the freshest DLL every time. With `-DCRABELOADER_INSTALLER_EMBED_DLL=OFF` the installer instead looks for `bink2w32.dll` beside itself, which ships as two files (an installer plus the DLL) and avoids a DLL hidden inside an executable, a pattern some antivirus heuristics dislike.
+By default the loader DLL is **embedded** in the executable (resource 101), so `CrabeInstaller.exe` is one self-contained file and is rebuilt with the freshest DLL every time. With `-DCRABELOADER_INSTALLER_EMBED_DLL=OFF` the installer instead looks for `dinput8.dll` beside itself, which ships as two files (an installer plus the DLL) and avoids a DLL hidden inside an executable, a pattern some antivirus heuristics dislike.
 
 Tests: `tests/cpp/test_installer.cpp` drives the real file operations in a temporary folder, including a locked file. The dialogs themselves can only be checked by eye; see `docs/testing/manual_checklist.md`.
 
 ### Releases
 
-Each release carries `CrabeInstaller.exe` (Option A), the raw `bink2w32.dll` (Option B), a zip with both plus the mod template, and `SHA256SUMS.txt`. GitHub adds the source archives itself.
+Each release carries `CrabeInstaller.exe` (Option A), the raw `dinput8.dll` (Option B), a zip with both plus the mod template, and `SHA256SUMS.txt`. GitHub adds the source archives itself.
 
 ### Limits worth knowing
 
-* Only one `bink2w32.dll` is recognised as the game's original: the Steam build's. A different edition is refused, not guessed at; add its hash to `kKnownOriginalSha256`.
+* Only one program can be loaded as `dinput8.dll`. If another tool (such as an `.asi` plugin loader) already uses that name, the installer refuses rather than replace it.
 * The repository the update check asks is fixed in `include/domain/update_check.hpp`. A fork that publishes its own releases changes the three constants there.
 * There is no uninstall button; the steps are under "Uninstalling" below.
 
 ### Installing by hand
 
-Without the installer: rename the game's `bink2w32.dll` to `bink2w32_orig.dll`, copy CrabeLoader's `bink2w32.dll` in its place, and create a `mods` folder.
+Without the installer: copy CrabeLoader's `dinput8.dll` next to `DisneyInfinity3.exe` and create a `mods` folder.
+
+Coming from 1.0 by hand: delete the old `bink2w32.dll`, then rename `bink2w32_orig.dll` back to `bink2w32.dll`.
 
 ### Uninstalling
 
-Delete `bink2w32.dll` and rename `bink2w32_orig.dll` back to `bink2w32.dll` (or use Steam's *Verify integrity of game files*).
+Delete `dinput8.dll`. No game file was changed. The `mods\README.txt` the installer writes says the same.

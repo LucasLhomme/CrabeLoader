@@ -103,13 +103,13 @@ jobs:
         run: |
           mkdir -p package/mods
 
-          # Find and copy the proxy DLL
-          if [ -f build/Release/bink2w32.dll ]; then
-            cp build/Release/bink2w32.dll package/
-          elif [ -f build/bink2w32.dll ]; then
-            cp build/bink2w32.dll package/
+          # Find and copy the loader DLL
+          if [ -f build/Release/dinput8.dll ]; then
+            cp build/Release/dinput8.dll package/
+          elif [ -f build/dinput8.dll ]; then
+            cp build/dinput8.dll package/
           else
-            echo "Error: bink2w32.dll not found in build output."
+            echo "Error: dinput8.dll not found in build output."
             exit 1
           fi
 
@@ -130,12 +130,13 @@ jobs:
           ==================================================
 
           Installation (easiest): run CrabeInstaller.exe and follow the prompts.
-          It finds the game, keeps your original bink2w32.dll as bink2w32_orig.dll,
-          and creates the 'mods/' folder. Running it again updates CrabeLoader.
+          It finds the game, adds CrabeLoader as dinput8.dll without touching any game file,
+          and creates the 'mods/' folder. Running it again updates CrabeLoader. It also moves
+          a 1.0 install (CrabeLoader as bink2w32.dll) over and puts the game's bink2w32.dll back.
 
           Installation (manual):
-          1. Rename the game's bink2w32.dll to bink2w32_orig.dll (next to DisneyInfinity3.exe).
-          2. Place this bink2w32.dll in the same directory.
+          1. Place this dinput8.dll next to DisneyInfinity3.exe. No game file is renamed.
+          2. Coming from 1.0: delete the old bink2w32.dll, then rename bink2w32_orig.dll to bink2w32.dll.
           3. Place your mods into the 'mods/' subfolder.
 
           In-game: press Insert for the CrabeLoader overlay. F5 opens the mod menu if CrabeMenu is installed.
@@ -155,9 +156,9 @@ jobs:
       - name: Stage release assets and checksums
         shell: bash
         run: |
-          cp package/bink2w32.dll bink2w32.dll
+          cp package/dinput8.dll dinput8.dll
           cp package/CrabeInstaller.exe CrabeInstaller.exe
-          sha256sum bink2w32.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
+          sha256sum dinput8.dll CrabeInstaller.exe "CrabeLoader-${{ needs.plan.outputs.tag }}.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Prepare GitHub Release (draft)
@@ -173,6 +174,6 @@ jobs:
             **Draft, visible to maintainers only.** Test `CrabeInstaller.exe`, then publish. To roll the version out to players, also untick "Set as a pre-release": the in-game update prompt only sees published, stable releases.
           files: |
             CrabeInstaller.exe
-            bink2w32.dll
+            dinput8.dll
             CrabeLoader-${{ needs.plan.outputs.tag }}.zip
             SHA256SUMS.txt

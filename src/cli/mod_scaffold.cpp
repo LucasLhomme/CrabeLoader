@@ -203,7 +203,7 @@ namespace crabe::cli {
                 "\n"
                 "## Installing\n"
                 "\n"
-                "Drop this folder into your game's `mods/` directory, next to `bink2w32.dll`.\n"
+                "Drop this folder into your game's `mods/` directory, next to `dinput8.dll`.\n"
                 "Press **F4** in-game to hot-reload after making changes.\n"
                 "\n"
                 "## Developing\n"

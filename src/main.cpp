@@ -3,7 +3,7 @@
 ** File description:
 ** The DLL entry point: starts the loader thread and finishes installing the crash reporter.
 ** SymInitialize enumerates modules, which deadlocks under the loader lock, so it happens here.
-** Forwards every export to bink2w32_orig.dll through the vendored include/minhook/lib/proxy.
+** Answers as dinput8.dll and keeps the Bink forwarders of include/minhook/lib/proxy for 1.x setups.
 **
 ** Authors: @LucasLhomme
 */
@@ -21,6 +21,7 @@
 #include "domain/game_profile.hpp"
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/engine_resolution.hpp"
+#include "infrastructure/loader_instance.hpp"
 #include "presentation/render_hook.hpp"
 
 namespace {
@@ -38,14 +39,24 @@ namespace {
     std::string moduleLogPath(HMODULE hModule) {
         return moduleDirectory(hModule) + "loader.log";
     }
+
+    // Narrows a module name for the log, which is UTF-8; a character outside ASCII becomes '?'.
+    std::string asciiName(std::wstring_view name) {
+        std::string out;
+        out.reserve(name.size());
+        for (const wchar_t c : name)
+            out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
+        return out;
+    }
 }
 
 void initLogger(HMODULE hModule) {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     logger.setLogFile(moduleLogPath(hModule));
     logger.setLogLevel(crabe::shared::LogLevel::DEBUG);
-    logger.info("CrabeLoader v{} initialized (built {} {}).",
-                crabe::version::String, crabe::version::BuildDate, crabe::version::BuildTime);
+    logger.info("CrabeLoader v{} initialized (built {} {}, loaded as {}).",
+                crabe::version::String, crabe::version::BuildDate, crabe::version::BuildTime,
+                asciiName(crabe::infrastructure::moduleFileName(hModule)));
 }
 
 // The half of crash reporting that must not run under the loader lock:
@@ -75,11 +86,21 @@ void initMain() {
     crabe::application::Loader::get().initialize();
 }
 
+namespace {
+    bool g_forwardOnly = false;
+}
+
+// Starts the loader when the game loads this DLL, unless another copy of CrabeLoader outranks it.
+// A copy that steps aside only forwards its exports, so a folder holding a 1.x bink2w32.dll and a
+// dinput8.dll runs exactly one loader.
 bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
     (void)lpReserved;
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
+        g_forwardOnly = !crabe::infrastructure::outrankingLoaderCopy(hModule).empty();
+        if (g_forwardOnly)
+            return TRUE;
         DisableProcessWindowsGhosting();
         initLogger(hModule);
         crabe::presentation::RenderHook::installEarlyDelayLoadHook();
@@ -110,7 +131,7 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 #endif
         std::thread(initMain).detach();
     }
-    else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
+    else if (ul_reason_for_call == DLL_PROCESS_DETACH && !g_forwardOnly) {
         crabe::shared::Logger::getInstance().debug("CrabeLoader DLL unloaded.");
     }
     return TRUE;

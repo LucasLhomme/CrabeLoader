@@ -113,13 +113,16 @@ Write-Host "`n[2/5] Checking and terminating previous instances..." -ForegroundC
 Stop-Process -Name "DisneyInfinity3" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 800
 
-Write-Host "[3/5] Deploying bink2w32.dll..." -ForegroundColor Yellow
-$dllSrc = Join-Path $projectRoot "build\Release\bink2w32.dll"
-$targetDll = Join-Path $gameDir "bink2w32.dll"
-$origDll = Join-Path $gameDir "bink2w32_orig.dll"
+Write-Host "[3/5] Deploying dinput8.dll..." -ForegroundColor Yellow
+$dllSrc = Join-Path $projectRoot "build\Release\dinput8.dll"
+$targetDll = Join-Path $gameDir "dinput8.dll"
+$legacyProxy = Join-Path $gameDir "bink2w32.dll"
+$legacyBackup = Join-Path $gameDir "bink2w32_orig.dll"
 
-if (!(Test-Path $origDll) -and (Test-Path $targetDll)) {
-    Copy-Item -Path $targetDll -Destination $origDll -Force
+# A 1.0 install put CrabeLoader in bink2w32.dll and kept the game's own as bink2w32_orig.dll:
+# put the game's file back, since the loader is dinput8.dll now.
+if (Test-Path $legacyBackup) {
+    Move-Item -Path $legacyBackup -Destination $legacyProxy -Force
 }
 Copy-Item -Path $dllSrc -Destination $targetDll -Force
 

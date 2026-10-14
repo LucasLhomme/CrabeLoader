@@ -51,8 +51,9 @@ namespace {
         std::wstring_view notGameFolder;
         std::wstring_view installed;
         std::wstring_view updated;
-        std::wstring_view proxyUnrecognized;
-        std::wstring_view proxyMissing;
+        std::wstring_view migrated;
+        std::wstring_view loaderSlotTaken;
+        std::wstring_view legacyOriginalMissing;
         std::wstring_view cannotWrite;
         std::wstring_view payloadInvalid;
         std::wstring_view ioFailure;
@@ -69,11 +70,14 @@ namespace {
         L"Lancez le jeu pour commencer.",
         L"CrabeLoader a été mis à jour vers la version {} dans :\n\n{}\n\n"
         L"Vos mods et votre configuration n'ont pas été touchés.",
-        L"Le fichier bink2w32.dll de ce dossier n'est pas celui du jeu, et CrabeLoader n'y est pas déjà installé.\n\n"
+        L"\n\nCrabeLoader s'installe désormais sous le nom dinput8.dll : le fichier bink2w32.dll d'origine du jeu "
+        L"a été remis à sa place.",
+        L"Un fichier dinput8.dll qui n'est pas CrabeLoader se trouve déjà dans ce dossier "
+        L"(souvent un chargeur de plugins .asi).\n\n"
         L"Aucun fichier n'a été modifié.\n\n"
-        L"Dans Steam : clic droit sur le jeu > Propriétés > Fichiers installés > "
-        L"Vérifier l'intégrité des fichiers, puis relancez cet installeur.",
-        L"Le fichier bink2w32.dll est introuvable dans ce dossier.\n\n"
+        L"Déplacez ou supprimez ce dinput8.dll, puis relancez cet installeur.",
+        L"Le fichier bink2w32.dll de ce dossier est une ancienne version de CrabeLoader, et l'original du jeu "
+        L"(bink2w32_orig.dll) a disparu.\n\n"
         L"Aucun fichier n'a été modifié.\n\n"
         L"Dans Steam : clic droit sur le jeu > Propriétés > Fichiers installés > "
         L"Vérifier l'intégrité des fichiers, puis relancez cet installeur.",
@@ -97,11 +101,12 @@ namespace {
         L"Start the game to begin.",
         L"CrabeLoader was updated to version {} in:\n\n{}\n\n"
         L"Your mods and your configuration were not touched.",
-        L"The bink2w32.dll in this folder is not the game's own, and CrabeLoader is not already installed.\n\n"
+        L"\n\nCrabeLoader now installs as dinput8.dll: the game's own bink2w32.dll was put back in place.",
+        L"A dinput8.dll that is not CrabeLoader is already in this folder (often an .asi plugin loader).\n\n"
         L"No file was changed.\n\n"
-        L"In Steam: right-click the game > Properties > Installed Files > Verify integrity of game files, "
-        L"then run this installer again.",
-        L"bink2w32.dll was not found in this folder.\n\n"
+        L"Move or delete that dinput8.dll, then run this installer again.",
+        L"The bink2w32.dll in this folder is an old CrabeLoader, and the game's original (bink2w32_orig.dll) "
+        L"is gone.\n\n"
         L"No file was changed.\n\n"
         L"In Steam: right-click the game > Properties > Installed Files > Verify integrity of game files, "
         L"then run this installer again.",
@@ -258,7 +263,7 @@ namespace {
             return readFileBytes(*options.payloadFile);
         if (auto embedded = readEmbeddedPayload())
             return embedded;
-        return readFileBytes(executableDirectory() / std::string(kProxyName));
+        return readFileBytes(executableDirectory() / std::string(kLoaderName));
     }
 
     [[nodiscard]] std::optional<std::filesystem::path> pickFolder(const Texts& texts,
@@ -302,10 +307,10 @@ namespace {
     [[nodiscard]] std::wstring_view failureText(const Texts& texts, InstallErrorCode code) noexcept
     {
         switch (code) {
-        case InstallErrorCode::ProxyUnrecognized:
-            return texts.proxyUnrecognized;
-        case InstallErrorCode::ProxyMissing:
-            return texts.proxyMissing;
+        case InstallErrorCode::LoaderSlotTaken:
+            return texts.loaderSlotTaken;
+        case InstallErrorCode::LegacyOriginalMissing:
+            return texts.legacyOriginalMissing;
         case InstallErrorCode::FileInUse:
         case InstallErrorCode::AccessDenied:
             return texts.cannotWrite;
@@ -342,7 +347,7 @@ namespace {
 
         const auto payload = loadPayload(options);
         if (!payload) {
-            show(options, texts, formatText(texts.payloadInvalid, std::wstring(L"bink2w32.dll")), MB_OK | MB_ICONERROR, IDOK);
+            show(options, texts, formatText(texts.payloadInvalid, std::wstring(L"dinput8.dll")), MB_OK | MB_ICONERROR, IDOK);
             return kExitFailed;
         }
 
@@ -369,7 +374,10 @@ namespace {
 
             const std::wstring version = widen(crabe::version::String);
             const std::wstring_view done = report->performed == Plan::Update ? texts.updated : texts.installed;
-            show(options, texts, formatText(done, version, folder->wstring()), MB_OK | MB_ICONINFORMATION, IDOK);
+            std::wstring message = formatText(done, version, folder->wstring());
+            if (report->legacyOriginalRestored)
+                message += texts.migrated;
+            show(options, texts, message, MB_OK | MB_ICONINFORMATION, IDOK);
             return kExitInstalled;
         }
     }
@@ -381,7 +389,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     const Options options = parseOptions();
     if (options.help || !options.valid) {
         const std::wstring usage =
-            L"CrabeInstaller [--game-dir <folder>] [--quiet] [--payload <bink2w32.dll>]\n\n"
+            L"CrabeInstaller [--game-dir <folder>] [--quiet] [--payload <dinput8.dll>]\n\n"
             L"--game-dir  skip the folder dialog and use this folder\n"
             L"--quiet     show no window; the exit code tells the result (0 ok, 1 failed, 2 cancelled)\n"
             L"--payload   install this DLL instead of the bundled one";

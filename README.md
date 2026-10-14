@@ -7,7 +7,7 @@
 
 An open-source, high-performance mod loader and runtime extensibility platform for **Disney Infinity 3.0: Gold Edition (PC)**.
 
-CrabeLoader attaches as a proxy `bink2w32.dll`, intercepting DirectX 11 presentation calls and the internal Lua 5.1 virtual machine to provide a resilient, modern environment for community modifications.
+CrabeLoader attaches as a proxy `dinput8.dll` placed next to the game executable (no game file is modified), intercepting DirectX 11 presentation calls and the internal Lua 5.1 virtual machine to provide a resilient, modern environment for community modifications.
 
 ---
 
@@ -22,7 +22,7 @@ CrabeLoader v1.0.0 follows a strict **decoupled, layered architecture**:
 
 ## Key Capabilities
 
-* **Embedded Runtime:** Core API modules are embedded directly within `bink2w32.dll`, removing disk dependencies in the game root.
+* **Embedded Runtime:** Core API modules are embedded directly within `dinput8.dll`, removing disk dependencies in the game root.
 * **Thread-Safe Decoupled UI (`DrawBuffer`):** Mod UI logic executes safely on the script thread, publishing commands that are rendered natively on the DirectX 11 Present loop without thread contention or VM state corruption.
 * **Hardware Exception Armor (SEH):** Unhandled native exceptions and invalid memory operations are trapped and logged to `loader.log`, preventing silent crashes to desktop.
 * **Isolated Environment Sandboxes:** Each mod operates in an isolated environment with read-only proxy protection over critical engine namespaces (`Game`, `table`, `string`, `math`, `_G`).
@@ -38,8 +38,9 @@ All user modifications reside strictly inside the `mods/` directory, while runti
 
 ```text
 Disney Infinity 3.0 Gold Edition/
-├── bink2w32.dll              <- CrabeLoader proxy DLL
-├── bink2w32_orig.dll         <- Original game Bink DLL
+├── DisneyInfinity3.exe       <- Game executable (untouched)
+├── dinput8.dll               <- CrabeLoader proxy DLL
+├── bink2w32.dll              <- Game's own Bink DLL (untouched)
 ├── Crabe/
 │   ├── crabe.toml            <- Main configuration file
 │   └── loader.log            <- Diagnostics, logs, and minidumps
@@ -128,13 +129,13 @@ Each [release](https://github.com/LucasLhomme/CrabeLoader/releases/latest) offer
 
 ### Option A: `CrabeInstaller.exe` (recommended)
 
-Run it and follow the prompts. It finds the game in your Steam libraries (or lets you pick the folder), installs the proxy, keeps the game's own `bink2w32.dll` as `bink2w32_orig.dll`, and creates the `mods/` folder with a short readme. Running it again updates CrabeLoader and leaves your mods and settings alone. It never overwrites a `bink2w32.dll` it does not recognise; see the [installer guide](docs/guides/updates_and_installer.md).
+Run it and follow the prompts. It finds the game in your Steam libraries (or lets you pick the folder), installs CrabeLoader as `dinput8.dll` without renaming or modifying any game file, and creates the `mods/` folder with a short readme. Running it again updates CrabeLoader and leaves your mods and settings alone. It also moves a 1.0 install (`bink2w32.dll` + `bink2w32_orig.dll`) over, putting the game's own `bink2w32.dll` back. It never overwrites a `dinput8.dll` it did not write (such as an `.asi` plugin loader); see the [installer guide](docs/guides/updates_and_installer.md). To uninstall, delete `dinput8.dll`.
 
 ### Option B: manual
 
-1. In your game installation folder (e.g., `<steam-library>\steamapps\common\Disney Infinity 3.0 Gold Edition`), rename the original `bink2w32.dll` to `bink2w32_orig.dll`.
-2. Copy the release `bink2w32.dll` into the game root directory.
-3. Create a `mods/` directory next to it.
+1. Copy the release `dinput8.dll` into your game installation folder (e.g., `<steam-library>\steamapps\common\Disney Infinity 3.0 Gold Edition`), next to `DisneyInfinity3.exe`.
+2. Create a `mods/` directory next to it.
+3. Coming from 1.0: delete the old `bink2w32.dll`, then rename `bink2w32_orig.dll` back to `bink2w32.dll`.
 
 ### Then
 
@@ -158,7 +159,7 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCRABELOADER_AS_SHARED=
 cmake --build build --config Release
 ```
 
-The compiled binary will be generated at `build/Release/bink2w32.dll`. Add `-DCRABELOADER_BUILD_INSTALLER=ON` to also build `build/Release/CrabeInstaller.exe` with that DLL embedded.
+The compiled binary will be generated at `build/Release/dinput8.dll`. Add `-DCRABELOADER_BUILD_INSTALLER=ON` to also build `build/Release/CrabeInstaller.exe` with that DLL embedded.
 
 ## Contributing
 

@@ -124,7 +124,7 @@ This suite executes all embedded Lua runtime modules inside a standalone emulato
 
 ## 4. In-Game Multi-Workload & Endurance Bench (`tests/test_bench.ps1`)
 
-The in-game test bench is the definitive endurance and performance benchmark. It deploys the compiled DLL ([`build/Release/bink2w32.dll`](file:///e:/Dev/DIM2/CrabeLoader/build/Release/bink2w32.dll)) into the *Disney Infinity 3.0* game directory as a proxy, injects concurrent test mods, boots the game, and continuously tracks memory and frametime metrics.
+The in-game test bench is the definitive endurance and performance benchmark. It deploys the compiled DLL ([`build/Release/dinput8.dll`](file:///e:/Dev/DIM2/CrabeLoader/build/Release/dinput8.dll)) into the *Disney Infinity 3.0* game directory as a proxy, injects concurrent test mods, boots the game, and continuously tracks memory and frametime metrics.
 
 * **Script:** [`tests/test_bench.ps1`](file:///e:/Dev/DIM2/CrabeLoader/tests/test_bench.ps1)
 * **Launcher Script:** [`tests/test_game.ps1`](file:///e:/Dev/DIM2/CrabeLoader/tests/test_game.ps1)

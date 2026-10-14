@@ -37,10 +37,10 @@ jobs:
       - name: Verify Artifacts
         shell: bash
         run: |
-          if [ -f build/Release/bink2w32.dll ] || [ -f build/bink2w32.dll ]; then
-            echo "Build successful: bink2w32.dll found."
+          if [ -f build/Release/dinput8.dll ] || [ -f build/dinput8.dll ]; then
+            echo "Build successful: dinput8.dll found."
           else
-            echo "Error: bink2w32.dll not produced."
+            echo "Error: dinput8.dll not produced."
             exit 1
           fi
           if [ ! -f build/Release/CrabeInstaller.exe ]; then

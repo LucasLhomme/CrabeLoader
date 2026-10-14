@@ -23,7 +23,7 @@ option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
 option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
 option(CRABELOADER_BUILD_CLI "Build crabe-cli, the offline mod-authoring tool." OFF)
 option(CRABELOADER_BUILD_INSTALLER "Build CrabeInstaller.exe, the one-click installer." OFF)
-option(CRABELOADER_INSTALLER_EMBED_DLL "Embed bink2w32.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
+option(CRABELOADER_INSTALLER_EMBED_DLL "Embed dinput8.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
 
 # The test suite exercises the real crabe-cli.exe (new-mod's scaffold is fed
 # straight into validate, end to end), so a test build needs it regardless of
@@ -133,11 +133,14 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/http_redirect_rules.cpp
     src/infrastructure/http_redirect.cpp
     src/infrastructure/update_services.cpp
+    src/infrastructure/dinput8_proxy.cpp
+    src/infrastructure/loader_instance.cpp
 
     # Shared Layer
     src/shared/logger.cpp
     src/shared/version.cpp
     src/shared/keybind_names.cpp
+    src/shared/loader_marker.cpp
 )
 
 set(CRABELOADER_MINHOOK_SOURCES
@@ -192,10 +195,11 @@ set(CRABELOADER_SOURCES
 
 if(CRABELOADER_AS_SHARED)
     add_library(${PROJECT_NAME} SHARED ${CRABELOADER_SOURCES})
-    # The game loads bink2w32.dll; proxy.hpp forwards every export to
-    # bink2w32_orig.dll. Naming the output anything else means the game never
-    # loads the loader at all.
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "bink2w32")
+    # The game imports dinput8.dll and Windows looks in the game folder first,
+    # so the loader answers as dinput8.dll and forwards to the system copy
+    # (src/infrastructure/dinput8_proxy.cpp). proxy.hpp keeps the Bink exports,
+    # so the same file still works as the bink2w32.dll of a 1.x install.
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "dinput8")
 else()
     add_executable(${PROJECT_NAME} ${CRABELOADER_SOURCES})
 endif()
@@ -484,11 +488,13 @@ set(CRABE_INSTALLER_CORE_SOURCES
     src/installer/game_installer.cpp
     src/installer/mods_readme.cpp
     src/installer/steam_locator.cpp
+    src/shared/loader_marker.cpp
 )
 
 add_executable(test_installer
     tests/cpp/test_installer.cpp
     ${CRABE_INSTALLER_CORE_SOURCES}
+    src/infrastructure/loader_instance.cpp
 )
 target_include_directories(test_installer PRIVATE
     include
@@ -526,7 +532,7 @@ if(CRABELOADER_BUILD_INSTALLER)
     else()
         file(GENERATE
             OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
-            CONTENT "/* no embedded payload: the installer looks for bink2w32.dll beside itself */\n"
+            CONTENT "/* no embedded payload: the installer looks for dinput8.dll beside itself */\n"
         )
     endif()
 
@@ -559,7 +565,7 @@ if(CRABELOADER_BUILD_INSTALLER)
         add_dependencies(CrabeInstaller ${PROJECT_NAME})
         add_custom_command(TARGET CrabeInstaller PRE_BUILD
             COMMAND ${CMAKE_COMMAND} -E touch "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
-            COMMENT "Refreshing the embedded bink2w32.dll"
+            COMMENT "Refreshing the embedded dinput8.dll"
         )
     endif()
 endif()
