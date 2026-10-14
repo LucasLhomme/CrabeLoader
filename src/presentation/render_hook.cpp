@@ -884,19 +884,20 @@ BOOL WINAPI RenderHook::hkSetCursorPos(int X, int Y)
     return self.originalSetCursorPos()(X, Y);
 }
 
-// Intercepts ShowWindow calls from the game to suppress window minimization on focus loss.
+// Refuses the game's minimize requests, which would drop the window into the taskbar and break ResizeBuffers.
+// The render thread repeats the request every frame while unfocused, and a real ShowWindow from it waits on the
+// window thread, which waits on rendering during a load: alt-tab froze the game, so a refused request never blocks.
 BOOL WINAPI RenderHook::hkShowWindow(HWND hWnd, int nCmdShow)
 {
     RenderHook& self = RenderHook::get();
-    if (self._hwnd && hWnd == self._hwnd) {
-        if (nCmdShow == SW_MINIMIZE || nCmdShow == SW_FORCEMINIMIZE || nCmdShow == SW_SHOWMINIMIZED) {
-            // Block minimization and keep window displayed without stealing focus.
-            // On Alt+Tab, this prevents both borderless and windowed modes from dropping into
-            // the taskbar, which breaks DXGI ResizeBuffers (0x887A0001) and corrupts window restore geometry.
-            return self.originalShowWindow()(hWnd, SW_SHOWNA);
-        }
-    }
-    return self.originalShowWindow()(hWnd, nCmdShow);
+    const bool minimize = nCmdShow == SW_MINIMIZE || nCmdShow == SW_FORCEMINIMIZE || nCmdShow == SW_SHOWMINIMIZED;
+    if (!self._hwnd || hWnd != self._hwnd || !minimize)
+        return self.originalShowWindow()(hWnd, nCmdShow);
+
+    const BOOL wasVisible = IsWindowVisible(hWnd);
+    if (!wasVisible)
+        ShowWindowAsync(hWnd, SW_SHOWNA);
+    return wasVisible;
 }
 
 namespace {

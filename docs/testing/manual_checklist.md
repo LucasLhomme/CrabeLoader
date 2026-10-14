@@ -13,8 +13,8 @@ test of anything.
 
 ## How to use this file
 
-1. Build `bink2w32.dll` and drop it into the game folder alongside
-   `bink2w32_orig.dll`.
+1. Build `CrabeLoader.asi` and its `dinput8.dll` bootstrap and drop both into
+   the game folder next to `DisneyInfinity3.exe`.
 2. Work through every unchecked item under the work orders your change touches.
 3. Record the date and the game build you checked against.
 
@@ -116,7 +116,8 @@ can show that.
 
 - [ ] **A broken mod produces a crash report naming it.** Write a mod that
       dereferences nil or otherwise faults, and confirm
-      `Crabe/crash-<stamp>.txt` appears next to the DLL with a `.dmp` beside it.
+      `Crabe/crash-<stamp>.txt` appears next to `DisneyInfinity3.exe` with a
+      `.dmp` beside it.
 - [ ] **Read the mod attribution carefully — there is a known limit.** A mod that
       faults while *loading* is named in `Active mod`. A mod that faults inside its
       `draw` callback is **not**: Lua picks the mod there, so C++ never learns
@@ -233,8 +234,135 @@ running game.
       an English Windows UI language. No `?` or mojibake in either, and the
       readme in `mods/` must show its accents in Notepad.
 - [ ] **A running game blocks an update cleanly.** With the game open, run the
-      installer to update. It must say it cannot write, and `bink2w32.dll`,
-      `bink2w32_orig.dll` and the game must be exactly as before.
+      installer to update. It must ask you to close the game (detail: "Disney
+      Infinity 3.0 is running") before touching anything, and `dinput8.dll`,
+      `CrabeLoader.asi`, the game's `bink2w32.dll` and the game must be
+      exactly as before, with no `.crabe-new` or `.crabe-old` file left over.
+
+## 1.1 — CrabeLoader installs as CrabeLoader.asi and a dinput8.dll bootstrap
+
+Covered automatically: every install plan (fresh install, update, the upgrade
+from a 1.1 development single-file `dinput8.dll`, a foreign `dinput8.dll`, a
+foreign `CrabeLoader.asi`, migration from 1.0, an old CrabeLoader whose backup
+is gone), swapped or bad payloads, the roll-back when either file is locked
+part-way, and the name ranking that decides which of two loaded copies runs the
+loader, in `tests/cpp/test_installer.cpp`; how the bootstrap starts
+`CrabeLoader.asi` (started, missing, refused, crashed, broken file) and the two
+version-resource markers, in `tests/cpp/test_bootstrap.cpp`. What those suites
+cannot reach is the game itself loading the bootstrap, the bootstrap's patch on
+the game's entry point, DirectInput going through it, another ASI loader
+starting CrabeLoader, and Steam's file check.
+
+- [ ] **A fresh install works on a vanilla folder.** Start from a folder Steam
+      has just verified, run the installer, and confirm `dinput8.dll`,
+      `CrabeLoader.asi` and `mods/` appear and no game file changed
+      (`bink2w32.dll` keeps its size and date, no `bink2w32_orig.dll` appears).
+      A failure is any renamed game file.
+- [ ] **The game starts with only the bootstrap and the loader.** In a folder
+      holding just the game, `dinput8.dll` and `CrabeLoader.asi`, launch. The
+      overlay must open with Insert and mods must load. A game that starts
+      without CrabeLoader, or a `Bootstrap:` line in `loader.log`, means the
+      bootstrap did not start the loader.
+- [ ] **Without CrabeLoader.asi, the game starts without CrabeLoader.** Delete
+      (or rename) `CrabeLoader.asi` and launch. The game must reach its main
+      menu normally, with no overlay, and `loader.log` must end with a
+      `[WARNING] Bootstrap:` line saying `CrabeLoader.asi` is not next to the
+      game. A crash or a missing warning is a failure.
+- [ ] **A 1.0 install migrates.** Start from a 1.0 install (CrabeLoader in
+      `bink2w32.dll`, the game's own in `bink2w32_orig.dll`) and run the
+      installer. Afterwards `bink2w32_orig.dll` must be gone, `bink2w32.dll`
+      must be the game's own again (no CrabeLoader description in its file
+      properties), and `dinput8.dll` and `CrabeLoader.asi` must be there. The
+      game must still play its Bink videos.
+- [ ] **A 1.1 single-file install upgrades.** Start from a folder where
+      `dinput8.dll` is a 1.1 development single-file CrabeLoader and run the
+      installer. Afterwards `dinput8.dll` must be the bootstrap (file
+      description `CrabeLoader Bootstrap for Disney Infinity 3.0`) and
+      `CrabeLoader.asi` must be there.
+- [ ] **A foreign `dinput8.dll` is refused untouched.** Put any `dinput8.dll`
+      that is not CrabeLoader's (an `.asi` loader, or a copy of the system one)
+      in the folder and run the installer. It must refuse, say that an ASI
+      loader can start `CrabeLoader.asi` if it is copied next to the game, and
+      otherwise tell you to move or delete that file. The folder must be
+      exactly as before.
+- [ ] **A foreign `CrabeLoader.asi` is refused untouched.** Put any file that is
+      not CrabeLoader under the name `CrabeLoader.asi` and run the installer. It
+      must refuse and tell you to move or delete that file, and the folder must
+      be exactly as before.
+- [ ] **The log names the loader.** Launch the game and read the first line of
+      `loader.log`. It must say `loaded as CrabeLoader.asi`. Any other name means
+      a different copy is running the loader.
+- [ ] **Keyboard and mouse still work in game.** Move, open the menus and click
+      through them with keyboard and mouse. The game reaches DirectInput through
+      the bootstrap's forwarding now, so dead input, or a crash on the first key
+      press, means a forwarder is wrong.
+- [ ] **Another ASI loader can start CrabeLoader.** Install Ultimate ASI Loader
+      as `dinput8.dll` (no CrabeLoader bootstrap) and copy only
+      `CrabeLoader.asi` next to `DisneyInfinity3.exe`. Launch: the overlay must
+      open, mods must load, the first line of `loader.log` must say
+      `loaded as CrabeLoader.asi`, and `loader.log` and `Crabe/` must be next to
+      the executable. An `.asi` in `scripts/` must show as `already_loaded`, not
+      loaded twice. Repeat with `CrabeLoader.asi` in `scripts/`: the log and
+      `Crabe/` must still be next to the executable.
+- [ ] **Steam's file check leaves CrabeLoader in place.** Run *Verify integrity
+      of game files* in Steam, then launch. `dinput8.dll` and `CrabeLoader.asi`
+      must still be there and the log must again say `loaded as CrabeLoader.asi`.
+      Steam re-downloading anything is a sign a game file was changed.
+
+## 1.1 — native .asi plugins
+
+Covered automatically: `[plugins]` in `crabe.toml`, discovery order and every
+skip reason (setting off, `skip` list, mod disabled by profile, ignored mod
+folders), the PE check that refuses 64-bit and non-DLL files, and real loads of
+two probe plugins (one starts, one returns `FALSE` from `DllMain`), in
+`tests/cpp/test_asi_plugins.cpp`; `Crabe.Plugins` in
+`tests/lua/test_plugins_api.lua`. What those suites cannot reach is the detour
+on the game's own entry point and a real plugin running inside the game.
+
+- [ ] **A plugin loads before the game starts.** Put a 32-bit `.asi` in
+      `scripts/` and launch. `loader.log` must show `AsiLoader: loaded <name>
+      (scripts)` before any `RenderHook` line, and no warning that the entry
+      point could not be detoured.
+- [ ] **A broken plugin does not stop the game.** Put a 64-bit `.asi` (or a
+      text file renamed `.asi`) in `plugins/`. The game must start, and the log
+      must give the reason it was refused.
+- [ ] **`[plugins].asi = false` loads nothing.** Set it, launch, and confirm
+      every `.asi` is logged as skipped and none is in the process.
+- [ ] **A plugin using the plugin API talks to Lua.** Build a plugin that
+      exports `CrabePluginInit`, calls `setValue(api, "test.key", "hello")` and
+      `runLua(api, "Crabe.write('from plugin')")`. In game, `loader.log` must
+      show `PluginApi: <name> started with plugin API v1` and `from plugin`,
+      and `=Crabe.Plugins.get("test.key")` in the console must print `hello`.
+- [ ] **Lua sees the list.** From the console, run
+      `for _, p in ipairs(Crabe.Plugins.list()) do Crabe.write(p.file .. " " .. p.status) end`
+      and compare with the log.
+
+## Disney Infinity base and the engine's figure registry
+
+Covered automatically: figure decryption, sealing and the double-buffered
+progression write against a simulated base holding a real figure's blocks, in
+`tests/cpp/test_portal_write.cpp`. `portal_probe.exe` runs the real base worker
+in a console, without the game. What those cannot reach is the engine's own
+registry (`Crabe.Gateway`) and what the game does with a figure.
+
+- [ ] **The bridge resolves.** Launch the game. `loader.log` must hold
+      `EngineGateway: resolved (...)` and no `does not have the expected shape`
+      line. A refusal means the build differs from the measured one.
+- [ ] **A physical figure becomes the played character with its own level.**
+      In a world, place a figure on Player 1. The character must change, and its
+      level and skills must be the figure's, not the virtual reader's.
+- [ ] **Lifting it gives the virtual reader's character back.** Remove the
+      figure. The previous character must come back, and `loader.log` must show
+      `virtual reader avatar ... restored`.
+- [ ] **The game's saves are seen.** With the figure on the base, gain some
+      experience. `loader.log` must show `the game saved level ...` once the game
+      saves. Note when it happens (level up, checkpoint, world change).
+- [ ] **Hub, Toy Box and a playset all accept the figure.** Repeat the placement
+      in each. A failure is a figure the game ignores or rejects as invalid.
+- [ ] **A save reaches the figure intact.** Only with a backup of the figure:
+      turn "Save progress to figures" on, gain experience, wait for the save,
+      then lift and replace the figure. It must come back with the new level,
+      and `loader.log` must show `written and verified`.
 
 ## Adding to this file
 

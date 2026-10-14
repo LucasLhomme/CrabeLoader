@@ -18,7 +18,7 @@
 #include "infrastructure/vfs_override_manager.hpp"
 #include "infrastructure/vfs_hook.hpp"
 #include "shared/logger.hpp"
-#include "shared/version.hpp"
+#include "shared/build_info.hpp"
 
 namespace crabe::presentation {
 
@@ -137,12 +137,13 @@ void Overlay::renderOverlay()
 {
     Overlay::defaultSettings();
 
-    std::string title = std::format("CrabeLoader v{} Overlay", crabe::version::String);
+    std::string title = std::format("CrabeLoader v{} Overlay###CrabeLoaderOverlay", crabe::build::label());
     ImGui::Begin(title.c_str());
 
     if (ImGui::BeginTabBar("MainTabBar")) {
         if (ImGui::BeginTabItem("Main")) {
-            ImGui::Text("CrabeLoader v%s (Built: %s)", crabe::version::String.data(), crabe::version::BuildDate.data());
+            ImGui::Text("CrabeLoader v%s", crabe::build::label().data());
+            ImGui::Text("Built %s, commit %s", crabe::build::time().data(), crabe::build::commit().data());
             ImGui::Separator();
             ImGui::Text("Press F5 to toggle the In-Game Mod Menu.");
             ImGui::EndTabItem();

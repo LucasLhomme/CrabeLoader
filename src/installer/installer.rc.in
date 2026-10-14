@@ -2,7 +2,7 @@
 ** CrabeLoader
 ** File description:
 ** The installer's resource script, stamped by CMake into the build tree; never edit the output.
-** Carries the file properties and pulls in payload.rc, which embeds bink2w32.dll as resource 101.
+** Carries the file properties and pulls in payload.rc: CrabeLoader.asi is 101, dinput8.dll is 102.
 ** Declares no code.
 **
 ** Authors: @LucasLhomme

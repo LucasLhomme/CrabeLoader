@@ -3,7 +3,9 @@
 --- Place this file in your workspace or mod directory for full IntelliSense autocompletion.
 
 ---@class Crabe
----@field public version string The semver version of CrabeLoader (e.g. "0.2.0").
+---@field public version string The semver version of CrabeLoader (e.g. "1.1.0"); compare against this one.
+---@field public versionFull string The build label: "1.1.0" for a release, "1.1.0-dev.20261015.0011+46329b2" for a development build.
+---@field public buildCommit string The short commit the build came from, with "-dirty" when uncommitted changes were built in.
 ---@field public versionMajor number The major version integer.
 ---@field public versionMinor number The minor version integer.
 ---@field public versionPatch number The patch version integer.
@@ -253,6 +255,41 @@ function Crabe.Vfs.stats() end
 function Crabe.Vfs.lastRedirected() end
 
 --------------------------------------------------------------------------------
+-- Crabe.Plugins: Native .asi Plugins
+--------------------------------------------------------------------------------
+
+---@alias CrabePluginStatus "loaded"|"already_loaded"|"skipped"|"failed"|"crashed"
+
+---@class CrabePlugin
+---@field file string Path relative to the game folder, forward slashes (e.g. "scripts/x.asi").
+---@field source string Where it was found: "game folder", "scripts", "plugins" or "mod <id>".
+---@field status CrabePluginStatus What happened when the loader tried it.
+---@field detail string Why it was skipped or failed, or its load address.
+
+---@class CrabePlugins
+Crabe.Plugins = {}
+
+--- Lists every .asi plugin found before the game started, in load order.
+---@return CrabePlugin[] plugins
+function Crabe.Plugins.list() end
+
+--- Returns a value a native plugin (setValue) or a mod (set) shared under key.
+---@param key string Shared key; prefix it with your plugin or mod name.
+---@return string? value nil when the key is not set.
+function Crabe.Plugins.get(key) end
+
+--- Shares a value with every native plugin (getValue) and mod; nil erases the key.
+---@param key string Shared key; prefix it with your plugin or mod name.
+---@param value string|number|boolean|nil Stored as a string (tostring); nil erases.
+---@return boolean ok false for a missing key or a loader without the bridge.
+function Crabe.Plugins.set(key, value) end
+
+--- Whether a plugin of that file name (any folder, any case) is loaded.
+---@param name string File name, e.g. "example.asi".
+---@return boolean loaded
+function Crabe.Plugins.isLoaded(name) end
+
+--------------------------------------------------------------------------------
 -- Crabe.Input: Keybinding Management
 --------------------------------------------------------------------------------
 
@@ -280,6 +317,11 @@ function Crabe.Input.padState(slot) end
 ---@param buttons number @param mask number
 ---@return boolean
 function Crabe.Input.padHas(buttons, mask) end
+
+--- Reports whether a key or mouse button is held right now, read from Windows rather than from the game.
+---@param vk number Windows virtual key code.
+---@return boolean
+function Crabe.Input.isKeyDown(vk) end
 
 --- While true the game reads an idle gamepad; padState keeps reading the real one.
 ---@param captured boolean
@@ -488,6 +530,120 @@ function Crabe.VirtualReader.listCharacters() end
 --------------------------------------------------------------------------------
 -- Game: Guarded Engine Facade
 --------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- Crabe.Portal: Physical & Virtual Disney Infinity Base
+--------------------------------------------------------------------------------
+-- Events: "portalFigurePlaced" (slot, sku, uid, progress) and "portalFigureRemoved" (slot, uid).
+-- Slots: 1 = Player 1, 2 = Player 2, 3 = playset / hexagon. See docs/guides/portal.md.
+
+---@class FigureProgress
+---@field level number Character level saved on the figure.
+---@field experience number Experience within the current level.
+---@field actionFlags number Action flags byte (0x40 = max level reached, 0x80 = played in 2.0).
+---@field lastPlayed number Packed date: (year-2013)<<26 | month<<22 | day<<17 | hour<<12 | minute<<6.
+---@field skillBits number[] Set skill bit numbers (0..63).
+
+---@class PortalStatus
+---@field connected boolean A physical base is connected and answering.
+---@field type "hid"|"xbox360"|"xboxone"|"none"
+---@field typeDescription string Human-readable base type.
+---@field slot1Sku number? SKU of the figure on Player 1.
+---@field slot2Sku number? SKU of the figure on Player 2.
+---@field slot3Sku number? SKU of the piece on the playset / hexagon slot.
+---@field diagnostic string? What is missing when no base answers (driver, cable...).
+
+---@class Crabe.Portal
+Crabe.Portal = {}
+
+--- True when a physical Disney Infinity base is connected and answering.
+---@return boolean
+function Crabe.Portal.isConnected() end
+
+--- Connection, base type and the figure SKU of each slot.
+---@return PortalStatus
+function Crabe.Portal.getStatus() end
+
+--- Sets the RGB LED of a slot (0 = all, 1 = Player 1, 2 = Player 2, 3 = playset / hexagon).
+---@param slot number
+---@param r number 0..255
+---@param g number 0..255
+---@param b number 0..255
+---@return boolean success False when no base is connected.
+function Crabe.Portal.setLed(slot, r, g, b) end
+
+--- Reports a virtual figure on a slot, exactly as a base would report a real one.
+---@param slot number 1, 2 or 3.
+---@param sku number|string Character SKU, or a character name known to Crabe.VirtualReader.
+---@return boolean success False when the SKU cannot be resolved.
+function Crabe.Portal.placeVirtualFigure(slot, sku) end
+
+--- Reports the figure of a slot as removed, virtual or not.
+---@param slot number
+---@return boolean
+function Crabe.Portal.removeVirtualFigure(slot) end
+
+--- Saves progression onto the physical figure of slot 1 or 2 (older copy, verified by read-back).
+---@param slot number 1 or 2.
+---@param progress FigureProgress
+---@return boolean queued False when no physical figure is there or nothing changed.
+function Crabe.Portal.writeFigureProgress(slot, progress) end
+
+--- Set skill bit numbers from the tag's 8 skill bytes in hex.
+---@param hex string 16 hex digits.
+---@return number[] bits
+function Crabe.Portal.decodeSkillBits(hex) end
+
+--- The tag's 8 skill bytes in hex from set skill bit numbers.
+---@param bits number[]
+---@return string hex 16 hex digits.
+function Crabe.Portal.encodeSkillBits(bits) end
+
+--------------------------------------------------------------------------------
+-- Crabe.Gateway: The Engine's Own Figure Registry
+--------------------------------------------------------------------------------
+-- Event: "gatewayTagWrite" (uid, field, value) for tags added with watch = true.
+-- field: "experience" | "level" | "lastPlayed" | "action" | "owner" (number) or "progression" (number[]).
+-- Every call runs on the game thread: the engine announces a tag change before it returns.
+
+---@class GatewayTagOptions
+---@field experience number?
+---@field level number?
+---@field lastPlayed number?
+---@field actionFlags number?
+---@field owner number?
+---@field skillBits number[]? When given, the progression is set too (IGP needs it to load a record).
+---@field watch boolean? Report the game's writes to this tag as "gatewayTagWrite".
+
+---@class Crabe.Gateway
+Crabe.Gateway = {}
+
+--- True when this build carries the bridge to the engine's registry.
+---@return boolean
+function Crabe.Gateway.isAvailable() end
+
+--- UID (hex) of the virtual reader's tag for a character id: the virtual reader uses the id as UID.
+---@param id number
+---@return string uid
+function Crabe.Gateway.uidForId(id) end
+
+--- Character id of the virtual reader's current avatar tag.
+---@return number? id Nil when none or unavailable.
+function Crabe.Gateway.virtualAvatar() end
+
+--- Adds a tag as a reader would; the game keeps a separate profile record per UID.
+--- A tag added earlier on the same antenna is removed first: the engine holds one tag per antenna.
+---@param uid string Tag UID in hex (up to 16 digits).
+---@param characterId number Character or playset piece SKU.
+---@param antenna number 0 = Player 1, 1 = Player 2, 2 = playset piece.
+---@param options GatewayTagOptions?
+---@return boolean added
+function Crabe.Gateway.addTag(uid, characterId, antenna, options) end
+
+--- Removes a tag by UID, whether added here or by the virtual reader.
+---@param uid string
+---@return boolean removed
+function Crabe.Gateway.removeTag(uid) end
 
 ---@class Game
 Game = {}
