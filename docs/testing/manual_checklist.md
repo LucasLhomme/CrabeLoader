@@ -337,6 +337,33 @@ on the game's own entry point and a real plugin running inside the game.
       `for _, p in ipairs(Crabe.Plugins.list()) do Crabe.write(p.file .. " " .. p.status) end`
       and compare with the log.
 
+## Disney Infinity base and the engine's figure registry
+
+Covered automatically: figure decryption, sealing and the double-buffered
+progression write against a simulated base holding a real figure's blocks, in
+`tests/cpp/test_portal_write.cpp`. `portal_probe.exe` runs the real base worker
+in a console, without the game. What those cannot reach is the engine's own
+registry (`Crabe.Gateway`) and what the game does with a figure.
+
+- [ ] **The bridge resolves.** Launch the game. `loader.log` must hold
+      `EngineGateway: resolved (...)` and no `does not have the expected shape`
+      line. A refusal means the build differs from the measured one.
+- [ ] **A physical figure becomes the played character with its own level.**
+      In a world, place a figure on Player 1. The character must change, and its
+      level and skills must be the figure's, not the virtual reader's.
+- [ ] **Lifting it gives the virtual reader's character back.** Remove the
+      figure. The previous character must come back, and `loader.log` must show
+      `virtual reader avatar ... restored`.
+- [ ] **The game's saves are seen.** With the figure on the base, gain some
+      experience. `loader.log` must show `the game saved level ...` once the game
+      saves. Note when it happens (level up, checkpoint, world change).
+- [ ] **Hub, Toy Box and a playset all accept the figure.** Repeat the placement
+      in each. A failure is a figure the game ignores or rejects as invalid.
+- [ ] **A save reaches the figure intact.** Only with a backup of the figure:
+      turn "Save progress to figures" on, gain experience, wait for the save,
+      then lift and replace the figure. It must come back with the new level,
+      and `loader.log` must show `written and verified`.
+
 ## Adding to this file
 
 New work orders append a section of their own, in the same shape:

@@ -17,6 +17,8 @@ This directory contains in-depth, structured guides in plain English covering ev
 | **[Loose Texture Overrides & VFS](vfs_textures.md)** | Intercept asset and texture loading via the Virtual File System (VFS), override textures with loose `.tbody` files, and hot-reload in real-time (`F4`). | Texture Artists & Modders |
 | **[Native `.asi` Plugins](asi_plugins.md)** | Load native 32-bit `.asi` plugins from the game folder, `scripts/`, `plugins/` or a mod's folder, before the game's own code runs. Turn them off in `crabe.toml`, read what loaded from Lua with `Crabe.Plugins`, and write your own with the C plugin API (log, hooks, Lua, values shared with mods). | Native Plugin Authors & Players |
 | **[Update Check & CrabeInstaller](updates_and_installer.md)** | How the launch-time update prompt works and how to turn it off, plus the one-click installer that adds `dinput8.dll` (a small bootstrap) and `CrabeLoader.asi` (the loader), and the rule that it never overwrites a game file or a `dinput8.dll` or `CrabeLoader.asi` that is not CrabeLoader's. | Players & Maintainers |
+| **[Disney Infinity Base & Figure Registry](portal.md)** | Use a physical Disney Infinity base (Xbox One, Xbox 360, PS3/PS4/Wii/Wii U/PC) from Lua with `Crabe.Portal`, and add figures to the engine's own registry with `Crabe.Gateway` so each figure keeps its own progression. | Modders & Hardware Tinkerers |
+| **[Key Bindings](key_bindings.md)** | The bundled `mods/keybinds` mod: rebind the game's own keys, mouse and controller buttons from Options > Controls, saved to `Crabe/keybinds.json`. | Players & Modders |
 
 ---
 

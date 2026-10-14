@@ -142,6 +142,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/code_cave.cpp
     src/infrastructure/engine_actors.cpp
     src/infrastructure/engine_free_camera.cpp
+    src/infrastructure/engine_gateway.cpp
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_meridian.cpp
     src/infrastructure/engine_resolution.cpp
@@ -157,6 +158,13 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/http_redirect_rules.cpp
     src/infrastructure/http_redirect.cpp
     src/infrastructure/update_services.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_protocol.cpp
+    src/infrastructure/portal/portal_transports.cpp
+    src/infrastructure/portal/portal_transport_gip.cpp
+    src/infrastructure/portal/usb_device.cpp
+    src/infrastructure/portal/portal_worker.cpp
+    src/infrastructure/portal/portal_service.cpp
     src/infrastructure/loader_instance.cpp
     src/infrastructure/asi_loader.cpp
     src/infrastructure/entry_point_hook.cpp
@@ -312,6 +320,8 @@ endif()
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         dbghelp
+        hid
+        setupapi
         nlohmann_json::nlohmann_json
         tomlplusplus::tomlplusplus
 )
@@ -758,6 +768,35 @@ if(MSVC)
     target_compile_options(update_probe PRIVATE /W4 /utf-8)
 else()
     target_compile_options(update_probe PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# test_portal_write -- offline checks of the figure progression read/write path.
+add_executable(test_portal_write
+    tests/cpp/test_portal_write.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_protocol.cpp
+)
+target_include_directories(test_portal_write PRIVATE include src)
+target_compile_definitions(test_portal_write PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    target_compile_options(test_portal_write PRIVATE /W4 /utf-8)
+endif()
+
+# portal_probe -- runs the physical portal worker out of the game (hardware bring-up).
+add_executable(portal_probe
+    tests/cpp/portal_probe.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_protocol.cpp
+    src/infrastructure/portal/portal_transports.cpp
+    src/infrastructure/portal/portal_transport_gip.cpp
+    src/infrastructure/portal/usb_device.cpp
+    src/infrastructure/portal/portal_worker.cpp
+    src/shared/logger.cpp
+)
+target_include_directories(portal_probe PRIVATE include src)
+target_compile_definitions(portal_probe PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    target_compile_options(portal_probe PRIVATE /W4 /utf-8)
 endif()
 
 # ---------------------------------------------------------------------------
