@@ -83,8 +83,12 @@ def load_source(path: str | Path) -> SourceModel:
     elif path.suffix.lower() not in MODEL_EXTENSIONS:
         raise ValueError(f"unsupported format: {path.suffix} (accepted: .zip {' '.join(MODEL_EXTENSIONS)})")
 
-    loaded = trimesh.load(model_file, process=False)
-    parts = loaded.dump(concatenate=False) if isinstance(loaded, trimesh.Scene) else [loaded]
+    if model_file.suffix.lower() == ".dae":
+        from src.core.dae import load as load_dae
+        parts = load_dae(model_file)
+    else:
+        loaded = trimesh.load(model_file, process=False)
+        parts = loaded.dump(concatenate=False) if isinstance(loaded, trimesh.Scene) else [loaded]
     parts = [p for p in parts if isinstance(p, trimesh.Trimesh) and len(p.faces)]
     if not parts:
         raise ValueError(f"{model_file.name} contains no triangles")

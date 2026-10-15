@@ -14,7 +14,7 @@ from src.core.paths import SCRIPTS_DIR
 
 CLEAN_SCRIPT = SCRIPTS_DIR / "blender_clean.py"
 BAKE_SCRIPT = SCRIPTS_DIR / "bake_skinned_glb.py"
-NEEDS_BLENDER = (".fbx", ".dae")
+NEEDS_BLENDER = (".fbx",)
 """Formats the built-in loader cannot read reliably: they always go through Blender."""
 _temp_dirs: list[Path] = []
 

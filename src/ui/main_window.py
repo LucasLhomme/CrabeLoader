@@ -2,6 +2,7 @@ import queue
 import threading
 import traceback
 from pathlib import Path
+import tkinter as tk
 from tkinter import filedialog
 
 import customtkinter as ctk
@@ -23,6 +24,7 @@ from src.core.rig import base_tpose, build_rig
 from src.core.roster import find_entry, load_roster
 from src.core.skeleton import (
     fit_advice,
+    fit_issues,
     apply_apose_to_proportions,
     apply_tpose_to_proportions,
     base_joint_points,
@@ -100,6 +102,31 @@ SLIDER_HINTS = {
 }
 ESTIMATE_SLIDERS = {"shoulders": ("arm_y", "shoulder_x"), "wrists": ("wrist", "elbow"), "neck": ("neck_y", "head_y"),
                     "hips": ("crotch_y",), "legs": ("leg_x", "knee"), "ankles": ("ankle_y",)}
+
+
+class Tooltip:
+    """A small text box that follows the mouse over a widget (shown after the pointer rests on it)."""
+
+    def __init__(self, widget, text=lambda: ""):
+        self.widget, self.text, self.window = widget, text, None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, event):
+        text = self.text()
+        if not text:
+            return
+        self._hide()
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.wm_geometry(f"+{event.x_root + 12}+{event.y_root + 14}")
+        tk.Label(self.window, text=text, justify="left", wraplength=300, background="#27272a", foreground="#e4e4e7",
+                 relief="solid", borderwidth=1, font=("Segoe UI", 9), padx=6, pady=4).pack()
+
+    def _hide(self, _event=None):
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
 
 
 class MainWindow(ctk.CTk):
@@ -395,6 +422,7 @@ class MainWindow(ctk.CTk):
                                       wraplength=330, justify="left", font=ctk.CTkFont(size=11))
         self.fit_label.grid(row=3, column=0, sticky="w", pady=(2, 4))
         self.sliders = {}
+        self._status_icons, self._status_text = {}, {}
         scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent", height=380)
         scroll.grid(row=4, column=0, sticky="nsew")
         scroll.grid_columnconfigure(0, weight=1)
@@ -408,6 +436,10 @@ class MainWindow(ctk.CTk):
                          wraplength=300, justify="left").grid(row=3 * i + 2, column=0, sticky="w", pady=(0, 6))
             self.sliders[name] = (slider, label, text, rel)
             self._value_entry(scroll, 3 * i, slider, lambda v, n=name: self.on_slider(n, v))
+            icon = ctk.CTkLabel(scroll, text="", width=18, font=ctk.CTkFont(size=13))
+            icon.grid(row=3 * i, column=2, sticky="e", padx=(4, 0))
+            self._status_icons[name] = icon
+            Tooltip(icon, lambda n=name: self._status_text.get(n, ""))
         legend = ("• Green skeleton: Fitted to your 3D model (arms, legs, head).\n"
                   "• Cyan skeleton: Base character reference (on the ghost figure).\n"
                   "• Note: The builder automatically retargets your model to the game's bind pose.")
@@ -1360,6 +1392,31 @@ class MainWindow(ctk.CTk):
         self._sync_sliders()
         self._geometry_changed()
 
+    def _update_status_icons(self):
+        """One small icon per skeleton slider: ✓ found on the mesh, ⚠ guessed or far from the base figure, ✎ yours."""
+        issues = {}
+        if self.props and self.base:
+            for names, text in fit_issues(self.props, self.base):
+                for n in names:
+                    issues[n] = text
+        flagged = self._flagged_sliders()
+        for name, icon in self._status_icons.items():
+            if not self.props:
+                icon.configure(text="")
+                self._status_text[name] = ""
+            elif name in getattr(self, "_checked", set()):
+                icon.configure(text="✎", text_color="#60a5fa")
+                self._status_text[name] = "Adjusted by you."
+            elif name in flagged:
+                icon.configure(text="⚠", text_color=YELLOW)
+                self._status_text[name] = "Guessed by the auto-fit, not found on the mesh: check it against the model."
+            elif name in issues:
+                icon.configure(text="⚠", text_color="#fb923c")
+                self._status_text[name] = issues[name]
+            else:
+                icon.configure(text="✓", text_color=GREEN)
+                self._status_text[name] = "Found on the mesh, close to the base figure's proportions."
+
     def _flagged_sliders(self) -> set:
         """Sliders whose value the auto-fit only guessed, until the user has touched them."""
         flagged = set()
@@ -1383,6 +1440,7 @@ class MainWindow(ctk.CTk):
             label.configure(text=f"{text}: {value:.2f}" + ("  ⚠ check" if flagged else ""),
                             text_color=YELLOW if flagged else "#e4e4e7")
             self._sync_entry(slider)
+        self._update_status_icons()
 
     def _geometry_changed(self):
         """Placement, joints or base changed: the rig is stale, redraw the T-pose model and its skeleton."""
@@ -1545,6 +1603,7 @@ class MainWindow(ctk.CTk):
         self._checked = getattr(self, "_checked", set()) | {name}
         label.configure(text=f"{text}: {value:.2f}", text_color="#e4e4e7")
         self._sync_entry(slider)
+        self._update_status_icons()
         self._geometry_changed()
 
     # --------------------------------------------------------- rig & export

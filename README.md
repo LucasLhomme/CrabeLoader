@@ -39,7 +39,7 @@ remplacé.
 - **Nettoyage intégré** : à l'import, Blender (en arrière-plan) fusionne les morceaux, corrige l'échelle et
   l'orientation, retrouve les textures perdues (fichier `.mtl` absent, images à côté du modèle) et fige un éventuel
   squelette. Le résultat est un fichier temporaire supprimé à la fermeture : aucun fichier parasite chez toi. Les
-  `.fbx` et `.dae` passent toujours par ce nettoyage.
+  `.fbx` passe toujours par ce nettoyage.
 - **Placement manuel** : décale et tourne le modèle (curseurs, boutons de 1 cm, rotation fine, « Recentre ») quand
   l'ajustement automatique se trompe.
 - **Vue 3 plans** (face, profil, dessus) pour juger l'alignement du squelette d'un coup d'œil.
@@ -67,7 +67,7 @@ remplacé.
 | Disney Infinity 3.0 Gold Edition (PC) | Ta propre copie installée |
 | [CrabeLoader](https://github.com/LucasLhomme/CrabeLoader) et [CrabeMenu](https://github.com/LucasLhomme/CrabeMenu) | Le chargeur de mods qui charge ton personnage. CrabeMenu (menu `F5` en jeu) est conseillé pour passer sur ton personnage |
 | Python 3.12 ou plus récent | Cocher « Add python.exe to PATH » à l'installation |
-| Blender 4.x ou plus récent | Recommandé : nettoyage des modèles (obligatoire pour `.fbx` et `.dae`) et meilleurs poids. Creator le lance en arrière-plan, tu n'as jamais à l'ouvrir |
+| Blender 4.x ou plus récent | Recommandé : nettoyage des modèles (obligatoire pour `.fbx`) et meilleurs poids. Creator le lance en arrière-plan, tu n'as jamais à l'ouvrir |
 
 ## Installation et lancement
 
@@ -110,8 +110,13 @@ le lot suivant, et le champ de filtre cherche par nom ou par licence (Avengers, 
 entre le poignet et la chaîne de doigts la plus proche. En jeu, les doigts se ferment (poing, prise, tir) au lieu de
 rester plats. La pose **Fist** du sélecteur montre le résultat.
 
+**Format `.dae` (COLLADA).** Creator le lit lui-même, sans Blender : géométrie, UV, textures (cherchées à côté du
+fichier), unité et axe vertical. Un modèle skinné est lu dans sa pose de repos. Avec la case de nettoyage cochée,
+Blender (import Collada) le nettoie comme les autres formats.
+
 **Onglet Skeleton.** Chaque curseur a une petite note (sur quoi aligner le point vert) et une **case de saisie** à droite
-pour taper la valeur exacte (Entrée valide). Les curseurs en jaune « ⚠ check » sont ceux que l'auto-fit n'a fait
+pour taper la valeur exacte (Entrée valide). Une petite icône à droite de chaque point : ✓ trouvé sur le mesh, ⚠ jaune estimé par l'auto-fit,
+⚠ orange loin des proportions de la base, ✎ réglé par toi ; survole-la pour lire la raison. Les curseurs en jaune « ⚠ check » sont ceux que l'auto-fit n'a fait
 qu'estimer. Le curseur **Elbow position** place le coude. Sous le résumé, des avertissements ⚠ indiquent où tes
 proportions s'écartent de la base de 20 % ou plus (bras, épaules, jambes) et quel curseur vérifier.
 

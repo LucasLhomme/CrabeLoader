@@ -2,7 +2,7 @@
 
 Lancé par Blender en arrière-plan :
     blender --background --python blender_clean.py -- entrée sortie.glb [max_sommets]
-Formats acceptés en entrée : .glb .gltf .obj .fbx, ou un .zip qui en contient un.
+Formats acceptés en entrée : .glb .gltf .obj .fbx .dae, ou un .zip qui en contient un.
 """
 import math
 import os
@@ -14,7 +14,7 @@ import bpy
 import bmesh
 from mathutils import Matrix, Vector
 
-MODEL_EXT = (".glb", ".gltf", ".obj", ".fbx")
+MODEL_EXT = (".glb", ".gltf", ".obj", ".fbx", ".dae")
 fatal_errors = []
 
 
@@ -62,6 +62,8 @@ def import_model(path):
         bpy.ops.wm.obj_import(filepath=path)
     elif ext == ".fbx":
         bpy.ops.import_scene.fbx(filepath=path)
+    elif ext == ".dae":
+        bpy.ops.wm.collada_import(filepath=path)
     else:
         raise SystemExit(f"Format non pris en charge : {ext}")
 
