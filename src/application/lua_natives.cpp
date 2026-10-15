@@ -1093,6 +1093,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },
         { "_setPadCaptured",        &crabe::input_natives::setPadCaptured },
+        { "_setDirectInputCaptured", &crabe::input_natives::setDirectInputCaptured },
         { "_inputRemap",            &crabe::input_natives::remapSet },
         { "_inputRemapClear",       &crabe::input_natives::remapClear },
         { "_keyScanCode",           &crabe::input_natives::keyScanCode },

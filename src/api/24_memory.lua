@@ -146,6 +146,17 @@ function Input.capturePad(captured)
     if Crabe._setPadCaptured then Crabe._setPadCaptured(captured == true) end
 end
 
+-- Toggles DirectInput capture state (keyboard and mouse) for mods.
+function Input.captureDirectInput(captured)
+    if Crabe._setDirectInputCaptured then Crabe._setDirectInputCaptured(captured == true) end
+end
+
+-- Toggles all gameplay input capture (gamepad, keyboard, and mouse).
+function Input.captureAll(captured)
+    Input.capturePad(captured)
+    Input.captureDirectInput(captured)
+end
+
 Input.DEVICE = { KEYBOARD = 0, MOUSE = 1, PAD = 2 }
 
 -- Remaps physical keyboard key to another DirectInput scan code.

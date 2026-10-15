@@ -306,7 +306,7 @@ suite.cases[#suite.cases + 1] = {
         local world = newPageWorld(state)
         local Rows = load(state, "options_rows")
         Rows.init()
-        assertNotNil(world.builds.InGameSettingsMenu, "the build hook is registered")
+        assertNotNil(world.builds.SettingsMenu, "the build hook is registered on SettingsMenu")
         local selected = nil
         local menu = {
             selectedIndex = 1,
@@ -316,8 +316,8 @@ suite.cases[#suite.cases + 1] = {
             AddScreen = function(_, def) world.opened[#world.opened + 1] = def end,
             SetFocus = function() end,
         }
-        world.builds.InGameSettingsMenu(menu)
-        world.builds.InGameSettingsMenu(menu)
+        world.builds.SettingsMenu(menu)
+        world.builds.SettingsMenu(menu)
         assertEquals(#menu.listData, 5, "added once")
         assertEquals(menu.listData[3].id, "Crabe_KeyboardBindings")
         assertEquals(menu.listData[4].id, "Crabe_PadBindings")
@@ -328,6 +328,13 @@ suite.cases[#suite.cases + 1] = {
         menu:SelectItem()
         assertEquals(#world.opened, 1)
         assertEquals(world.opened[1].screenName, "SettingsExtras")
+
+        local inGameMenu = {
+            ClassName = "InGameSettingsMenu",
+            listData = { { id = "Scn_Audio_Options" } },
+        }
+        world.builds.SettingsMenu(inGameMenu)
+        assertEquals(#inGameMenu.listData, 1, "in-game pause menu is not touched")
     end,
 }
 
@@ -384,7 +391,7 @@ suite.cases[#suite.cases + 1] = {
         setfenv(chunk, state)
         chunk()
         assertEquals(world.remap.keyboard[0x12], 0x11)
-        assertNotNil(world.builds.InGameSettingsMenu)
+        assertNotNil(world.builds.SettingsMenu)
         assertEquals(world.mod.name, "Key Bindings")
         world.mod.onShutdown()
         assertNil(world.remap.keyboard[0x12], "shutdown hands the keys back")
@@ -400,7 +407,7 @@ suite.cases[#suite.cases + 1] = {
         setfenv(chunk, state)
         chunk()
         assertNil(world.mod)
-        assertNil(world.builds.InGameSettingsMenu)
+        assertNil(world.builds.SettingsMenu)
     end,
 }
 

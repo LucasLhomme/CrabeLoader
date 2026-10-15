@@ -99,6 +99,7 @@ void testStart(const fs::path& probe, const fs::path& refusingProbe, const fs::p
 /// Runs every test; the three probe paths come from CTest.
 int main(int argc, char** argv)
 {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     testMarkers();
     if (argc >= 4) {
         testStart(argv[1], argv[2], argv[3]);
