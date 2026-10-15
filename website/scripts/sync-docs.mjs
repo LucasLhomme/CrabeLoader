@@ -135,8 +135,8 @@ const PAGES = [
   },
   {
     slug: 'guides/internal-tools', src: 'docs/guides/internal_tools.md',
-    title: 'CrabeLoader tool suite', order: 21, badge: NEW,
-    description: 'Overview of QuickBMS, unluac decompilation, Cheat Engine bridge, and character pipeline CLI.',
+    title: 'Repository tools & pipeline', order: 21, badge: NEW,
+    description: 'Character pipeline CLI, gateway cryptography (di3_gateway), code generators, and header linter.',
   },
   {
     slug: 'guides/cli', src: 'docs/guides/cli.md',

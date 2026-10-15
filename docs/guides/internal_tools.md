@@ -1,44 +1,32 @@
-# CrabeLoader Tools & Reverse Engineering Utilities
+# Repository Tools & Build Utilities
 
-A comprehensive guide to the internal reverse engineering, asset extraction, decompilation, and pipeline tools bundled inside the **CrabeLoader repository** (`tools/`).
+A complete developer reference for the internal tools, code generators, asset pipeline scripts, and CI linters **tracked directly inside the CrabeLoader repository** (`tools/` and `src/cli/`).
 
 ---
 
-## 1. Tooling Inventory & Overview
+## 1. Tooling Inventory (Tracked in Repository)
 
-The `tools/` directory contains custom and community utilities for analyzing and modding *Disney Infinity 3.0: Gold Edition*:
+The CrabeLoader repository contains a suite of Python, C++, and CMake tools designed to automate character creation, figure registry cryptography, API embedding, and code quality enforcement:
 
-| Tool / Folder | Primary Language | Function & Purpose |
+| Tool Path | Language | Primary Purpose |
 | :--- | :--- | :--- |
-| `tools/character_pipeline/` | Python 3.9+ | Automated character extraction, cloning, retargeting, and HUD generation. |
-| `tools/QuickBMS/` | C / Binary | Decrypts and unpacks proprietary AES-128-CTR `.zip` game archives using `disney_infinity_new.bms`. |
-| `tools/cheatengine-mcp-bridge/` | Python 3.10+ | Live process memory bridge over Named Pipes (`\\.\pipe\CE_MCP_Bridge_v99`). |
-| `tools/unluac/` | Java | Decompiles shipped pre-compiled Lua 5.1 bytecode (`.luac`) into human-readable source code. |
-| `tools/.MTB Texture Extractor/` | Python / C# | Parses binary material descriptors (`.mtb`) and extracts referenced 64-bit texture hashes. |
-| `tools/Save Game Editor/` | Python / C# | Inspects and edits Toy Box save files and player profile progression. |
-| `tools/check_headers.py` | Python | CI linter ensuring consistent file headers and coding standards across C++ and Lua files. |
+| [`tools/character_pipeline/build_character.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/character_pipeline/build_character.py) | Python 3.9+ | End-to-end CLI to clone, retarget, and generate standalone playable character mods. |
+| [`tools/character_pipeline/make_icon.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/character_pipeline/make_icon.py) | Python 3.9+ | Converts square PNG portraits into Octane `.tbody` DDS textures and 80-byte `.mtb` descriptors. |
+| [`tools/di3_gateway/di3_gateway.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/di3_gateway/di3_gateway.py) | Python 3.8+ | Reads, decrypts, and edits encrypted AES-128-CBC figure registry (gateway) files. |
+| [`tools/embed_api.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/embed_api.py) | Python 3.8+ | Compiles `src/api/*.lua` into `include/application/embedded_api.hpp` byte arrays. |
+| [`tools/embed_api_def.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/embed_api_def.py) | Python 3.8+ | Generates EmmyLua definitions and C++ headers for IDE autocomplete and CLI validation. |
+| [`tools/generate_choreography_catalog.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/generate_choreography_catalog.py) | Python 3.8+ | Scans shipped choreography archives and generates `src/api/30_choreographies.lua`. |
+| [`tools/check_headers.py`](file:///E:/Dev/DIM2/CrabeLoader/tools/check_headers.py) | Python 3.8+ | CI linter enforcing the strict 3-line file description header format across all source files. |
+| [`tools/build_stamp.cmake`](file:///E:/Dev/DIM2/CrabeLoader/tools/build_stamp.cmake) | CMake | Injects git commit hash, build timestamp, and compiler flags into the binary. |
+| [`src/cli/` (`crabe-cli`)](file:///E:/Dev/DIM2/CrabeLoader/docs/guides/cli.md) | C++23 | The official CrabeLoader CLI tool for mod validation, scaffolding, and dependency resolution. |
 
 ---
 
-## 2. Unpacking Game Archives: QuickBMS
+## 2. Character Creation Pipeline: `build_character.py` & `make_icon.py`
 
-In retail *Disney Infinity 3.0*, game archives in `assets/` (e.g. `characters/*.zip`, `worlds/*.zip`, `textures/*.zip`) are protected by AES-128-CTR encryption.
+Located under `tools/character_pipeline/`, these tools automate the entire workflow of turning a vanilla actor into a standalone custom character mod.
 
-### Unpacking an Archive:
-```powershell
-tools/QuickBMS/quickbms.exe `
-    tools/QuickBMS/disney_infinity_new.bms `
-    "D:/SteamLibrary/.../assets/characters/emp_luke/emp_luke.zip" `
-    "extracted/emp_luke/"
-```
-This extracts the raw `.bent`, `.oct`, `.mtb`, `.vbuf`, and `.ibuf` stream files into the target folder.
-
----
-
-## 3. Automated Character Pipeline: `build_character.py`
-
-Located at `tools/character_pipeline/build_character.py`, this is the official CLI for creating standalone character clones in one command:
-
+### 2.1. Fast-Track CLI Usage
 ```powershell
 python tools/character_pipeline/build_character.py `
     --base EMP_Luke `
@@ -48,48 +36,126 @@ python tools/character_pipeline/build_character.py `
     --deploy
 ```
 
-### What It Does:
-1. **Unpacks** the base actor (`EMP_Luke`) from `assets/characters/`.
-2. **Clones & Retargets**: Rewrites names inside `.bent`, `.oct`, `.mtb`, and `.dnax` while strictly preserving binary length.
-3. **Generates HUD Icon**: Converts your PNG image into a `.tbody` DDS texture and builds the companion 80-byte `.mtb` descriptor.
-4. **Builds Manifest**: Writes a clean `mod.json` and deployment script.
+### 2.2. Pipeline Execution Steps:
+1. **Extraction**: Unpacks the base actor's model from `assets/characters/<base>/<base>.zip` and `.dnax` from `assets/characters/characters.zip`.
+2. **Binary Byte-Preserving Retargeting**:
+   * Clones `.bent`, `.oct`, `.mtb`, `.vbuf`, `.ibuf`, and `.dnax`.
+   * Strictly enforces that `--name` and `--base` have the **exact same string length** (e.g. `SOR_Sora` and `EMP_Luke` are both 8 characters) to allow direct in-place binary patching without corrupting Octane scene graph offsets.
+   * Modifies body material name so the clone receives its own unique 64-bit texture hash.
+3. **HUD Icon Generation (`make_icon.py`)**:
+   * Reads a 256×256 or 512×512 PNG image.
+   * Compresses it into DirectDraw Surface (DDS DXT5) with mipmaps.
+   * Prepends the 16-byte Octane `.tbody` header.
+   * Generates the companion 80-byte `.mtb` descriptor.
+4. **Manifest Creation**: Generates `mod.json` with the required `character` block.
+5. **Deployment**: Deploys the completed mod to `mods/<mod>/`.
 
 ---
 
-## 4. Decompiling Lua Bytecode: `unluac`
+## 3. Gateway & Figure Registry Tool: `di3_gateway.py`
 
-Many game scripts in `assets/` are shipped as compiled Lua 5.1 bytecode (`.luac` or `.dnax` files).
+The gateway is the game's **encrypted figure registry** (`assets/characters/gateway*.zip`). It maps a `sku_id` into a recognized Disney Infinity figure. Without a valid registry entry, the game refuses to play the character, displaying *"Figurine Disney Infinity manquante"*.
 
-### Decompiling Bytecode:
+Each slot is encrypted with **AES-128-CBC** (`KEY = 000102030405060708090a0b0c0d0e0f`, `IV = 0123456789012345`) and PKCS7 padding.
+
+### 3.1. Available Commands
+
 ```powershell
-java -jar tools/unluac/unluac.jar assets/scripts/gameplay.luac > gameplay_decompiled.lua
+# 1. Verify cryptography reproduces existing gateway files byte-for-byte
+python tools/di3_gateway/di3_gateway.py check --game "D:\SteamLibrary\...\Disney Infinity 3.0 Gold Edition"
+
+# 2. List all registered AVATAR slots across all installed playsets
+python tools/di3_gateway/di3_gateway.py list --game "D:\SteamLibrary\...\Disney Infinity 3.0 Gold Edition"
+
+# 3. Decrypt and dump every slot into readable text
+python tools/di3_gateway/di3_gateway.py dump --game "D:\SteamLibrary\...\Disney Infinity 3.0 Gold Edition"
+
+# 4. Find unused SKU IDs in the safe range
+python tools/di3_gateway/di3_gateway.py freesku --game "D:\SteamLibrary\...\Disney Infinity 3.0 Gold Edition"
+
+# 5. Add a new character slot by cloning an existing base slot
+python tools/di3_gateway/di3_gateway.py add --game "D:\SteamLibrary\...\Disney Infinity 3.0 Gold Edition" `
+    --sku 1000340 --name SOR_Sora --clone-from 1000201 --write
 ```
-This produces clean, readable Lua 5.1 code that you can inspect to discover internal game mechanics, state machines, and quest flows.
 
 ---
 
-## 5. Live Memory Inspection: Cheat Engine MCP Bridge
+## 4. API Code Generator: `embed_api.py` & `embed_api_def.py`
 
-Located in `tools/cheatengine-mcp-bridge/ce.py`, this tool allows AI agents and scripts to inspect and manipulate live memory in `DisneyInfinity3.exe` via Named Pipes without touching the graphical user interface.
+CrabeLoader embeds its entire Lua runtime API directly into the binary DLL/ASI so the loader has **zero external disk dependencies** at startup.
 
-### Common Commands:
+### 4.1. How `embed_api.py` Works:
+1. Iterates through all scripts in `src/api/*.lua` in alphabetical order.
+2. Strips UTF-8 Byte Order Marks (BOMs).
+3. Sanitizes file names into valid C++ variable identifiers (`00_core.lua` -> `mod_00_core_lua`).
+4. Generates `include/application/embedded_api.hpp` containing `inline constexpr unsigned char` byte arrays.
+
 ```powershell
-# Open connection to running game
-python tools/cheatengine-mcp-bridge/ce.py open_process '{"process_id_or_name":"DisneyInfinity3.exe"}'
-
-# Scan for an AOB pattern
-python tools/cheatengine-mcp-bridge/ce.py aob_scan '{"pattern":"8B 0D ?? ?? ?? ??"}'
-
-# Read memory value
-python tools/cheatengine-mcp-bridge/ce.py read_memory '{"address":"0x00A45B20", "type":"float"}'
+python tools/embed_api.py
 ```
+During compilation, CMake automatically runs `embed_api.py` whenever any file in `src/api/` is modified.
+
+### 4.2. API Definitions Generator: `embed_api_def.py`
+Generates `include/cli/embedded_api_def.hpp` and EmmyLua definition tables used by `crabe-cli` to validate mod scripts for typos and nonexistent API functions before launching the game.
 
 ---
 
-## 6. Parsing Materials & Textures: `.MTB Texture Extractor`
+## 5. Choreography Catalog Generator: `generate_choreography_catalog.py`
 
-Materials in Disney Infinity link 3D meshes to 64-bit texture hashes. The `.MTB` parser reads the binary descriptor blocks:
-1. Opens `<actor_name>.mtb`.
-2. Locates the shader binding offsets.
-3. Extracts the 16-hexadecimal character texture hashes (e.g. `a5a0000050a40001`).
-4. Allows modders to identify exactly which texture files in `mods/<mod>/textures/` correspond to the diffuse, normal, and specular maps of an object.
+In vanilla Disney Infinity 3.0, the game contains thousands of animation choreographies (emotes, victory dances, cutscenes) stored in `assets/choreographies/*.zip`.
+
+Historically, mods attempted to scan this directory at runtime using `io.popen("dir ...")`, which blocked the game thread for several seconds and caused stutter.
+
+### Solution:
+`generate_choreography_catalog.py` scans the game directory once and pre-compiles all choreography names into a single indexed string inside `src/api/30_choreographies.lua`:
+
+```powershell
+python tools/generate_choreography_catalog.py "D:\SteamLibrary\...\Disney Infinity 3.0 Gold Edition"
+```
+At runtime, `Game.ListChoreographies()` and `Game.PlayChoreography(name)` provide O(1) instantaneous access with zero disk I/O.
+
+---
+
+## 6. Header Format Linter: `check_headers.py`
+
+To maintain documentation integrity across the codebase, CrabeLoader enforces a strict 3-line description header on every source file.
+
+### Required Header Format:
+```cpp
+/*
+** CrabeLoader
+** File description:
+** <Line 1: exact responsibility of this file>
+** <Line 2: constraint or architectural mechanism the reader must know>
+** <Line 3: what this file deliberately does not do, or defers to>
+**
+** Authors: @LucasLhomme
+*/
+```
+
+### Running the Linter:
+```powershell
+# Checks all files; returns exit code 1 if any file fails
+python tools/check_headers.py
+
+# Lists every source file currently in scope
+python tools/check_headers.py --list
+```
+This script runs in GitHub Actions CI to guarantee that no un-commented or improperly formatted files are merged.
+
+---
+
+## 7. Official Command-Line Interface: `crabe-cli`
+
+Compiled from `src/cli/`, `crabe-cli` is the command-line utility for modders and automated pipelines:
+
+```powershell
+# Scaffold a new mod directory with mod.json and main.lua
+crabe-cli new my_mod --template basic
+
+# Validate mod manifest, SemVer dependencies, and directory structure
+crabe-cli validate mods/my_mod
+
+# Check Lua files for deprecated or misspelled Crabe/Game API calls
+crabe-cli check mods/my_mod/main.lua
+```
