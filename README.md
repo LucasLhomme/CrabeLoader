@@ -296,6 +296,18 @@ QuickBMS (avec le script BMS Disney Infinity) et `offsetting.exe` vont dans `src
 - Branche principale : `main`. Une modification = un commit avec un message clair.
 - Le dossier `build/`, `backups/`, `.venv/` et `src/config/settings.json` (chemins personnels) ne sont pas suivis.
 
+## Option : transfert robuste des poids
+
+Case « Robust weight transfer » dans l'onglet d'import. Creator construit le rig deux fois (poids Blender, puis poids
+copiés depuis le corps de la figure de base) et garde celui qui déforme le moins. Utile surtout pour les jupes, capes
+et manteaux longs.
+
+- Nécessite l'add-on gratuit [Robust Weight Transfer](https://github.com/sentfromspacevr/robust-weight-transfer)
+  (GPL) : télécharge-le, puis indique son dossier (celui qui contient `weighttransfer.py`) ou laisse la détection
+  automatique. Son code n'est pas inclus dans ce projet, il est chargé depuis ton dossier.
+- Nécessite aussi des paquets Python : `pip install libigl robust-laplacian scipy`.
+- Basé sur « Robust Skin Weights Transfer via Weight Inpainting » (Abdrashitov et al., SIGGRAPH Asia 2023).
+
 ## Crédits
 
 - **QuickBMS** de Luigi Auriemma et le script BMS Disney Infinity de la communauté.

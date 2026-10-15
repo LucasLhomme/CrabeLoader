@@ -255,11 +255,19 @@ def apply_piece_overrides(verts, faces, weights, names, overrides, log: Log) -> 
 
 
 def compute_weights(wverts, wfaces, anchors, blender: Path | None, work: Path, log: Log,
-                    overrides=None) -> tuple[list[str], np.ndarray, str]:
+                    overrides=None, transfer=None) -> tuple[list[str], np.ndarray, str]:
+    """`transfer`: optional callable (wverts, wfaces, names) -> weights or None (copy from the base body)."""
     names = [b[0] for b in heat_bones()]
     method = "distance"
     weights = None
-    if blender and Path(blender).is_file():
+    if transfer is not None:
+        try:
+            weights = transfer(wverts, wfaces, names)
+        except Exception as exc:  # noqa: BLE001 - optional feature: never block the import
+            log(f"  Robust transfer failed ({exc}) -> bone heat instead")
+        if weights is not None:
+            method = "robust transfer"
+    if weights is None and blender and Path(blender).is_file():
         try:
             log("Computing bone-heat weights in Blender...")
             weights = blender_heat(wverts, wfaces, anchors, Path(blender), work, log)
@@ -275,7 +283,7 @@ def compute_weights(wverts, wfaces, anchors, blender: Path | None, work: Path, l
                 weights[empty] = distance_weights(wverts, anchors)[empty]
         except (RuntimeError, OSError) as exc:
             log(f"  {exc} -> falling back to distance weights")
-    else:
+    elif weights is None:
         log("Blender not found: using distance-to-bone weights (less accurate)")
     if weights is None:
         weights = distance_weights(wverts, anchors)

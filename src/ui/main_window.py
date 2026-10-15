@@ -246,6 +246,23 @@ class MainWindow(ctk.CTk):
         ctk.CTkOptionMenu(budget_row, values=["No limit", "12000", "8000", "5000", "3000"], variable=self.budget_var,
                           width=100, height=22, font=ctk.CTkFont(size=11),
                           command=lambda v: self.settings.update(triangle_budget=v)).grid(row=0, column=1, padx=6)
+        self.transfer_var = ctk.BooleanVar(value=bool(self.settings.get("robust_transfer", False)))
+        ctk.CTkCheckBox(import_box, text="Robust weight transfer (add-on): also try copying the weights of the base "
+                                         "body, keep the best", variable=self.transfer_var, font=ctk.CTkFont(size=11),
+                        command=self._on_transfer_toggle).grid(row=3, column=0, sticky="w", pady=(4, 0))
+        transfer_row = ctk.CTkFrame(import_box, fg_color="transparent")
+        transfer_row.grid(row=4, column=0, sticky="ew", pady=(2, 0))
+        transfer_row.grid_columnconfigure(0, weight=1)
+        self.transfer_entry = ctk.CTkEntry(transfer_row, fg_color="#27272a", border_width=0, height=22,
+                                           placeholder_text="Folder of the Robust Weight Transfer add-on (auto-detected)",
+                                           font=ctk.CTkFont(size=11))
+        self.transfer_entry.insert(0, self.settings.get("robust_transfer_dir", ""))
+        self.transfer_entry.grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(transfer_row, text="…", width=28, height=22, fg_color="#27272a", hover_color="#3f3f46",
+                      command=self._browse_transfer).grid(row=0, column=1, padx=(4, 0))
+        self.transfer_status = ctk.CTkLabel(import_box, text="", text_color=GREY, font=ctk.CTkFont(size=10),
+                                            wraplength=330, justify="left")
+        self.transfer_status.grid(row=5, column=0, sticky="w")
         ctk.CTkButton(tab, text="Import Blender Rig & Tracks (.glb .gltf .json)", fg_color="#27272a",
                       hover_color="#3f3f46", text_color="#e4e4e7",
                       command=self.on_import_rig).grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -1141,6 +1158,38 @@ class MainWindow(ctk.CTk):
                          wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(row=7, column=0, sticky="w")
         self._run(job, done)
 
+    def _browse_transfer(self):
+        path = filedialog.askdirectory(title="Robust Weight Transfer add-on folder (contains weighttransfer.py)",
+                                       initialdir=self.transfer_entry.get() or None)
+        if path:
+            self.transfer_entry.delete(0, "end")
+            self.transfer_entry.insert(0, path)
+            self._on_transfer_toggle()
+
+    def _on_transfer_toggle(self):
+        from src.core.weight_transfer import availability
+
+        self.settings.update(robust_transfer=bool(self.transfer_var.get()),
+                             robust_transfer_dir=self.transfer_entry.get().strip())
+        if self.transfer_var.get():
+            ok, message = availability(self.transfer_entry.get().strip())
+            self.transfer_status.configure(text=("Robust transfer: " + message), text_color=GREY if ok else RED)
+        else:
+            self.transfer_status.configure(text="")
+
+    def _weight_transfer_dir(self):
+        """Add-on folder to use for the rig, or None when the option is off or unusable (reason logged)."""
+        if not self.transfer_var.get():
+            return None
+        from src.core.weight_transfer import availability, find_addon
+
+        configured = self.transfer_entry.get().strip()
+        ok, message = availability(configured)
+        if not ok:
+            self.log(f"Robust weight transfer skipped: {message}")
+            return None
+        return find_addon(configured)
+
     def _triangle_budget(self) -> int:
         value = getattr(self, "budget_var", None)
         text = value.get() if value is not None else "No limit"
@@ -1492,8 +1541,9 @@ class MainWindow(ctk.CTk):
         blender = normalize_blender_path(self.blender_entry.get())
         model, anchors, base = self.model, self.anchors, self.base
         overrides = list(self.piece_overrides)
+        transfer = self._weight_transfer_dir()
         self._run(lambda: build_rig(model, anchors, base, Path(blender) if blender else None,
-                                    WORK_DIR / "rig", self.log, overrides), done)
+                                    WORK_DIR / "rig", self.log, overrides, transfer), done)
 
     def on_install(self):
         if not self._ready_to_rig():

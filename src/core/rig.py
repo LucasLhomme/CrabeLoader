@@ -127,8 +127,33 @@ def vertex_tangents(verts, uvs, normals, faces):
 
 
 def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-              log: Callable[[str], None], piece_overrides=None) -> RigResult:
-    """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone."""
+              log: Callable[[str], None], piece_overrides=None, weight_transfer: Path | None = None) -> RigResult:
+    """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone.
+
+    `weight_transfer`: folder of the Robust Weight Transfer add-on. When given, the rig is built both ways (bone
+    heat and weights copied from the base body) and the one that deforms less is kept."""
+    standard = _build_rig(model, anchors, base, blender, work, log, piece_overrides, None)
+    if not weight_transfer:
+        return standard
+    from src.core.quality import deformation_report
+
+    robust_lines = lambda text: log(text) if text.strip().startswith(("Robust", "too few", "inpainting")) else None  # noqa: E731
+    try:
+        robust = _build_rig(model, anchors, base, blender, work, robust_lines, piece_overrides, weight_transfer)
+    except Exception as exc:  # noqa: BLE001 - optional feature
+        log(f"  Robust transfer unavailable ({exc}) -> standard weights")
+        return standard
+    if robust.method != "robust transfer":
+        return standard
+    a, b = deformation_report(standard), deformation_report(robust)
+    keep_robust = (b.score, -b.distortion) > (a.score, -a.distortion)
+    log(f"  Weights: standard {a.score}/100, robust transfer {b.score}/100 -> "
+        f"{'robust transfer' if keep_robust else 'standard'} kept")
+    return robust if keep_robust else standard
+
+
+def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
+               log: Callable[[str], None], piece_overrides, weight_transfer: Path | None) -> RigResult:
     positions = model.vertices()
     faces = model.faces
     uvs = model.uvs
@@ -138,7 +163,11 @@ def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender
     faces = faces[ok]
     overrides = [(positions[i], bone) for indices, bone in (piece_overrides or []) for i in indices
                  if 0 <= i < len(positions)]
-    names, weights, method = compute_weights(wverts, wfaces[ok], anchors, blender, work, log, overrides)
+    transfer = None
+    if weight_transfer:
+        from src.core import weight_transfer as wt
+        transfer = lambda v, f, n: wt.transfer(v, f, base, anchors, n, Path(weight_transfer), log)  # noqa: E731
+    names, weights, method = compute_weights(wverts, wfaces[ok], anchors, blender, work, log, overrides, transfer)
 
     log("Building the final vertex set...")
     uv_key = np.round(uvs * 65536).astype(np.int64)
