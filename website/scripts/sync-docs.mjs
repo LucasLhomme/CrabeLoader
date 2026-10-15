@@ -54,38 +54,48 @@ const PAGES = [
     description: 'Build a custom character from zero, declare it in mod.json and test it in game.',
   },
   {
-    slug: 'guides/skill-trees', src: 'docs/guides/skilltrees.md',
-    title: 'Skill trees', order: 5,
-    description: 'Override progression trees with Lua or patch their binary chunks.',
+    slug: 'guides/enemy-creation', src: 'docs/guides/enemy_creation.md',
+    title: 'Creating enemies & bosses', order: 5, badge: NEW,
+    description: 'Reskin vanilla enemy archetypes or configure custom AI, factions, stats, and Toy Box spawners.',
+  },
+  {
+    slug: 'guides/asset-replacement', src: 'docs/guides/asset_replacement.md',
+    title: 'Asset replacement', order: 6, badge: NEW,
+    description: 'Replace textures, 3D meshes, materials, HUD icons, and audio with zero-touch modding.',
   },
   {
     slug: 'guides/textures', src: 'docs/guides/vfs_textures.md',
-    title: 'Textures and the VFS', order: 6,
+    title: 'Textures and the VFS', order: 7,
     description: 'Replace game textures with loose .tbody files served by the virtual file system.',
   },
   {
+    slug: 'guides/skill-trees', src: 'docs/guides/skilltrees.md',
+    title: 'Skill trees', order: 8,
+    description: 'Override progression trees with Lua or patch their binary chunks.',
+  },
+  {
     slug: 'guides/key-bindings', src: 'docs/guides/key_bindings.md',
-    title: 'Key bindings', order: 7, badge: NEW,
+    title: 'Key bindings', order: 9, badge: NEW,
     description: 'The bundled keybinds mod: rebind keyboard, mouse and controller from Options > Controls.',
   },
   {
     slug: 'guides/portal', src: 'docs/guides/portal.md',
-    title: 'Disney Infinity base', order: 8, badge: NEW,
+    title: 'Disney Infinity base', order: 10, badge: NEW,
     description: 'Use a physical Disney Infinity base from Lua, and give every figure its own progression.',
   },
   {
     slug: 'guides/asi-plugins', src: 'docs/guides/asi_plugins.md',
-    title: 'Native .asi plugins', order: 9, badge: NEW,
+    title: 'Native .asi plugins', order: 11, badge: NEW,
     description: 'Load native 32-bit .asi plugins before the game starts, and talk to CrabeLoader from C.',
   },
   {
     slug: 'guides/cli', src: 'docs/guides/cli.md',
-    title: 'crabe-cli', order: 10,
+    title: 'crabe-cli', order: 12,
     description: 'Scaffold, validate and resolve mods, and catch Lua API typos, without launching the game.',
   },
   {
     slug: 'guides/updates-and-installer', src: 'docs/guides/updates_and_installer.md',
-    title: 'Updates and CrabeInstaller', order: 11,
+    title: 'Updates and CrabeInstaller', order: 13,
     description: 'The launch-time update check, and what CrabeInstaller installs, refuses and rolls back.',
   },
   {
