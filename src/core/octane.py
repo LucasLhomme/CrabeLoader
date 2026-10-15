@@ -21,6 +21,9 @@ from src.core.rig import RigResult
 DEGENERATE_VERTS = 3
 
 
+BODY_RENDER_CAPS = 512
+
+
 class PatchError(RuntimeError):
     pass
 
@@ -97,6 +100,13 @@ def patch_oct(base: BaseCharacter, rig: RigResult, clone: str, vbuf: bytes, ibuf
             idata.set_ints([idata.value[0], new["index_offset"], new["first_vertex"], new["index_count"]])
             v = vdata.value
             vdata.set_ints([v[0], new["vertex_count"], v[2], new["s0_offset"], v[4], v[5], new["s1_offset"], v[7]])
+            if prim == base.body_primitive:
+                # The body always uses the template's opaque body material: keep the standard render caps.
+                # A base whose body primitive carries extra bits (Iron Fist: 1536) makes the engine pick another
+                # render path (blended / extra pass), which is very expensive on the GPU.
+                caps = pnode.find("RenderCaps")
+                if caps is not None and caps.value != BODY_RENDER_CAPS:
+                    caps.set_ints(BODY_RENDER_CAPS)
 
     body = geometry[base.body_mesh_index]
     pts = rig.baked
