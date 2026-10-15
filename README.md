@@ -133,7 +133,7 @@ Clique sur **Import a 3D model** et choisis un `.obj`, `.glb`, `.gltf`, `.fbx` (
 ou un `.zip` qui le contient avec ses textures.
 
 - La case **« Clean with Blender while importing »** est cochée par défaut. Elle lance le nettoyage décrit plus haut.
-  Sans chemin Blender valide, les formats `.glb`/`.obj`/`.zip` s'importent tels quels ; `.fbx` et `.dae` demandent
+  Sans chemin Blender valide, les formats `.glb`/`.obj`/`.zip` s'importent tels quels ; `.fbx` demande
   Blender.
 - Le modèle doit être en **T-pose** (bras écartés) ; une A-pose passe aussi.
 - Creator détecte l'orientation. Sinon : **↻ 90°**, **↻ 180°**, **Stand up**.
