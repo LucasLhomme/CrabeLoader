@@ -239,6 +239,13 @@ class MainWindow(ctk.CTk):
                                          "pieces and lost textures)", variable=self.clean_var, font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(clean_on_import=bool(self.clean_var.get()))
                         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        budget_row = ctk.CTkFrame(import_box, fg_color="transparent")
+        budget_row.grid(row=2, column=0, sticky="w", pady=(2, 0))
+        ctk.CTkLabel(budget_row, text="Triangle budget (cleaning):", font=ctk.CTkFont(size=11)).grid(row=0, column=0)
+        self.budget_var = ctk.StringVar(value=str(self.settings.get("triangle_budget", "No limit")))
+        ctk.CTkOptionMenu(budget_row, values=["No limit", "12000", "8000", "5000", "3000"], variable=self.budget_var,
+                          width=100, height=22, font=ctk.CTkFont(size=11),
+                          command=lambda v: self.settings.update(triangle_budget=v)).grid(row=0, column=1, padx=6)
         ctk.CTkButton(tab, text="Import Blender Rig & Tracks (.glb .gltf .json)", fg_color="#27272a",
                       hover_color="#3f3f46", text_color="#e4e4e7",
                       command=self.on_import_rig).grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -1134,6 +1141,11 @@ class MainWindow(ctk.CTk):
                          wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(row=7, column=0, sticky="w")
         self._run(job, done)
 
+    def _triangle_budget(self) -> int:
+        value = getattr(self, "budget_var", None)
+        text = value.get() if value is not None else "No limit"
+        return int(text) if text.isdigit() else 0
+
     def on_import(self):
         if self.base is None:
             self.model_info.configure(text="Pick a base figure first (tab 0).", text_color=RED)
@@ -1162,7 +1174,7 @@ class MainWindow(ctk.CTk):
                     self.model_info.configure(text=f"Cleaning failed: {error[0]}", text_color=RED)
                     return
                 self._finish_import(str(result[0]), path, result[1])
-            self._run(lambda: clean_model(path, blender), done)
+            self._run(lambda: clean_model(path, blender, max_triangles=self._triangle_budget()), done)
             return
         self._finish_import(path, path, [])
 

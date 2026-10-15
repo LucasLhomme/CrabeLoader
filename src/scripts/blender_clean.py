@@ -35,7 +35,7 @@ def parse_args():
     args = argv[argv.index("--") + 1:] if "--" in argv else []
     if len(args) < 2:
         raise SystemExit("Usage : -- entrée sortie.glb [max_sommets]")
-    return args[0], args[1], int(args[2]) if len(args) > 2 else 65000
+    return args[0], args[1], int(args[2]) if len(args) > 2 else 65000, int(args[3]) if len(args) > 3 else 0
 
 
 def find_model(path):
@@ -198,7 +198,7 @@ def verify_export(dst, expected_textures):
 
 
 def main():
-    src, dst, max_verts = parse_args()
+    src, dst, max_verts, max_tris = parse_args()
     if os.path.isfile(dst):
         os.remove(dst)
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -284,6 +284,20 @@ def main():
         with bpy.context.temp_override(active_object=target, object=target):
             bpy.ops.object.modifier_apply(modifier=dec.name)
         log(f"Décimation : {count} -> {len(target.data.vertices)} sommets (les détails fins peuvent s'adoucir)")
+
+    # 6b. Budget de triangles (performances en jeu : un modèle trop lourd fait chuter les FPS)
+    if max_tris > 0:
+        me.calc_loop_triangles()
+        tris = len(me.loop_triangles)
+        if tris > max_tris:
+            dec = target.modifiers.new("DecimateBudget", "DECIMATE")
+            dec.ratio = max_tris / tris
+            dec.use_collapse_triangulate = True
+            with bpy.context.temp_override(active_object=target, object=target):
+                bpy.ops.object.modifier_apply(modifier=dec.name)
+            me = target.data
+            me.calc_loop_triangles()
+            log(f"Décimation (budget) : {tris} -> {len(me.loop_triangles)} triangles")
 
     # 7. Poser le modèle sur le sol, centré
     me = target.data

@@ -42,7 +42,7 @@ def is_skinned_glb(path: Path) -> bool:
         return False
 
 
-def clean_model(path: str | Path, blender: str | Path, max_vertices: int = 65000):
+def clean_model(path: str | Path, blender: str | Path, max_vertices: int = 65000, max_triangles: int = 0):
     """Return (cleaned .glb path in a temp folder, list of report lines). Raises RuntimeError with details on failure."""
     path, blender = Path(path), Path(blender)
     if not blender.is_file():
@@ -62,7 +62,7 @@ def clean_model(path: str | Path, blender: str | Path, max_vertices: int = 65000
         source = baked
     out = work / "clean.glb"
     proc = subprocess.run([str(blender), "--background", "--factory-startup", "--python-exit-code", "1",
-                           "--python", str(CLEAN_SCRIPT), "--", str(source), str(out), str(max_vertices)],
+                           "--python", str(CLEAN_SCRIPT), "--", str(source), str(out), str(max_vertices), str(max_triangles)],
                           capture_output=True, text=True, errors="replace", creationflags=flags)
     lines = (proc.stdout + "\n" + proc.stderr).splitlines()
     clean_lines = [ln[len("[clean] "):] for ln in lines if ln.startswith("[clean]")]
@@ -70,6 +70,6 @@ def clean_model(path: str | Path, blender: str | Path, max_vertices: int = 65000
         tail = [ln for ln in lines if ln.strip()][-10:]
         raise RuntimeError("Blender could not clean this model:\n" + "\n".join(clean_lines[-8:] + tail))
     ignored = ("Modèle debout", "Pose non évaluée")  # the Creator stands Z-up files up by itself
-    report += [ln for ln in clean_lines if ln.startswith(("ATTENTION", "Texture", "Aucune texture", "  autres"))
+    report += [ln for ln in clean_lines if ln.startswith(("ATTENTION", "Texture", "Aucune texture", "  autres", "Décimation"))
                and not any(word in ln for word in ignored)]
     return out, report
