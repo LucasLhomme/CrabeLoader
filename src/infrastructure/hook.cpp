@@ -17,21 +17,20 @@
 namespace crabe::infrastructure {
 
 namespace {
-    // The registry wants a name for every hook, and a few call sites have none
-    // to give yet. The address is the honest fallback: it still puts the hook in
-    // the inventory and still attributes a fault to the right owner, which is
-    // more than the previous behaviour managed.
+    // Generates a fallback hook name formatted with the target address.
     std::string fallbackName(uintptr_t target)
     {
         return std::format("hook@0x{:X}", target);
     }
 }
 
+// Destructor. Removes the hook if currently installed.
 Hook::~Hook()
 {
     remove();
 }
 
+// Installs detour redirection and registers the hook in the core registry.
 bool Hook::install(void* src, void* dst, const char* name)
 {
     if (isInstalled())
@@ -40,9 +39,6 @@ bool Hook::install(void* src, void* dst, const char* name)
     const uintptr_t target = reinterpret_cast<uintptr_t>(src);
     const std::string hookName = name != nullptr ? std::string(name) : fallbackName(target);
 
-    // The registry does the refusing now -- a null target, a null detour and a
-    // collision all come back as a named HookError, already logged with both
-    // owners' names where that applies.
     auto installed = coreRegistry().install(kCoreOwner, hookName, target, dst, &_trampoline);
     if (!installed) {
         _trampoline = nullptr;
@@ -53,6 +49,7 @@ bool Hook::install(void* src, void* dst, const char* name)
     return true;
 }
 
+// Removes the hook from the registry and resets internal state.
 void Hook::remove()
 {
     if (!_handle.valid())
@@ -63,6 +60,7 @@ void Hook::remove()
     _trampoline = nullptr;
 }
 
+// Resolves address and logs installation status with owner attribution.
 bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const char* name)
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -72,8 +70,6 @@ bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const 
         return false;
     }
 
-    // "<component>::<function>", so the registry's inventory and a crash report
-    // read the same way the log line always has.
     const std::string registryName = std::format("{}::{}", owner, name);
     if (!install(reinterpret_cast<void*>(addr), detour, registryName.c_str())) {
         logger.error("{}: failed to hook {} at 0x{:X}.", owner, name, addr);
@@ -83,11 +79,13 @@ bool Hook::installLogged(uintptr_t addr, void* detour, const char* owner, const 
     return true;
 }
 
+// Checks whether the hook handle is valid.
 bool Hook::isInstalled() const
 {
     return _handle.valid();
 }
 
+// Returns the original function trampoline pointer.
 void* Hook::getOriginal() const
 {
     return _trampoline;

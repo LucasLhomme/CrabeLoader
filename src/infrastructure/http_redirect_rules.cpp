@@ -22,7 +22,7 @@ constexpr std::string_view kHttp = "http://";
 constexpr std::string_view kHttps = "https://";
 constexpr std::size_t kMaxHostLength = 253;
 
-// True for a non-empty ASCII host name made of letters, digits, '.' and '-'.
+// Validates whether the given string is a valid non-empty ASCII host name.
 bool isValidHost(std::string_view host)
 {
     if (host.empty() || host.size() > kMaxHostLength)
@@ -32,7 +32,7 @@ bool isValidHost(std::string_view host)
     });
 }
 
-// Lower-cases an ASCII string while widening it; callers have validated it first.
+// Converts an ASCII string to lowercase wide characters.
 std::wstring widenLower(std::string_view text)
 {
     std::wstring out;
@@ -42,7 +42,7 @@ std::wstring widenLower(std::string_view text)
     return out;
 }
 
-// Lower-cases a wide server name for lookup.
+// Converts a wide string to lowercase.
 std::wstring lowerWide(std::wstring_view text)
 {
     std::wstring out(text);
@@ -54,6 +54,7 @@ std::wstring lowerWide(std::wstring_view text)
 
 } // namespace
 
+// Parses a URL string into an HttpRedirectTarget or returns an error description.
 std::expected<HttpRedirectTarget, std::string> parseHttpRedirectTarget(std::string_view url)
 {
     HttpRedirectTarget target;
@@ -94,6 +95,7 @@ std::expected<HttpRedirectTarget, std::string> parseHttpRedirectTarget(std::stri
     return target;
 }
 
+// Narrows a wide string to ASCII for logging, replacing invalid characters with '?'.
 std::string narrowForLog(std::wstring_view text)
 {
     std::string out;
@@ -103,6 +105,7 @@ std::string narrowForLog(std::wstring_view text)
     return out;
 }
 
+// Adds a redirect rule mapping host to target URL.
 std::expected<void, std::string> HttpRedirectRules::add(std::string_view host, std::string_view url)
 {
     if (!isValidHost(host))
@@ -114,6 +117,7 @@ std::expected<void, std::string> HttpRedirectRules::add(std::string_view host, s
     return {};
 }
 
+// Finds a redirect target matching host case-insensitively.
 std::optional<HttpRedirectTarget> HttpRedirectRules::find(std::wstring_view host) const
 {
     if (host.empty())

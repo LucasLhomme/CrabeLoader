@@ -8,17 +8,6 @@
 ** Authors: @LucasLhomme
 */
 
-// The impure half of domain/game_profile.hpp.
-//
-// Everything here needs the live process: a module handle, and the header bytes
-// the loader mapped. It is kept out of src/domain/ so that windows.h never
-// reaches the matching logic -- see the compile-time guards at the foot of
-// src/domain/game_profile.cpp, which would fail the build if it did.
-//
-// What this file must not do is decide anything. It reads three numbers and
-// hands them to matchProfile(); every rule about which build those numbers mean
-// lives in the pure half, where a test can reach it.
-
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -32,15 +21,9 @@
 
 namespace {
 
-    // How much of the mapped image to hand the parser.
-    //
-    // The headers sit in their own region, usually one page, and
-    // crabe::memory::isReadable insists on a single region -- so the sizes are
-    // tried largest first and the first readable one wins. 0x40 is the DOS
-    // header alone: readPeIdentity will reject it, which is the honest answer
-    // for an image whose headers are not mapped readable.
     constexpr std::size_t kHeaderProbeSizes[] = { 0x2000, 0x1000, 0x400, 0x40 };
 
+    // Probes mapped headers using predefined sizes and returns a valid readable span.
     std::span<const unsigned char> mappedHeaders(uintptr_t base)
     {
         for (std::size_t size : kHeaderProbeSizes) {
@@ -50,15 +33,12 @@ namespace {
         return {};
     }
 
-    // Detected once. The main module's headers cannot change under us, so a
-    // second answer could only differ by being wrong, and both the Lua symbol
-    // resolver and MemoryPatcher ask independently -- MemoryPatcher as early as
-    // DLL_PROCESS_ATTACH, before the Loader thread exists.
     struct Detection {
         crabe::domain::PeIdentity identity{};
         std::optional<crabe::domain::GameProfile> profile{};
     };
 
+    // Resolves and caches the detected PE identity and matching GameProfile.
     const Detection& detection()
     {
         static std::once_flag once;
@@ -104,16 +84,19 @@ namespace {
 
 namespace crabe::domain {
 
+    // Reads main module PE header and matches it against known game profiles.
     std::optional<GameProfile> detectRunningGame()
     {
         return detection().profile;
     }
 
+    // Returns the PE identity of the running game image.
     PeIdentity runningGameIdentity()
     {
         return detection().identity;
     }
 
+    // Returns the active GameProfile for the running executable, or nullptr if unmatched.
     const GameProfile* activeProfile()
     {
         const Detection& state = detection();

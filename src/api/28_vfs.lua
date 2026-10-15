@@ -9,6 +9,7 @@
 Crabe = Crabe or {}
 Crabe.Vfs = {}
 
+-- Returns total number of registered VFS file overrides.
 function Crabe.Vfs.count()
     if Crabe._vfsGetOverrideCount then
         return Crabe._vfsGetOverrideCount()
@@ -16,6 +17,7 @@ function Crabe.Vfs.count()
     return 0
 end
 
+-- Resolves virtual asset path to physical file path, or nil.
 function Crabe.Vfs.resolve(path)
     if type(path) ~= "string" or path == "" then
         return nil
@@ -26,10 +28,7 @@ function Crabe.Vfs.resolve(path)
     return nil
 end
 
--- Every override whose virtual path starts with `prefix` (all of them when
--- absent), as { path = "characters/tcw_enemies/x.zip", mod = "<mod folder>" }.
--- Paths are normalized: lowercase, forward slashes. Empty on a loader that
--- predates the native.
+-- Returns list of active VFS overrides optionally filtered by prefix.
 function Crabe.Vfs.list(prefix)
     local rows = {}
     if not Crabe._vfsList then
@@ -42,6 +41,7 @@ function Crabe.Vfs.list(prefix)
     return rows
 end
 
+-- Returns table containing VFS resolution and cache hit statistics.
 function Crabe.Vfs.stats()
     if Crabe._vfsGetStats then
         local overrides, resolutions, hits = Crabe._vfsGetStats()
@@ -54,6 +54,7 @@ function Crabe.Vfs.stats()
     return { totalOverrides = 0, totalResolutions = 0, totalHits = 0 }
 end
 
+-- Returns the most recently redirected file path string.
 function Crabe.Vfs.lastRedirected()
     if Crabe._vfsLastRedirected then
         return Crabe._vfsLastRedirected()

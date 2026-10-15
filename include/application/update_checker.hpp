@@ -29,10 +29,12 @@ namespace crabe::application {
         PageFailed,
     };
 
+    // Returns a human-readable string describing the update outcome.
     [[nodiscard]] std::string_view describe(UpdateOutcome outcome) noexcept;
 
     class UpdateChecker final {
     public:
+        // Constructs an update checker with required domain ports.
         UpdateChecker(domain::IReleaseSource& source,
                       domain::IUpdatePrompt& prompt,
                       domain::IUrlOpener& opener,

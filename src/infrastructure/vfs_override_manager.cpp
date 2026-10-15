@@ -19,12 +19,14 @@
 
 namespace crabe::infrastructure {
 
+// Returns the singleton instance of VfsOverrideManager.
 VfsOverrideManager& VfsOverrideManager::get() noexcept
 {
     static VfsOverrideManager instance;
     return instance;
 }
 
+// Normalizes a path into a canonical virtual asset key.
 std::string VfsOverrideManager::normalizeVirtualPath(std::string_view path) noexcept
 {
     if (path.empty())
@@ -54,8 +56,6 @@ std::string VfsOverrideManager::normalizeVirtualPath(std::string_view path) noex
     } else if (normalized.starts_with("assets/")) {
         normalized = normalized.substr(7);
     } else if (normalized.size() >= 2 && normalized[1] == ':') {
-        // A mod's own files (entry scripts, modules) are opened by absolute path:
-        // reduced to a basename, mods/a/main.lua would resolve to mods/b/main.lua.
         if (normalized.find("/mods/") != std::string::npos)
             return {};
         size_t lastSlash = normalized.rfind('/');
@@ -89,6 +89,7 @@ std::string VfsOverrideManager::normalizeVirtualPath(std::string_view path) noex
     return deduplicated;
 }
 
+// Initializes the VFS override manager with the root directory of the game.
 void VfsOverrideManager::initialize(const std::filesystem::path& gameRoot)
 {
     std::unique_lock<std::shared_mutex> lock(_mutex);
@@ -99,6 +100,7 @@ void VfsOverrideManager::initialize(const std::filesystem::path& gameRoot)
     scanModsDirectory(modsFolder);
 }
 
+// Scans the mods directory recursively to index asset overrides.
 void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFolder)
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -169,11 +171,6 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
 
             registerKey(virtualKey);
 
-            // Special support for loose .tbody textures:
-            // Octane engine textures may be referenced as:
-            //   textures/<2hex>/<hash>.tbody
-            //   textures/<hash>.tbody
-            //   <hash>.tbody
             if (fileEntry.path().extension() == ".tbody") {
                 const std::string filename = fileEntry.path().filename().string();
                 const std::string lowerFilename = normalizeVirtualPath(filename);
@@ -204,6 +201,7 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
                 _overrides.size(), modDirs.size());
 }
 
+// Manually registers a virtual asset override mapping.
 bool VfsOverrideManager::registerOverride(std::string_view virtualPath,
                                          const std::filesystem::path& physicalPath,
                                          std::string_view originMod)
@@ -224,6 +222,7 @@ bool VfsOverrideManager::registerOverride(std::string_view virtualPath,
     return true;
 }
 
+// Resolves a requested asset path to an overridden physical file path.
 bool VfsOverrideManager::resolve(std::string_view requestedPath,
                                  std::filesystem::path& outPhysicalPath) const noexcept
 {
@@ -269,7 +268,6 @@ bool VfsOverrideManager::resolve(std::string_view requestedPath,
         return updateCache(true);
     }
 
-    // Fallback resolution for loose .tbody textures
     if (key.ends_with(".tbody")) {
         const size_t lastSlash = key.rfind('/');
         const std::string filename = (lastSlash != std::string::npos) ? key.substr(lastSlash + 1) : key;
@@ -301,6 +299,7 @@ bool VfsOverrideManager::resolve(std::string_view requestedPath,
     return updateCache(false);
 }
 
+// Resolves a requested asset path and returns an optional path if found.
 std::optional<std::filesystem::path> VfsOverrideManager::resolve(
     std::string_view requestedPath) const noexcept
 {
@@ -310,6 +309,7 @@ std::optional<std::filesystem::path> VfsOverrideManager::resolve(
     return std::nullopt;
 }
 
+// Reads the full binary content of an overridden asset file into memory.
 std::optional<std::vector<std::uint8_t>> VfsOverrideManager::readOverrideBytes(
     std::string_view requestedPath) const noexcept
 {
@@ -338,12 +338,14 @@ std::optional<std::vector<std::uint8_t>> VfsOverrideManager::readOverrideBytes(
     }
 }
 
+// Returns the total number of currently registered asset overrides.
 std::size_t VfsOverrideManager::getOverrideCount() const noexcept
 {
     std::shared_lock<std::shared_mutex> lock(_mutex);
     return _overrides.size();
 }
 
+// Returns runtime performance and lookup statistics for the VFS.
 VfsOverrideManager::VfsStats VfsOverrideManager::getStats() const noexcept
 {
     std::shared_lock<std::shared_mutex> lock(_mutex);
@@ -354,6 +356,7 @@ VfsOverrideManager::VfsStats VfsOverrideManager::getStats() const noexcept
     };
 }
 
+// Returns a snapshot of all active override entries.
 std::vector<std::pair<std::string, VfsOverrideManager::OverrideEntry>>
 VfsOverrideManager::getActiveOverrides() const
 {
@@ -367,12 +370,14 @@ VfsOverrideManager::getActiveOverrides() const
     return entries;
 }
 
+// Returns the canonical virtual path of the most recently redirected file.
 std::string VfsOverrideManager::getLastRedirectedFile() const
 {
     std::lock_guard<std::mutex> lock(_lastRedirectedMutex);
     return _lastRedirected;
 }
 
+// Clears all registered overrides and resets lookup statistics.
 void VfsOverrideManager::clear() noexcept
 {
     std::unique_lock<std::shared_mutex> lock(_mutex);

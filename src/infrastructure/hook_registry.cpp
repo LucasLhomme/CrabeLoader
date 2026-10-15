@@ -8,24 +8,6 @@
 ** Authors: @LucasLhomme
 */
 
-// The ownership half of infrastructure/hook_registry.hpp.
-//
-// Read the header first: it holds the collision policy and the reason the
-// patching engine is behind an interface. What follows is the bookkeeping, and
-// there is deliberately nothing else in here -- no MinHook, no page protection,
-// no trampolines. The guard bank at the foot of this file is what keeps that
-// true build after build rather than by good intentions.
-//
-// Two invariants hold the whole file together:
-//
-//  * _hooks is in installation order and stays that way. removeAllOwnedBy()
-//    walks it backwards, and hooks() hands it out as-is, so anything that
-//    reordered it would silently change what "reverse installation order"
-//    means.
-//  * no two live entries' [target, target + stolenBytes) ranges overlap. That
-//    is what install() refuses to break, and it is what lets findCovering()
-//    stop at the first match.
-
 #include "infrastructure/hook_registry.hpp"
 
 #include <algorithm>
@@ -40,22 +22,6 @@ namespace crabe::infrastructure {
 
         constexpr std::size_t kNoMirrorSlot = static_cast<std::size_t>(-1);
 
-        // ------------------------------------------------------------------
-        // The crash-attribution mirror.
-        //
-        // File scope, so it lives in .bss and is fully constructed before any
-        // hook can be installed: an exception handler must never race a lazy
-        // initialiser. Written only by a registry constructed with
-        // Attribution::PublishToCrashHandler.
-        //
-        // `live` is the publication gate. A writer clears it (release) before
-        // touching the text, and sets it (release) once target, stolenBytes,
-        // owner and name are all in place, so a reader that sees live == true
-        // sees a slot that was complete at some point. A reader that catches a
-        // slot mid-rewrite gets a mix of two names -- bounded, NUL-terminated,
-        // and stated in the header as the accepted cost of not taking a lock
-        // inside a crashing process.
-        // ------------------------------------------------------------------
         struct MirrorSlot {
             std::atomic<bool> live{false};
             std::atomic<std::uintptr_t> target{0};
@@ -66,8 +32,7 @@ namespace crabe::infrastructure {
 
         MirrorSlot g_mirror[kMaxAttributedHooks];
 
-        // Truncating NUL-terminated copy. The report would rather show a
-        // clipped mod id than nothing at all.
+        // Performs a truncating null-terminated string copy into the destination buffer.
         void copyFixed(char* destination, std::size_t capacity, std::string_view text) noexcept
         {
             if (capacity == 0)
@@ -78,9 +43,7 @@ namespace crabe::infrastructure {
             destination[count] = '\0';
         }
 
-        // Whether [aStart, aStart + aSize) and [bStart, bStart + bSize) share a
-        // byte. Sizes are always >= kMinimumStolenBytes, so neither range is
-        // empty and the naive comparison is correct.
+        // Checks whether two memory address ranges overlap.
         constexpr bool rangesOverlap(std::uintptr_t aStart, std::size_t aSize,
                                      std::uintptr_t bStart, std::size_t bSize) noexcept
         {
@@ -89,6 +52,7 @@ namespace crabe::infrastructure {
 
     } // namespace
 
+    // Returns a description string for the given hook error.
     const char* describe(HookError error) noexcept
     {
         switch (error) {
@@ -104,15 +68,13 @@ namespace crabe::infrastructure {
         return "unknown hook error";
     }
 
+    // Constructs the hook registry with the specified backend and attribution mode.
     HookRegistry::HookRegistry(IHookBackend& backend, Attribution attribution)
         : _backend(backend), _attribution(attribution)
     {
     }
 
-    // Removes what is still installed, newest first, for the same reason
-    // removeAllOwnedBy() does. A registry going away with live detours pointing
-    // at it would leave the process running patched code whose owner no longer
-    // exists.
+    // Destructor. Removes all remaining hooks in reverse installation order.
     HookRegistry::~HookRegistry()
     {
         const std::lock_guard<std::mutex> lock(_mutex);
@@ -120,15 +82,13 @@ namespace crabe::infrastructure {
             unpatchAndForgetLocked(_hooks.size() - 1);
     }
 
+    // Installs and registers a hook, rejecting collisions with existing hooks.
     std::expected<HookHandle, HookError>
     HookRegistry::install(OwnerId owner, std::string_view name, std::uintptr_t target, void* detour,
                           void** original)
     {
         crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
-        // An address of 0 means "not resolved" everywhere in this loader, and
-        // patching it would overwrite whatever is mapped low and take the
-        // process down on the next call. Refused, not warned about.
         if (target == 0) {
             logger.error("HookRegistry: '{}' refused for owner '{}': {}.",
                          name, owner, describe(HookError::TargetUnreadable));
@@ -142,13 +102,8 @@ namespace crabe::infrastructure {
 
         const std::lock_guard<std::mutex> lock(_mutex);
 
-        // Idempotency first, before the overlap scan: a re-install of the exact
-        // same hook is not a collision with itself.
         for (const Entry& entry : _hooks) {
             if (entry.target == target && entry.owner == owner && entry.detour == detour) {
-                // The trampoline the first install produced, kept for exactly
-                // this: a caller that asks twice must not be handed a null it
-                // would then call through.
                 if (original != nullptr)
                     *original = entry.trampoline;
                 logger.debug("HookRegistry: '{}' at 0x{:X} is already installed for owner '{}'; "
@@ -158,8 +113,6 @@ namespace crabe::infrastructure {
             }
         }
 
-        // Measured before the patch, because afterwards these bytes are our own
-        // jmp and the answer would always be 5.
         std::size_t stolenBytes = _backend.measureStolenBytes(target);
         if (stolenBytes == 0) {
             stolenBytes = kMinimumStolenBytes;
@@ -175,9 +128,6 @@ namespace crabe::infrastructure {
 
             _collisions.push_back(HookCollision{target, entry.owner, owner});
 
-            // Loud on purpose. This is the failure the whole file exists to
-            // stop being silent, and the user has to be told both names to
-            // pick between them.
             logger.error("HookRegistry: '{}' (owner '{}') refused at 0x{:X}: bytes 0x{:X}..0x{:X} "
                          "are already covered by '{}' (owner '{}').",
                          name, owner, target,
@@ -212,14 +162,13 @@ namespace crabe::infrastructure {
         return stored.handle;
     }
 
+    // Removes all hooks belonging to the specified owner in reverse order.
     std::size_t HookRegistry::removeAllOwnedBy(const OwnerId& owner)
     {
         const std::lock_guard<std::mutex> lock(_mutex);
 
         std::size_t removed = 0;
 
-        // Backwards, so the newest hook goes first and so erasing an element
-        // cannot move one this loop has yet to look at.
         for (std::size_t i = _hooks.size(); i-- > 0;) {
             if (_hooks[i].owner != owner)
                 continue;
@@ -234,6 +183,7 @@ namespace crabe::infrastructure {
         return removed;
     }
 
+    // Removes the hook identified by handle.
     bool HookRegistry::remove(HookHandle handle)
     {
         if (!handle.valid())
@@ -250,6 +200,7 @@ namespace crabe::infrastructure {
         return true;
     }
 
+    // Finds the hook covering the given address, if any.
     std::optional<HookInfo> HookRegistry::findCovering(std::uintptr_t address) const
     {
         const std::lock_guard<std::mutex> lock(_mutex);
@@ -262,18 +213,21 @@ namespace crabe::infrastructure {
         return std::nullopt;
     }
 
+    // Returns a span of all recorded hook collision records.
     std::span<const HookCollision> HookRegistry::collisions() const
     {
         const std::lock_guard<std::mutex> lock(_mutex);
         return std::span<const HookCollision>(_collisions);
     }
 
+    // Clears all recorded hook collision records.
     void HookRegistry::clearCollisions()
     {
         const std::lock_guard<std::mutex> lock(_mutex);
         _collisions.clear();
     }
 
+    // Returns a snapshot copy of all installed hooks.
     std::vector<HookInfo> HookRegistry::hooks() const
     {
         const std::lock_guard<std::mutex> lock(_mutex);
@@ -285,19 +239,18 @@ namespace crabe::infrastructure {
         return result;
     }
 
+    // Returns the number of currently installed hooks.
     std::size_t HookRegistry::size() const
     {
         const std::lock_guard<std::mutex> lock(_mutex);
         return _hooks.size();
     }
 
+    // Computes an FNV-1a checksum over the hook table contents.
     std::uint64_t HookRegistry::fingerprint() const
     {
         const std::lock_guard<std::mutex> lock(_mutex);
 
-        // FNV-1a over every field that describes the table's contents and
-        // order. Not a cryptographic digest and not meant to be -- it only has
-        // to change when the table does.
         std::uint64_t hash = 0xcbf29ce484222325ULL;
         const auto mix = [&hash](std::uint64_t value) noexcept {
             for (int byte = 0; byte < 8; ++byte) {
@@ -310,7 +263,7 @@ namespace crabe::infrastructure {
                 hash ^= static_cast<unsigned char>(character);
                 hash *= 0x100000001b3ULL;
             }
-            hash ^= 0xFFULL; // A separator, so {"ab",""} and {"a","b"} differ.
+            hash ^= 0xFFULL;
             hash *= 0x100000001b3ULL;
         };
 
@@ -325,19 +278,14 @@ namespace crabe::infrastructure {
         return hash;
     }
 
+    // Unpatches and removes a hook entry at the given index while holding the lock.
     void HookRegistry::unpatchAndForgetLocked(std::size_t index)
     {
         Entry& entry = _hooks[index];
 
-        // Retired from the mirror before the bytes go back, so a handler can
-        // never name a hook that is no longer installed.
         retireLocked(entry);
 
         if (!_backend.unpatch(entry.target)) {
-            // The registry forgets it regardless. A target the backend no
-            // longer knows about is not one this registry can keep claiming to
-            // own, and leaving the entry would block every future install
-            // there with a collision against a hook that is already gone.
             crabe::shared::Logger::getInstance().warning(
                 "HookRegistry: the backend did not recognise 0x{:X} ('{}', owner '{}') on removal; "
                 "dropping the record anyway.",
@@ -347,21 +295,17 @@ namespace crabe::infrastructure {
         _hooks.erase(_hooks.begin() + static_cast<std::ptrdiff_t>(index));
     }
 
+    // Publishes a hook entry to the crash attribution mirror if configured.
     void HookRegistry::publishLocked(Entry& entry)
     {
         if (_attribution != Attribution::PublishToCrashHandler)
             return;
 
-        // A plain scan, no compare-exchange: writers are serialised by _mutex
-        // and only one registry in a process publishes, so the only concurrent
-        // access is a reader, which `live` already orders against.
         for (std::size_t index = 0; index < kMaxAttributedHooks; ++index) {
             MirrorSlot& slot = g_mirror[index];
             if (slot.live.load(std::memory_order_relaxed))
                 continue;
 
-            // Text first, then the range, then `live` with a release store: a
-            // reader that sees the slot live sees all four fields written.
             copyFixed(slot.owner, HookAttribution::kTextCapacity, entry.owner);
             copyFixed(slot.name, HookAttribution::kTextCapacity, entry.name);
             slot.target.store(entry.target, std::memory_order_relaxed);
@@ -372,15 +316,13 @@ namespace crabe::infrastructure {
             return;
         }
 
-        // More than kMaxAttributedHooks live hooks. The registry still works;
-        // only the crash report's attribution is incomplete, and it says so
-        // rather than letting the reader assume the list is exhaustive.
         crabe::shared::Logger::getInstance().warning(
             "HookRegistry: the crash-attribution table is full at {} entries; '{}' will not be "
             "named in a crash report.",
             kMaxAttributedHooks, entry.name);
     }
 
+    // Retires a hook entry from the crash attribution mirror.
     void HookRegistry::retireLocked(const Entry& entry)
     {
         if (entry.mirrorSlot == kNoMirrorSlot)
@@ -394,6 +336,7 @@ namespace crabe::infrastructure {
         slot.name[0] = '\0';
     }
 
+    // Resolves which hook covers address using the crash attribution mirror.
     bool crashAttribution(std::uintptr_t address, HookAttribution& out) noexcept
     {
         for (const MirrorSlot& slot : g_mirror) {
@@ -414,6 +357,7 @@ namespace crabe::infrastructure {
         return false;
     }
 
+    // Copies mirrored hook attributions up to capacity into out.
     std::size_t crashAttributionTable(HookAttribution* out, std::size_t capacity) noexcept
     {
         if (out == nullptr)
@@ -435,6 +379,7 @@ namespace crabe::infrastructure {
         return written;
     }
 
+    // Clears all entries in the crash attribution mirror.
     void clearCrashAttribution() noexcept
     {
         for (MirrorSlot& slot : g_mirror) {
@@ -447,31 +392,6 @@ namespace crabe::infrastructure {
     }
 
 } // namespace crabe::infrastructure
-
-// ---------------------------------------------------------------------------
-// No hook engine reached this file, enforced by the compiler.
-//
-// T13's acceptance asks that the registry compile and its tests link without
-// MinHook, and asks for that to be mechanically true rather than asserted. This
-// is the first of two checks; the second is the crabe_hook_registry_pure target
-// in tests/CMakeLists.txt, whose link closure is this file plus the logger and
-// nothing else. If the ownership logic ever grew a dependency on the patching
-// engine, one of them would stop the build.
-//
-// MinHook.h opens with `#pragma once` and defines exactly one macro,
-// MH_ALL_HOOKS, so that macro is the only preprocessor evidence of it there is.
-// It is checked first and on its own.
-//
-// Windows is checked as well, and that needs justifying, because <windows.h> is
-// perfectly legal elsewhere in this layer. Two reasons. It is a second,
-// independent net under the first: MinHook.h includes <windows.h>
-// unconditionally, so a future MinHook that stopped defining MH_ALL_HOOKS would
-// still be caught. And it states the stronger thing that is actually true and
-// actually load-bearing -- the ownership logic needs nothing from the operating
-// system at all, which is exactly why it can be driven by FakeHookBackend. A
-// hand-rolled backend calling VirtualProtect straight from this file would slip
-// past a MinHook-only guard; it does not slip past this one.
-// ---------------------------------------------------------------------------
 
 #if defined(MH_ALL_HOOKS)
 #error "hook_registry.cpp is not backend-free: MinHook.h reached it transitively"

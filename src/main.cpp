@@ -8,7 +8,7 @@
 ** Authors: @LucasLhomme
 */
 
-#include "minhook/lib/proxy/proxy.hpp" // BINKW32 PROXY DIRECT LINKER FORWARDING
+#include "infrastructure/proxy.hpp"
 #include <windows.h>
 #include <filesystem>
 #include <mutex>
@@ -67,11 +67,7 @@ void initLogger(HMODULE hModule) {
                 asciiName(crabe::infrastructure::moduleFileName(hModule)));
 }
 
-// The half of crash reporting that must not run under the loader lock:
-// SymInitialize loads and enumerates modules, and doing that from DllMain
-// deadlocks. Running here also means the game profile is already detected, so
-// the reporter can name the build without calling back into domain from inside
-// a handler.
+// Completes crash reporter initialization outside the loader lock and binds the active game profile.
 void initCrashReporting() {
     crabe::infrastructure::CrashReporter::completeInstall();
 
@@ -148,24 +144,12 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         DisableProcessWindowsGhosting();
         initLogger(hModule);
         crabe::presentation::RenderHook::installEarlyDelayLoadHook();
-        // Before the engine's first boot read of the saved resolution, which is why it is not
-        // left to Loader::initialize on the script thread.
         crabe::infrastructure::EngineResolution::get().initialize();
 
-        // Installed before anything else runs, and before the game gets a
-        // chance to install a filter of its own. install() adds a vectored
-        // handler at priority 1 and keeps SetUnhandledExceptionFilter behind
-        // it as a secondary net; the DbgHelp half waits for the script thread
-        // (initCrashReporting above), because SymInitialize under the loader
-        // lock deadlocks.
         const std::string crashFolder = (executableDirectory() / "Crabe").string();
         crabe::infrastructure::CrashReporter::install(crashFolder.c_str());
         crabe::infrastructure::CrashReporter::pushBreadcrumb("main: DLL_PROCESS_ATTACH");
 
-        // Said once, here, and never from the handler itself: naming the folder
-        // costs a std::format and a std::string, which is exactly what a
-        // handler running inside a corrupt heap must not do. So the log carries
-        // the destination up front, and the handler writes there in silence.
         crabe::shared::Logger::getInstance().info(
             "CrabeLoader: crash reports and minidumps will be written to '{}'.", crashFolder);
 

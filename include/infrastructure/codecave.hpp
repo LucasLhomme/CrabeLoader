@@ -15,16 +15,6 @@
 #include <cstdint>
 #include <vector>
 
-// A manual x86 code cave: `body` is executed, then the bytes stolen from the
-// site, then control jumps back just past them.
-//
-// Deliberately not Hook/MinHook. MinHook's length disassembler mis-relocates
-// the SSE `movss` instructions at the game's damage and velocity sites and
-// builds a corrupt trampoline. A cave copies the stolen bytes verbatim, so
-// nothing is ever relocated -- which is exactly why these sites need one.
-//
-// Use Hook for anything that is a real function entry; use CodeCave only for
-// mid-function instruction sites.
 class CodeCave {
     public:
         CodeCave() = default;
@@ -33,32 +23,23 @@ class CodeCave {
         CodeCave(const CodeCave&) = delete;
         CodeCave& operator=(const CodeCave&) = delete;
 
-        // Steals `stolenLength` bytes at `site` (>= 5, and a whole number of
-        // instructions -- a partial one leaves garbage in the cave), allocates
-        // body + stolen + jmp-back, and patches the site with a jmp to it,
-        // NOP-padded. If stolenLength == 0, length is computed dynamically via HDE32.
+        // Installs a code cave at the given site, preserving stolen instructions.
         bool install(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength = 0);
 
-        // install() with the outcome logged as "<owner>: <name> ...". A site
-        // of 0 means "not found" and is skipped rather than patched: a wrong
-        // address overwrites live code and crashes the host process.
+        // Installs a code cave and logs the result.
         bool installLogged(uintptr_t site, const std::vector<uint8_t>& body, size_t stolenLength = 0,
                            const char* owner = nullptr, const char* name = nullptr);
 
-        // Restores the stolen bytes. The cave page itself is intentionally
-        // leaked: another thread may be executing inside it right now, and
-        // there is no way to know, so freeing it would be a race.
+        // Restores the original instructions at the patch site.
         void remove();
 
         bool isInstalled() const;
         uintptr_t caveAddress() const;
 
-        // Writes `value` little-endian at `at` in `body` -- how a static's
-        // address is patched into an assembled instruction's operand.
+        // Writes a 32-bit value in little-endian order at the specified offset.
         static void putU32(std::vector<uint8_t>& body, size_t at, uint32_t value);
 
-        // memcpy through a temporary PAGE_EXECUTE_READWRITE, then flushes the
-        // instruction cache. False if the page could not be unprotected.
+        // Writes bytes to memory under temporary write protection and flushes instruction cache.
         static bool patchBytes(uintptr_t address, const void* bytes, size_t count);
 
     private:

@@ -24,10 +24,6 @@
 
 namespace crabe::domain {
 
-    // Three outcomes, not two. A mod may legitimately be a bare directory of
-    // .lua files, so an absent mod.json is normal and must stay silent; a
-    // mod.json that exists but does not parse is a defect its author has to be
-    // told about, by file and position.
     enum class ManifestState : std::uint8_t {
         Valid,
         Absent,
@@ -35,12 +31,12 @@ namespace crabe::domain {
     };
 
     enum class ManifestError : std::uint8_t {
-        FileNotFound,               // the only non-defect: state is Absent
-        FileUnreadable,             // exists, but could not be opened or read
+        FileNotFound,
+        FileUnreadable,
         EmptyFile,
-        InvalidJson,                // the parser refused it
-        NotAnObject,                // valid JSON, but an array/string/number
-        WrongType,                  // a known key holds the wrong JSON type
+        InvalidJson,
+        NotAnObject,
+        WrongType,
         MissingRequiredField,
         InvalidId,
         InvalidVersion,
@@ -49,12 +45,9 @@ namespace crabe::domain {
         UnsupportedManifestVersion,
     };
 
+    // Returns a readable description of a manifest parsing error.
     [[nodiscard]] std::string_view describe(ManifestError error) noexcept;
 
-    // Everything needed to fix the file without a debugger: which file, where
-    // in it, and what was wrong. `line`/`column`/`byteOffset` are 1-based and
-    // all zero when the defect is not positional (a missing key has no
-    // position), in which case `jsonPointer` locates it structurally instead.
     struct ManifestDiagnostic {
         ManifestError code{ManifestError::FileNotFound};
         std::string message;
@@ -64,58 +57,37 @@ namespace crabe::domain {
         std::size_t column{0};
         std::string jsonPointer;
 
-        // An absent manifest is not a defect; every other code is.
+        // Returns true if the manifest was simply absent.
         [[nodiscard]] bool isAbsent() const noexcept
         {
             return code == ManifestError::FileNotFound;
         }
 
-        // One log-ready line: "<file>:<line>:<col>: <message>".
+        // Formats the diagnostic into a log-ready line.
         [[nodiscard]] std::string what() const;
     };
 
     struct ManifestDependency {
         std::string id;
-        std::string versionSpec; // the range exactly as written, for messages
-        VersionRange range;      // parsed; "*" when versionSpec was omitted
+        std::string versionSpec;
+        VersionRange range;
     };
 
-    // Checks an id against ^[a-z0-9]+(\.[a-z0-9-]+)+$ and, on failure, returns
-    // a clause naming the offending character and its index. Hand-written
-    // rather than a std::regex precisely so the message can be that specific.
-    // Exposed because the dependency resolver validates ids too.
+    // Validates a mod id string against reverse-DNS syntax requirements.
     [[nodiscard]] std::expected<void, std::string> validateModId(std::string_view id);
 
-    // A parsed mod.json.
-    //
-    // Two manifest versions exist. A file without "manifestVersion" is version
-    // 0 -- the shape CrabeLoader shipped before there was a schema -- and only
-    // name, version, minLoaderVersion and entry are read from it; everything
-    // else, "id" included, is ignored. Version 1 is the full schema and
-    // requires "id" and "version".
-    //
-    // Unknown keys are never fatal at either version: they are collected in
-    // ignoredKeys() so the loader can mention them at debug level. Refusing
-    // them would break every mod that carries extra metadata (the shipped
-    // mods/_template/mod.json carries "author" and "description") and would
-    // make the schema impossible to extend without a version bump.
     class ModManifest {
     public:
         ModManifest();
 
-        // Kept for the existing call sites: parses if it can, and otherwise
-        // holds the diagnostic instead of throwing. Prefer load() in new code.
+        // Parses the manifest at the given path, storing any diagnostic.
         explicit ModManifest(const std::filesystem::path& manifestPath);
 
-        // The destructor is deliberately not declared: declaring one would
-        // suppress the implicit move operations, and load() returns manifests
-        // by value inside a std::expected.
-
+        // Loads and parses a manifest file from disk.
         [[nodiscard]] static std::expected<ModManifest, ManifestDiagnostic> load(
             const std::filesystem::path& manifestPath);
 
-        // Parses in-memory text. `origin` only labels diagnostics; nothing is
-        // read from disk, which is what makes the fixtures testable.
+        // Parses manifest contents from in-memory text.
         [[nodiscard]] static std::expected<ModManifest, ManifestDiagnostic> parse(
             std::string_view text, const std::filesystem::path& origin);
 
@@ -124,17 +96,10 @@ namespace crabe::domain {
         [[nodiscard]] bool isAbsent() const noexcept;
         [[nodiscard]] bool isMalformed() const noexcept;
 
-        // Empty when state() is Valid.
+        // Returns the diagnostic if the manifest is invalid or absent.
         [[nodiscard]] const std::optional<ManifestDiagnostic>& diagnostic() const noexcept;
 
         [[nodiscard]] unsigned int getManifestVersion() const noexcept;
-
-        // Empty for every v0 manifest: `id` arrived with manifestVersion 1, and
-        // v0 is read for backward compatibility precisely so existing mods keep
-        // loading without one. A dependency resolver keyed on `id` therefore has
-        // no key for those mods, and choosing what to do about it -- synthesise
-        // one from the folder name, exclude them from resolution, or something
-        // else -- is a policy decision this class deliberately does not make.
         [[nodiscard]] const std::string& getId() const noexcept;
         [[nodiscard]] const std::string& getName() const noexcept;
         [[nodiscard]] const std::string& getVersion() const noexcept;
@@ -143,12 +108,7 @@ namespace crabe::domain {
         [[nodiscard]] const std::string& getEntry() const noexcept;
         [[nodiscard]] const std::string& getLicense() const noexcept;
         [[nodiscard]] const std::vector<std::string>& getAuthors() const noexcept;
-
-        // Set when "version" parsed as a semantic version. Always set for a
-        // valid v1 manifest, because v1 requires it; best-effort for v0, which
-        // never validated the field and whose existing mods must keep loading.
         [[nodiscard]] const std::optional<SemVer>& getSemVer() const noexcept;
-
         [[nodiscard]] const std::vector<ManifestDependency>& getDependencies() const noexcept;
         [[nodiscard]] const std::vector<ManifestDependency>& getOptionalDependencies() const noexcept;
         [[nodiscard]] const std::vector<std::string>& getLoadAfter() const noexcept;
@@ -156,12 +116,10 @@ namespace crabe::domain {
         [[nodiscard]] const std::vector<std::string>& getConflicts() const noexcept;
         [[nodiscard]] const std::vector<std::string>& getProvides() const noexcept;
 
-        // Keys the file carries that this manifest version does not define.
+        // Returns unrecognized keys present in the manifest.
         [[nodiscard]] const std::vector<std::string>& getIgnoredKeys() const noexcept;
 
-        // True when the running loader satisfies minLoaderVersion and does not
-        // exceed maxLoaderVersion. A manifest that constrains neither is
-        // compatible with everything.
+        // Returns true if the running loader satisfies version constraints.
         [[nodiscard]] bool isCompatible() const;
 
     private:

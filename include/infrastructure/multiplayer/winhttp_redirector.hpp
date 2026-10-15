@@ -48,7 +48,6 @@ namespace crabe::multiplayer::infrastructure {
         void setDirectConnectPayload(std::string_view friendName, std::string_view locationString);
         void clearDirectConnectPayload();
 
-        // Static trampoline accessors for MinHook detours
         static HINTERNET WINAPI HookedWinHttpConnect(
             HINTERNET hSession,
             LPCWSTR pswzServerName,

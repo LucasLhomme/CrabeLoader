@@ -12,8 +12,8 @@ Crabe.Scheduler = Crabe.Scheduler or {
     _currentTime = 0
 }
 
---- Yields execution of the calling coroutine fiber for a duration.
---- Must be called inside a coroutine fiber spawned by Crabe.spawn.
+-- Yields execution of the calling coroutine fiber for a duration.
+-- Must be called inside a coroutine fiber spawned by Crabe.spawn.
 function Crabe.wait(milliseconds)
     local co = coroutine.running()
     if not co then
@@ -25,8 +25,8 @@ end
 Wait = Crabe.wait
 Crabe.Wait = Crabe.wait
 
---- Spawns a coroutine fiber and schedules it for periodic resumption.
---- Executes immediately until completion or first yield.
+-- Spawns a coroutine fiber and schedules it for periodic resumption.
+-- Executes immediately until completion or first yield.
 function Crabe.spawn(fn, ...)
     if type(fn) ~= "function" then
         error("Crabe.spawn: expected a function argument", 2)
@@ -49,8 +49,8 @@ function Crabe.spawn(fn, ...)
     return co
 end
 
---- Resumes sleeping fibers whose scheduled wake timestamp has elapsed.
---- Advances internal scheduler clock by delta time in seconds.
+-- Resumes sleeping fibers whose scheduled wake timestamp has elapsed.
+-- Advances internal scheduler clock by delta time in seconds.
 function Crabe.Scheduler.update(dt)
     local dtMs = (tonumber(dt) or 0) * 1000
     Crabe.Scheduler._currentTime = Crabe.Scheduler._currentTime + dtMs
@@ -74,8 +74,7 @@ function Crabe.Scheduler.update(dt)
     end
 end
 
---- Clears all active coroutine fibers from the scheduler.
---- Resets the pending fibers list to an empty state.
+-- Clears all active coroutine fibers from the scheduler.
 function Crabe.Scheduler.clear()
     Crabe.Scheduler._fibers = {}
 end

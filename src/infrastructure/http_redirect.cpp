@@ -17,12 +17,14 @@
 
 namespace crabe::infrastructure {
 
+// Returns the singleton instance of HttpRedirect.
 HttpRedirect& HttpRedirect::get()
 {
     static HttpRedirect instance;
     return instance;
 }
 
+// Installs detours on WinHttpConnect, WinHttpOpenRequest, and WinHttpCloseHandle.
 bool HttpRedirect::initialize(HttpRedirectRules rules)
 {
     auto& logger = crabe::shared::Logger::getInstance();
@@ -59,6 +61,7 @@ bool HttpRedirect::initialize(HttpRedirectRules rules)
     return true;
 }
 
+// Removes all installed WinHTTP detours and clears redirection state.
 void HttpRedirect::uninitialize()
 {
     _connect.remove();
@@ -69,6 +72,7 @@ void HttpRedirect::uninitialize()
     _rules = HttpRedirectRules{};
 }
 
+// Detour for WinHttpConnect that swaps destination server according to rules.
 HINTERNET WINAPI HttpRedirect::hkConnect(HINTERNET session, LPCWSTR serverName, INTERNET_PORT port, DWORD reserved)
 {
     HttpRedirect& self = get();
@@ -94,6 +98,7 @@ HINTERNET WINAPI HttpRedirect::hkConnect(HINTERNET session, LPCWSTR serverName, 
     return connection;
 }
 
+// Detour for WinHttpOpenRequest that strips or adds TLS flag based on target.
 HINTERNET WINAPI HttpRedirect::hkOpenRequest(HINTERNET connection, LPCWSTR verb, LPCWSTR objectName,
                                              LPCWSTR version, LPCWSTR referrer, LPCWSTR* acceptTypes, DWORD flags)
 {
@@ -116,6 +121,7 @@ HINTERNET WINAPI HttpRedirect::hkOpenRequest(HINTERNET connection, LPCWSTR verb,
     return original(connection, verb, objectName, version, referrer, acceptTypes, flags);
 }
 
+// Detour for WinHttpCloseHandle that forgets tracked redirected connections.
 BOOL WINAPI HttpRedirect::hkCloseHandle(HINTERNET handle)
 {
     HttpRedirect& self = get();

@@ -21,7 +21,6 @@ namespace crabe::infrastructure {
 namespace {
 
     constexpr const char* kAppendSymbol = "Meridian_DynArrayAppend";
-    // 56 8B F1 8B 06 85 C0 74 06 0F B7 48 02
     constexpr const char* kAppendPattern = "56 8B F1 8B 06 85 C0 74 06 0F B7 48 02";
 
     bool matchesProfile(const crabe::domain::GameProfile* profile,
@@ -35,6 +34,7 @@ namespace {
         return address == (base + expectedRva);
     }
 
+    // Validates whether the buffer pointer and header represent readable and writable memory.
     bool isSafeBuffer(void* buf) noexcept
     {
         if (buf == nullptr)
@@ -48,11 +48,9 @@ namespace {
             const std::uint16_t cap = pHeader[0];
             const std::uint16_t count = pHeader[1];
 
-            // A valid DynArray has reasonable capacity and count <= capacity
             if (cap == 0 || cap > 32768 || count > cap)
                 return false;
 
-            // Probe start and end of buffer memory to verify readability and writability
             auto* pData = reinterpret_cast<volatile std::uint8_t*>(buf);
             const std::uint32_t totalBytes = 4 + static_cast<std::uint32_t>(cap) * sizeof(std::uint16_t);
 
@@ -135,7 +133,7 @@ std::uint32_t EngineMeridian::sanitizedCount() const noexcept
     return s_sanitizedCount.load(std::memory_order_relaxed);
 }
 
-void __fastcall EngineMeridian::hkDynArrayAppend(void* thisPtr, void* /*edxDummy*/, const std::uint16_t* pVal)
+void __fastcall EngineMeridian::hkDynArrayAppend(void* thisPtr, [[maybe_unused]] void* edxDummy, const std::uint16_t* pVal)
 {
     if (thisPtr != nullptr) {
         auto** ppBuf = reinterpret_cast<void**>(thisPtr);

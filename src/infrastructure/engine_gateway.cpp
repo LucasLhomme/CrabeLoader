@@ -72,8 +72,7 @@ namespace {
 
     thread_local bool t_ownWrite = false;
 
-    /// Absolute address of `symbol` under the active game profile.
-    /// Zero without a matched profile or when the profile does not carry the symbol.
+    // Returns absolute address of symbol under active profile, or 0 if missing.
     std::uintptr_t profileAddress(std::uintptr_t base, const char* symbol)
     {
         const crabe::domain::GameProfile* profile = crabe::domain::activeProfile();
@@ -83,14 +82,13 @@ namespace {
         return rva == crabe::domain::kUnmeasured ? 0 : base + rva;
     }
 
-    /// Whether the instruction at `site` is a relative call landing on `target`.
+    // Returns whether the instruction at site is a relative call targeting target.
     bool callsTo(std::uintptr_t site, std::uintptr_t target)
     {
         return target && crabe::memory::isReadable(site, 5) && crabe::memory::resolveCall(site) == target;
     }
 
-    /// Whether the instruction at `site` starts with `opcode` and carries `address` as its 32-bit operand.
-    /// This is how the engine names a global: `mov ecx, [g_Gateway]` is 8B 0D followed by the address.
+    // Returns whether the instruction at site starts with opcode and references address.
     bool loadsFrom(std::uintptr_t site, std::initializer_list<std::uint8_t> opcode, std::uintptr_t address)
     {
         const std::uintptr_t operand = site + opcode.size();
@@ -98,9 +96,7 @@ namespace {
             && readAt<std::uint32_t>(operand) == address;
     }
 
-    /// Checks AddTag, RemoveTag and both globals against the virtual reader's own use of them.
-    /// ChangeAvatar reads its avatar at +0x2C, loads g_Gateway, then calls RemoveTag and AddTag.
-    /// A playset trial swap reads g_VirtualReader and its +0x2C the same way.
+    // Validates AddTag, RemoveTag and globals against known call site layouts.
     bool registryHasExpectedShape(std::uintptr_t addTag, std::uintptr_t removeTag, std::uintptr_t mapUid,
                                   std::uintptr_t openSlot, std::uintptr_t gatewayPtr, std::uintptr_t virtualReaderPtr,
                                   std::uintptr_t changeAvatar, std::uintptr_t virtualReaderRead)
@@ -120,8 +116,7 @@ namespace {
             && bytesAt(virtualReaderRead + 5, { 0x8B, 0x48, kVirtualAvatarTag });
     }
 
-    /// Checks one Gateway::Write* wrapper: mov eax,[esp+8]; mov edx,[esp+4]; push eax; push edx.
-    /// It must then call MapUIDToTag, and the matching MifareMini writer once the tag is found.
+    // Validates the structure and prologue of a Gateway write wrapper.
     bool writerHasExpectedShape(std::uintptr_t writer, std::uintptr_t mapUid, std::uintptr_t tagWriter)
     {
         return writer

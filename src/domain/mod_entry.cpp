@@ -19,7 +19,7 @@ namespace crabe::domain {
 
 namespace {
 
-    // Quoted, comma-separated, for a line someone has to read.
+    // Joins string tokens with commas and single quotes for readable diagnostics.
     [[nodiscard]] std::string quoteAndJoin(const std::vector<std::string>& names)
     {
         std::string out;
@@ -35,31 +35,37 @@ namespace {
 
 } // namespace
 
+// Returns true if the plan specifies neither an entry script nor loose scripts.
 bool ModEntryPlan::runsNothing() const noexcept
 {
     return !entryScriptExists && looseScripts.empty();
 }
 
+// Returns true if the mod has content directories but no executable Lua scripts.
 bool ModEntryPlan::isContentOnly() const noexcept
 {
     return runsNothing() && !contentDirectories.empty();
 }
 
+// Returns true if the mod contains neither Lua scripts nor content directories.
 bool ModEntryPlan::isEmpty() const noexcept
 {
     return runsNothing() && contentDirectories.empty();
 }
 
+// Formats the candidate entry script names tried during resolution.
 std::string ModEntryPlan::describeTriedEntryNames() const
 {
     return quoteAndJoin(triedEntryNames);
 }
 
+// Formats the detected content directories as a comma-separated list.
 std::string ModEntryPlan::describeContentDirectories() const
 {
     return quoteAndJoin(contentDirectories);
 }
 
+// Resolves entry scripts and content directories for a discovered mod folder.
 ModEntryPlan planModEntry(const std::filesystem::path& modPath, const std::string& modName,
                           const ModManifest& manifest)
 {
@@ -67,9 +73,6 @@ ModEntryPlan planModEntry(const std::filesystem::path& modPath, const std::strin
     std::error_code ec;
 
     if (manifest.isValid() && !manifest.getEntry().empty()) {
-        // A declared entry is the author's own statement of what runs. It
-        // short-circuits the conventional names rather than falling back past
-        // them, so a typo in mod.json surfaces as that typo.
         plan.entryScript = modPath / manifest.getEntry();
         plan.triedEntryNames.push_back(manifest.getEntry() + " (declared as \"entry\" in mod.json)");
     } else {
@@ -83,14 +86,12 @@ ModEntryPlan planModEntry(const std::filesystem::path& modPath, const std::strin
         }
     }
 
-    // Recorded whether or not an entry script resolved: a mod with a main.lua
-    // *and* a characters/ folder is ordinary, and the caller may want to say so.
     for (const std::array<std::string_view, 3>* names :
          { &kCharacterDirectories, &kSkillTreeDirectories }) {
         for (const std::string_view name : *names) {
             if (std::filesystem::is_directory(modPath / name, ec)) {
                 plan.contentDirectories.emplace_back(name);
-                break; // one spelling per kind; the readers stop at the first too
+                break;
             }
         }
     }
@@ -99,10 +100,6 @@ ModEntryPlan planModEntry(const std::filesystem::path& modPath, const std::strin
     if (plan.entryScriptExists)
         return plan;
 
-    // Top level only. directory_iterator with an error_code yields nothing for
-    // a path that is not a readable directory, which is the answer wanted here
-    // -- a mod folder that cannot be read runs nothing, and says so through
-    // runsNothing() like any other empty one.
     for (const auto& entry : std::filesystem::directory_iterator(modPath, ec)) {
         if (entry.is_regular_file(ec) && entry.path().extension() == ".lua")
             plan.looseScripts.push_back(entry.path());

@@ -6,17 +6,7 @@
 --
 -- Authors: @LucasLhomme
 
--- Weapons, Lightsabers & Toolset API for Disney Infinity 3.0
---
--- Exposes direct tool and weapon equips via engine native _G.SetActiveTool.
--- Extends the previous minimal tool list to cover all Jedi/Sith master lightsabers,
--- blasters, jetpacks, and franchise-specific gadgets.
-
 Game = Game or {}
-
--- ---------------------------------------------------------------------------
--- Master Weapons & Tools Catalog
--- ---------------------------------------------------------------------------
 
 Game.WEAPON_CATALOG = {
     lightsabers = {
@@ -52,10 +42,7 @@ Game.WEAPON_CATALOG = {
     }
 }
 
--- ---------------------------------------------------------------------------
--- Tool Operations
--- ---------------------------------------------------------------------------
-
+-- Equips the specified active tool or weapon on the player.
 function Game.SetActiveTool(toolName, playerId)
     if type(toolName) ~= "string" then
         error("Game.SetActiveTool: toolName must be a string", 2)
@@ -67,10 +54,12 @@ function Game.SetActiveTool(toolName, playerId)
     return true
 end
 
+-- Unequips the currently active tool on the player.
 function Game.UnequipTool(playerId)
     return Game.SetActiveTool("", playerId)
 end
 
+-- Returns sorted list of weapon catalog category names.
 function Game.ListWeaponCategories()
     local cats = {}
     for k, _ in pairs(Game.WEAPON_CATALOG) do
@@ -80,6 +69,7 @@ function Game.ListWeaponCategories()
     return cats
 end
 
+-- Returns weapon entries for the specified catalog category.
 function Game.GetWeaponsInCategory(category)
     return Game.WEAPON_CATALOG[category] or {}
 end

@@ -18,13 +18,9 @@
 
 namespace {
 
-    // 0x4509D0 in DisneyInfinity3.exe (rva 0x000509D0 in di3-gold-steam-1.0):
-    // push ebx; push ebp; push esi; mov esi, [esp+0x18]; push edi; xor edi, edi; dec esi
     constexpr const char* kLookupPattern = "53 55 56 8B 74 24 18 57 33 FF 4E";
     constexpr const char* kLookupSymbol = "Shader_LookupCrc";
 
-    // 0x45D5C0 in DisneyInfinity3.exe (rva 0x0005D5C0 in di3-gold-steam-1.0):
-    // mov eax, [esp+4]; sub esp, 8; push ebx; xor ebx, ebx; cmp byte ptr [eax+1], bl
     constexpr const char* kParseBindingsPattern = "8B 44 24 04 83 EC 08 53 33 DB 38 58 01";
     constexpr const char* kParseBindingsSymbol = "Shader_ParseBindings";
 
@@ -214,14 +210,12 @@ void __cdecl EngineShaders::hkParseBindings(void* descriptor, void* stream, void
     }
 }
 
+// Searches the shader array for a zero-parameter fallback shader to avoid crashes.
 void* EngineShaders::findFallbackShader(const ShaderEntry* array, std::uint32_t count) noexcept
 {
     if (array == nullptr || count == 0)
         return nullptr;
 
-    // Primary search: scan sorted shader array for a zero-parameter shader (e.g. solidcolor, error).
-    // Zero-parameter shaders are guaranteed to skip the material parameter loop (0x45D5C0),
-    // preventing any buffer desynchronization or access violation.
     for (std::uint32_t i = 0; i < count; ++i) {
         const auto* sh = reinterpret_cast<const std::uint8_t*>(array[i].shader);
         if (sh != nullptr) {
@@ -233,7 +227,6 @@ void* EngineShaders::findFallbackShader(const ShaderEntry* array, std::uint32_t 
         }
     }
 
-    // Fallback to array[0].shader if none found
     return array[0].shader;
 }
 

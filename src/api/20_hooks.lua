@@ -11,21 +11,16 @@ Game._tickCallbacks = Game._tickCallbacks or {}
 Game._tickOwners = Game._tickOwners or {}
 Game._deathWatchers = Game._deathWatchers or {}
 
---- Registers a callback function to be executed on each game engine tick.
---- Callbacks receive elapsed frame delta time in seconds.
---- The subscription is owned by the calling mod and revoked on hot reload.
+-- Registers a callback executed on each game engine tick.
+-- Callbacks receive elapsed frame delta time in seconds.
+-- The subscription is owned by the calling mod and revoked on reload.
 function Game.onTick(fn)
     if type(fn) ~= "function" then
         error("Game.onTick: expected a function", 2)
     end
     local cbs = Game._tickCallbacks
     cbs[#cbs + 1] = fn
-    -- Recorded for Crabe.Quarantine.guard (T11), which needs to know whose
-    -- callback this is; captured now because by the time _runTicks calls it,
-    -- Crabe.Registry._current has moved on to whatever loaded after it.
     Game._tickOwners[fn] = Crabe.Registry._current or "core"
-    -- Remove by identity, never by the index recorded here: other callbacks
-    -- registered or revoked in between shift every index after this one.
     Crabe.Registry.track(function()
         for i = #cbs, 1, -1 do
             if cbs[i] == fn then
@@ -37,8 +32,8 @@ function Game.onTick(fn)
     end)
 end
 
---- Central tick dispatcher driven from C++ Loader::runTicks at ~60 Hz.
---- Updates mod lifecycle, coroutine scheduler, tick callbacks, and events.
+-- Central tick dispatcher driven from C++ Loader::runTicks at ~60 Hz.
+-- Updates mod lifecycle, coroutine scheduler, tick callbacks, and events.
 function Game._runTicks(dt)
     if Crabe.Mod and Crabe.Mod.dispatchUpdate then
         Crabe.Mod.dispatchUpdate(dt)
@@ -47,10 +42,6 @@ function Game._runTicks(dt)
     for i = 1, #callbacks do
         local fn = callbacks[i]
         if Crabe.Quarantine and Crabe.Quarantine.guard then
-            -- Keyed by the function's own identity, not its index: indices
-            -- shift as callbacks are added or revoked, but this one Lua
-            -- object is the same callback for as long as it stays
-            -- registered, which is exactly the granularity quarantine needs.
             local owner = Game._tickOwners[fn] or "core"
             Crabe.Quarantine.guard(owner, "onTick:" .. tostring(fn), fn, dt)
         else
@@ -66,9 +57,8 @@ function Game._runTicks(dt)
     end
 end
 
---- Registers a callback fired when a player character transitions to dead.
---- Polled per tick via Game.IsCharacterDead to detect state changes.
---- The subscription is owned by the calling mod and revoked on hot reload.
+-- Registers a callback fired when a player character transitions to dead.
+-- The subscription is owned by the calling mod and revoked on reload.
 function Game.onDeath(playerId, fn)
     if type(fn) ~= "function" then
         error("Game.onDeath: expected a function", 2)
@@ -86,11 +76,6 @@ function Game.onDeath(playerId, fn)
     end)
 end
 
--- The death pump. It registers at module-injection time, when no mod chunk is
--- running, so Crabe.Registry._current is nil and this lands under the "core"
--- owner -- which revokeAllMods() never touches. That is deliberate: if this
--- one tick callback were ever revoked, every Game.onDeath watcher would stop
--- firing after the first hot reload and nothing would report it.
 Game.onTick(function()
     for _, watcher in ipairs(Game._deathWatchers) do
         local ok, dead = pcall(Game.IsCharacterDead, watcher.playerId)

@@ -17,47 +17,54 @@
 
 namespace crabe::presentation {
 
-// A remap says "when this physical input is pressed, the game sees that one".
-// Every entry is keyed by the physical input and holds the input the game gets;
-// an entry whose target is 0 swallows the input instead. Inputs without an entry
-// pass through untouched. Keyboard inputs are DirectInput scan codes (DIK_*),
-// mouse buttons are 0-based button indices, pad buttons are XINPUT_GAMEPAD_* bits.
 class InputRemap final {
     public:
         static constexpr size_t kKeys = 256;
         static constexpr size_t kMouseButtons = 8;
         static constexpr size_t kPadBits = 16;
 
-        // Returned by the *Target lookups for an input that is swallowed.
         static constexpr int kDropped = -1;
 
+        // Returns the singleton instance of InputRemap.
         static InputRemap& get();
 
-        // Each setter returns false, and changes nothing, when an index or mask is out of range.
-        // A negative `to` swallows the input; so does a key `to` of 0 (not a scan code) and a pad `toMask` of 0.
+        // Configures a keyboard key remap target, or swallows the key if target is non-positive.
         bool setKey(uint32_t from, int to);
+
+        // Configures a mouse button remap target, or swallows the button if target is negative.
         bool setMouseButton(uint32_t from, int to);
+
+        // Configures a gamepad button mask remap target.
         bool setPadButton(uint32_t fromMask, uint32_t toMask);
 
+        // Clears all configured keyboard remaps.
         void clearKeys();
+
+        // Clears all configured mouse button remaps.
         void clearMouseButtons();
+
+        // Clears all configured gamepad button remaps.
         void clearPadButtons();
+
+        // Clears all active input remap entries.
         void clearAll();
 
-        // True when at least one entry exists; the hooks skip all work while false.
+        // Returns true if at least one remap entry is currently configured.
         bool isActive() const;
 
-        // What the game sees for a physical input: the input itself when unmapped, kDropped when swallowed.
+        // Returns the target scan code for a physical key, or kDropped if swallowed.
         int keyTarget(uint32_t from) const;
+
+        // Returns the target button index for a physical mouse button, or kDropped if swallowed.
         int mouseTarget(uint32_t from) const;
 
-        // Rewrites a DirectInput keyboard state (256 bytes, high bit = down) in place.
+        // Rewrites a DirectInput keyboard state in place according to active remaps.
         void remapKeyboardState(uint8_t* state, size_t size) const;
 
-        // Rewrites DirectInput mouse button bytes (high bit = down) in place.
+        // Rewrites DirectInput mouse button states in place according to active remaps.
         void remapMouseButtons(uint8_t* buttons, size_t count) const;
 
-        // Returns the XINPUT_GAMEPAD_* button mask the game should see.
+        // Returns the remapped XInput button bitmask for the game.
         uint16_t remapPad(uint16_t buttons) const;
 
     private:
@@ -66,12 +73,10 @@ class InputRemap final {
         InputRemap(const InputRemap&) = delete;
         InputRemap& operator=(const InputRemap&) = delete;
 
-        // 0 = no entry, 1 = swallowed, otherwise target + 2.
         std::atomic<uint16_t> _keys[kKeys] = {};
         std::atomic<uint16_t> _mouse[kMouseButtons] = {};
         std::atomic<uint16_t> _pad[kPadBits] = {};
 
-        // Entries set across the three tables; only read as a cheap "anything to do" test.
         std::atomic<uint32_t> _entries{ 0 };
 
         static bool store(std::atomic<uint16_t>& slot, uint16_t value, std::atomic<uint32_t>& entries);
@@ -80,18 +85,20 @@ class InputRemap final {
 
 } // namespace crabe::presentation
 
-// Lua C functions that edit the table. They live next to it rather than in
-// lua_natives.cpp, which is at the line cap.
 namespace crabe::input_natives {
-    // Crabe._inputRemap(device, from, to) -> boolean. device: 0 keyboard, 1 mouse button, 2 pad button.
+    // Lua binding to configure an input remap mapping.
     int __cdecl remapSet(void* L);
-    // Crabe._inputRemapClear([device]) clears one device, or everything when omitted.
+
+    // Lua binding to clear input remaps for a device or all devices.
     int __cdecl remapClear(void* L);
-    // Crabe._keyScanCode(virtualKey) -> the DirectInput scan code of a Windows virtual key, 0 when it has none.
+
+    // Lua binding to convert a Windows virtual-key code into a DirectInput scan code.
     int __cdecl keyScanCode(void* L);
-    // Crabe._mouseWheel() -> whole wheel notches the game read since the last call (positive up), 0 when none.
+
+    // Lua binding to read accumulated mouse wheel notches since previous query.
     int __cdecl mouseWheel(void* L);
-    // Crabe._keyName(scanCode) -> the key's name on the player's own keyboard layout ("Z" on AZERTY).
+
+    // Lua binding to query the localized display name for a scan code.
     int __cdecl keyName(void* L);
 }
 

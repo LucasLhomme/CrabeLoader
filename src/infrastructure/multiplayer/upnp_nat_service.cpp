@@ -93,7 +93,6 @@ namespace crabe::multiplayer {
             _status.statusMessage = "UPnP not supported or disabled on local network/router";
             logger.warning("UpnpNatService: Failed to instantiate IUPnPNAT (HRESULT: 0x{:08X})", static_cast<uint32_t>(hr));
 
-            // Still resolve public IP via STUN so player has their external address
             _status.externalIp = resolveExternalIpViaStun();
             return _status;
         }
@@ -115,7 +114,6 @@ namespace crabe::multiplayer {
         _bstr_t bstrLocalIp(_status.localIp.c_str());
         _bstr_t bstrDesc(description.data());
 
-        // Remove any stale mapping first
         (void)mappings->Remove(static_cast<long>(port), bstrProtocol);
 
         hr = mappings->Add(
@@ -144,7 +142,6 @@ namespace crabe::multiplayer {
 
         logger.info("UpnpNatService: Port {}/{} successfully forwarded.", port, protocol);
 
-        // Try to query router's external IP from mapping
         if (mapping) {
             BSTR bstrExternal = nullptr;
             if (SUCCEEDED(mapping->get_ExternalIPAddress(&bstrExternal)) && bstrExternal) {
@@ -249,7 +246,6 @@ namespace crabe::multiplayer {
             return "";
         }
 
-        // 1 second timeout
         DWORD timeoutMs = 1200;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeoutMs), sizeof(timeoutMs));
 
@@ -263,11 +259,6 @@ namespace crabe::multiplayer {
             return "";
         }
 
-        // STUN Binding Request (RFC 5389): 20 bytes
-        // 0-1: Msg Type (0x0001)
-        // 2-3: Msg Length (0x0000)
-        // 4-7: Magic Cookie (0x2112A442)
-        // 8-19: 12-byte random transaction ID
         std::array<uint8_t, 20> stunRequest{};
         stunRequest[0] = 0x00;
         stunRequest[1] = 0x01;
@@ -299,7 +290,6 @@ namespace crabe::multiplayer {
             return "";
         }
 
-        // Validate Binding Response (0x0101) and Magic Cookie
         uint16_t msgType = (response[0] << 8) | response[1];
         uint32_t cookie = (response[4] << 24) | (response[5] << 16) | (response[6] << 8) | response[7];
 
@@ -307,7 +297,6 @@ namespace crabe::multiplayer {
             return "";
         }
 
-        // Parse attributes looking for XOR-MAPPED-ADDRESS (0x0020) or MAPPED-ADDRESS (0x0001)
         size_t offset = 20;
         while (offset + 4 <= static_cast<size_t>(received)) {
             uint16_t attrType = (response[offset] << 8) | response[offset + 1];
@@ -318,9 +307,9 @@ namespace crabe::multiplayer {
                 break;
             }
 
-            if (attrType == 0x0020 && attrLen >= 8) { // XOR-MAPPED-ADDRESS
+            if (attrType == 0x0020 && attrLen >= 8) {
                 uint8_t family = response[offset + 1];
-                if (family == 0x01) { // IPv4
+                if (family == 0x01) {
                     uint32_t xorIp = (response[offset + 4] << 24) | (response[offset + 5] << 16) | (response[offset + 6] << 8) | response[offset + 7];
                     uint32_t realIp = xorIp ^ 0x2112A442;
 
@@ -332,9 +321,9 @@ namespace crabe::multiplayer {
                         return std::string(ipStr);
                     }
                 }
-            } else if (attrType == 0x0001 && attrLen >= 8) { // MAPPED-ADDRESS
+            } else if (attrType == 0x0001 && attrLen >= 8) {
                 uint8_t family = response[offset + 1];
-                if (family == 0x01) { // IPv4
+                if (family == 0x01) {
                     in_addr addr{};
                     std::memcpy(&addr.s_addr, &response[offset + 4], 4);
                     char ipStr[INET_ADDRSTRLEN] = {0};
@@ -345,7 +334,7 @@ namespace crabe::multiplayer {
                 }
             }
 
-            offset += (attrLen + 3) & ~3; // 32-bit aligned
+            offset += (attrLen + 3) & ~3;
         }
 
         return "";

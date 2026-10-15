@@ -23,7 +23,7 @@ namespace {
 
 }
 
-// Crabe._inputRemap(device, from, to) -> true when the entry was stored.
+// Lua binding for Crabe._inputRemap; registers an input remap rule.
 int __cdecl crabe::input_natives::remapSet(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -47,7 +47,7 @@ int __cdecl crabe::input_natives::remapSet(void* L)
     return 1;
 }
 
-// Crabe._inputRemapClear([device]) clears one device's entries, or all of them.
+// Lua binding for Crabe._inputRemapClear; clears remap entries for a device or all devices.
 int __cdecl crabe::input_natives::remapClear(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -63,7 +63,7 @@ int __cdecl crabe::input_natives::remapClear(void* L)
     return 0;
 }
 
-// DirectInput scan codes are the keyboard's own make codes, with 0x80 added for the extended (E0) keys.
+// Lua binding for Crabe._keyScanCode; converts a virtual key to a DirectInput scan code.
 int __cdecl crabe::input_natives::keyScanCode(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -78,6 +78,7 @@ int __cdecl crabe::input_natives::keyScanCode(void* L)
     return 1;
 }
 
+// Lua binding for Crabe._keyName; retrieves the localized name of a scan code.
 int __cdecl crabe::input_natives::keyName(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -86,7 +87,6 @@ int __cdecl crabe::input_natives::keyName(void* L)
     auto code = static_cast<LONG>(lua.argToNumber(L, 1, 0.0));
     std::string name;
     if (code > 0 && code < 256) {
-        // GetKeyNameText takes the scan code in bits 16-23 and the extended flag in bit 24.
         LONG lParam = ((code & 0x7F) << 16) | ((code & 0x80) ? (1 << 24) : 0);
         wchar_t wide[64] = {};
         int length = GetKeyNameTextW(lParam, wide, static_cast<int>(sizeof(wide) / sizeof(wide[0])));
@@ -101,6 +101,7 @@ int __cdecl crabe::input_natives::keyName(void* L)
     return 1;
 }
 
+// Lua binding for Crabe._mouseWheel; consumes and returns accumulated wheel delta.
 int __cdecl crabe::input_natives::mouseWheel(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -109,3 +110,4 @@ int __cdecl crabe::input_natives::mouseWheel(void* L)
     lua.pushNumber(L, static_cast<double>(crabe::presentation::DirectInputHook::get().takeWheelNotches()));
     return 1;
 }
+

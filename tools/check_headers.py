@@ -38,13 +38,9 @@ import pathlib
 import re
 import sys
 
-# Vendored: upstream's code, never edited here (see include/third_party/*/VENDORED.md
-# and the MinHook and Dear ImGui trees).
+# Vendored: upstream's code, never edited here (see include/third_party/README.md).
 VENDORED_DIRS = (
-    "include/imgui",
-    "include/minhook",
     "include/third_party",
-    "src/minhook",
 )
 
 # Multiplayer subsystem: its headers are not yet aligned with the format and it is

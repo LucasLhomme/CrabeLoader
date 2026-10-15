@@ -16,6 +16,7 @@
 
 namespace crabe::domain {
 
+    // Returns a human-readable description of a release parsing error.
     std::string_view describe(ReleaseParseError error) noexcept
     {
         switch (error) {
@@ -31,6 +32,7 @@ namespace crabe::domain {
         return "the release could not be read";
     }
 
+    // Parses a GitHub release JSON payload to extract version metadata.
     std::expected<ReleaseInfo, ReleaseParseError> parseLatestRelease(std::string_view body)
     {
         const nlohmann::json root = nlohmann::json::parse(body.begin(), body.end(), nullptr, false);
@@ -60,6 +62,7 @@ namespace crabe::domain {
         return info;
     }
 
+    // Determines whether a release represents an available, non-prerelease update.
     bool isUpdateAvailable(const SemVer& current, const ReleaseInfo& latest) noexcept
     {
         if (latest.draft || latest.prerelease || latest.version.isPrerelease())

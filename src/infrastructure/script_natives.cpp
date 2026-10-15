@@ -18,6 +18,7 @@
 
 namespace crabe::infrastructure::script_natives {
 
+// Locates a Script VM native handler by its registered name in memory.
 std::uintptr_t find(const char* name)
 {
     const std::size_t length = std::strlen(name);
@@ -38,6 +39,7 @@ std::uintptr_t find(const char* name)
     return 0;
 }
 
+// Checks if the bytes at the given address match the expected sequence.
 bool bytesAt(std::uintptr_t address, std::initializer_list<std::uint8_t> expected)
 {
     if (!crabe::memory::isReadable(address, expected.size()))
@@ -45,6 +47,7 @@ bool bytesAt(std::uintptr_t address, std::initializer_list<std::uint8_t> expecte
     return std::memcmp(reinterpret_cast<const void*>(address), expected.begin(), expected.size()) == 0;
 }
 
+// Validates whether the address matches the expected symbol RVA in the active profile.
 bool matchesProfile(std::uintptr_t base, const char* symbol, std::uintptr_t address)
 {
     const crabe::domain::GameProfile* profile = crabe::domain::activeProfile();

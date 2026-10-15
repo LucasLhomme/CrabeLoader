@@ -22,11 +22,6 @@ namespace {
     using crabe::infrastructure::script_natives::bytesAt;
     using crabe::infrastructure::script_natives::readAt;
 
-    // Script_KinematicStatePlaceWithPosition, measured on di3-gold-steam-1.0 (rva 0x14A23F0):
-    //   +0x60  mov ecx, [g_agentStateManager]
-    //   +0x6A  call AgentStateManager::Lookup(uint32_t* outIndex, const uint32_t* handle)
-    //   +0x8B  cmp dx, [FullKinematicStateData::s_dataType]
-    //   +0x9B  call FullKinematicStateData::Place(const Vector3*, uint32_t flags)
     constexpr const char* kPlaceNative = "KinematicStatePlaceWithPosition";
     constexpr const char* kPlaceSymbol = "Script_KinematicStatePlaceWithPosition";
     constexpr std::uintptr_t kPlaceManagerOffset = 0x60;
@@ -34,11 +29,6 @@ namespace {
     constexpr std::uintptr_t kPlaceTypeOffset = 0x8B;
     constexpr std::uintptr_t kPlaceCallOffset = 0x9B;
 
-    // Script_KinematicStateGetActualPosition (rva 0x1490200), the same lookup, then for a
-    // full kinematic state:
-    //   +0x52  test byte [state+0x51], 1     -- position stale
-    //   +0x5A  call FullKinematicStateData::<refresh>
-    //   +0x5F  lea eax, [state+0x268]         -- the actual position
     constexpr const char* kPositionNative = "KinematicStateGetActualPosition";
     constexpr const char* kPositionSymbol = "Script_KinematicStateGetActualPosition";
     constexpr std::uintptr_t kPositionManagerOffset = 0x26;
@@ -47,8 +37,6 @@ namespace {
     constexpr std::uintptr_t kPositionRefreshCallOffset = 0x5A;
     constexpr std::uintptr_t kPositionLeaOffset = 0x5F;
 
-    // Script_CameraGetPosition (rva 0xF7A4C0): `mov ecx, [g_Players]`, the virtual
-    // GetCamera(playerId, 0) at vtable +0x28, then Camera::m_Eye read at +0x3C.
     constexpr const char* kCameraNative = "CameraGetPosition";
     constexpr const char* kCameraSymbol = "Script_CameraGetPosition";
     constexpr std::uintptr_t kCameraPlayersOffset = 0x29;
@@ -93,8 +81,7 @@ void EngineKinematics::resolveOnce()
                                               camera ? "resolved" : "unavailable");
 }
 
-// The full kinematic state behind `actorHandle`, or 0. Shared by placement and
-// position, which both reach it the way the script natives do.
+// Returns the full kinematic state address for actorHandle, or 0 if missing.
 std::uintptr_t EngineKinematics::fullKinematicState(std::uint32_t actorHandle) const
 {
     void* manager = readAt<void*>(_agentStateManager);
@@ -138,8 +125,7 @@ bool EngineKinematics::resolvePlace(std::uintptr_t base)
     return true;
 }
 
-// Needs resolvePlace first: it must use the same manager and lookup, which is
-// checked rather than assumed.
+// Resolves actor position entry points and verifies consistent state manager usage.
 bool EngineKinematics::resolvePosition(std::uintptr_t base)
 {
     auto& logger = crabe::shared::Logger::getInstance();
@@ -225,7 +211,6 @@ std::optional<EngineKinematics::Position> EngineKinematics::actorPosition(std::u
             const std::uintptr_t state = fullKinematicState(actorHandle);
             if (!state)
                 return;
-            // A stale position is recomputed first, exactly as the script native does.
             if (readAt<std::uint8_t>(state + kStateStaleFlags) & 0x01)
                 reinterpret_cast<RefreshFn>(_refreshState)(reinterpret_cast<void*>(state));
             const std::uintptr_t at = state + _statePosition;
@@ -247,7 +232,6 @@ bool EngineKinematics::placeActor(std::uint32_t actorHandle, const Position& pos
             const std::uintptr_t state = fullKinematicState(actorHandle);
             if (!state)
                 return;
-            // Padded and aligned like the engine's Vector3d, in case Place loads it whole.
             alignas(16) const float padded[4] = { position[0], position[1], position[2], 0.0f };
             reinterpret_cast<PlaceFn>(_place)(reinterpret_cast<void*>(state), padded, 0);
             placed = true;

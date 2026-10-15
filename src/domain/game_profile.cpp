@@ -15,49 +15,36 @@
 
 namespace {
 
-    // -----------------------------------------------------------------------
-    // PE header field offsets, from the PE/COFF specification.
-    //
-    // Spelled out rather than taken from IMAGE_NT_HEADERS32 because reaching
-    // for that header would drag winnt.h into src/domain/ and cost the
-    // matching path its testability -- the whole point of the split. The
-    // offsets below are the same for PE32 and PE32+: the optional header's
-    // 64-bit ImageBase absorbs the 32-bit BaseOfData field, so everything from
-    // SectionAlignment onwards sits where it does in PE32.
-    // -----------------------------------------------------------------------
     constexpr std::size_t kDosMagicOffset = 0x00;
     constexpr std::size_t kLfanewOffset = 0x3C;
     constexpr std::size_t kDosHeaderSize = 0x40;
 
-    constexpr std::uint16_t kDosMagic = 0x5A4D;      // "MZ"
-    constexpr std::uint32_t kPeSignature = 0x00004550; // "PE\0\0"
+    constexpr std::uint16_t kDosMagic = 0x5A4D;
+    constexpr std::uint32_t kPeSignature = 0x00004550;
 
     constexpr std::uint16_t kOptionalMagicPe32 = 0x010B;
     constexpr std::uint16_t kOptionalMagicPe32Plus = 0x020B;
 
-    // From the start of the PE signature.
     constexpr std::size_t kFileHeaderOffset = 4;
     constexpr std::size_t kFileHeaderSize = 20;
     constexpr std::size_t kTimeDateStampOffset = kFileHeaderOffset + 4;
     constexpr std::size_t kSizeOfOptionalHeaderOffset = kFileHeaderOffset + 16;
     constexpr std::size_t kOptionalHeaderOffset = kFileHeaderOffset + kFileHeaderSize;
 
-    // From the start of the optional header.
     constexpr std::size_t kOptionalMagicOffset = 0;
     constexpr std::size_t kSizeOfImageOffset = 56;
     constexpr std::size_t kCheckSumOffset = 64;
 
-    // Everything up to and including CheckSum, which is the last field read.
     constexpr std::size_t kOptionalHeaderNeeded = kCheckSumOffset + 4;
 
+    // Checks whether the slice fits within the image bounds without wrapping.
     [[nodiscard]] bool fits(std::span<const unsigned char> image,
                             std::size_t offset, std::size_t size) noexcept
     {
-        // offset + size cannot wrap: size is a small literal at every call
-        // site, so the subtraction below is the safe form of the comparison.
         return offset <= image.size() && size <= image.size() - offset;
     }
 
+    // Reads a 16-bit little-endian unsigned integer from the image.
     [[nodiscard]] std::uint16_t readU16(std::span<const unsigned char> image,
                                         std::size_t offset) noexcept
     {
@@ -66,6 +53,7 @@ namespace {
                                              static_cast<std::uint16_t>(image[offset + 1]) << 8));
     }
 
+    // Reads a 32-bit little-endian unsigned integer from the image.
     [[nodiscard]] std::uint32_t readU32(std::span<const unsigned char> image,
                                         std::size_t offset) noexcept
     {
@@ -75,24 +63,6 @@ namespace {
              | (static_cast<std::uint32_t>(image[offset + 3]) << 24);
     }
 
-    // -----------------------------------------------------------------------
-    // di3-gold-steam-1.0 -- the build every address in this repository was
-    // measured against.
-    //
-    // These RVAs are measurements, not guesses: a human read each one off the
-    // shipped executable, and lua_symbols.cpp refuses to hook a scan result
-    // that does not land on the one stated here. They moved into this table
-    // unchanged and must keep moving unchanged -- rounding, reformatting or
-    // "tidying" one of them breaks a hook with nothing to notice it but a play
-    // session.
-    // -----------------------------------------------------------------------
-
-    // The Lua C API. Keyed on the name lua_symbols.cpp resolves; that name is
-    // also what the log prints, so a refusal names the same thing this table
-    // does. The game exports no Lua symbol, so each address is reached through
-    // the stdlib wrapper that calls it -- which wrapper, and which call inside
-    // it, stays in lua_symbols.cpp, because that is knowledge about how Lua 5.1
-    // is registered rather than about where this build put it.
     constexpr crabe::domain::SymbolRva kDi3GoldLuaSymbols[] = {
         { "luaL_loadfile",     0xF0EBF0 },
         { "luaL_loadbuffer",   0xF0EDE0 },
@@ -128,9 +98,6 @@ namespace {
         { "lua_pushboolean",   0xF0D960 },
     };
 
-    // The multiplayer byte patches. `offset` is how far into the named function
-    // the rewritten bytes sit -- zero when the patch starts at its first
-    // instruction. Keyed on the name MemoryPatcher gives each record.
     constexpr crabe::domain::PatchSite kDi3GoldPatchSites[] = {
         { "IsSignedInToDisneyId",           0x00F62550, 0x4A },
         { "IsOnline",                       0x00F5EE90, 0x249 },
@@ -142,42 +109,26 @@ namespace {
         { "OctaneAppMutex",                 0x0003F0DE },
     };
 
-    // Engine entry points behind the Lua API. ActivateFreeCamera is the
-    // __thiscall at the start of the engine's free-camera state machine; s_Scenes
-    // is the static object the game itself passes as `this` (rva 0x2A7A30).
-    // CreateFreeCameras runs on every world load, from Players::InitializeScenes (rva 0xFA7F9A).
     constexpr crabe::domain::SymbolRva kDi3GoldEngineSymbols[] = {
         { "LoopScenes::ActivateFreeCamera", 0x002A1000 },
         { "LoopScenes::CreateFreeCameras",  0x002A45C0 },
         { "BaseLoop::s_Scenes",             0x01E02940 },
-        // Script VM natives the Lua state never sees; EngineKinematics reads its entry points off them.
         { "Script_KinematicStatePlaceWithPosition", 0x014A23F0 },
         { "Script_CameraGetPosition",               0x00F7A4C0 },
         { "Script_KinematicStateGetActualPosition", 0x01490200 },
-        // EngineSky calls this one as is, with a one-argument script frame.
         { "Script_RealmManager_LoadSkyDomeInZone",  0x006934C0 },
-        // EngineActors reads CActorCreator::CreateActor and ParameterSet off this one.
         { "Script_CreateFromInitString",            0x0035A3F0 },
         { "Script_AddActorStateByName",             0x0030F9C0 },
         { "Script_RemoveActorStateByName",          0x0030FA10 },
         { "Script_TestActorStateByName",            0x0030FAD0 },
-        // EngineActors reads ActorCommands::DamageRadius and CActor::FromHandle off this one.
         { "Script_DamageRadiusExceptActor",         0x00F76330 },
-        // EngineAssetLoader hooks this one: the engine's file loader (path, &size, 4 flags) -> heap buffer.
         { "Asset_LoadFile",                         0x0001FAF0 },
-        // EngineAssetLoader allocates served buffers with this one (cdecl, size -> pointer): the engine frees them by pointer.
         { "Engine_Alloc",                           0x00006E80 },
-        // EngineMeridian hooks this one to protect node graph connectivity buffers.
         { "Meridian_DynArrayAppend",                0x002A9E90 },
-        // EngineShaders hooks this one to supply fallback shaders for missing hashes.
         { "Shader_LookupCrc",                       0x000509D0 },
-        // EngineShaders hooks this one to validate material parameter binding indices.
         { "Shader_ParseBindings",                   0x0005D5C0 },
-        // EngineResolution widens these two display-mode checks (the static nine-entry table filter,
-        // and the boot-time lookup that clamps and overwrites the saved resolution).
         { "Resolution_IsSupported",                 0x000459B0 },
         { "ResolutionList_Contains",                0x0065A010 },
-        // EngineResolution recentres full-screen Scaleform movies to 16:9 through this one.
         { "Flash_Movie_SetViewport",                0x003F3C20 },
         { "g_Gateway",                              0x01D3E278 },
         { "g_VirtualReader",                        0x01E1CEB8 },
@@ -201,28 +152,10 @@ namespace {
         { "MifareMini::WriteProgressionData",       0x00026F40 },
     };
 
-
     constexpr crabe::domain::GameProfile kKnownProfiles[] = {
         {
             .id = "di3-gold-steam-1.0",
             .displayName = "Disney Infinity 3.0: Gold Edition (PC, Win32)",
-
-            // TODO(human): fill from the shipped binary.
-            //
-            // All three are still kUnmeasured, so this profile carries no
-            // discriminant and matchProfile() never returns it: the loader
-            // runs in degraded mode on every machine until they are filled.
-            // That is deliberate -- inventing a plausible TimeDateStamp would
-            // make the loader claim it had identified a build it had not, and
-            // then apply the RVAs above to whatever is actually running.
-            //
-            // How to obtain them, from the game's DisneyInfinity3.exe:
-            //   timeDateStamp -> COFF File Header, TimeDateStamp
-            //   sizeOfImage   -> Optional Header, SizeOfImage
-            //   checkSum      -> Optional Header, CheckSum (leave at
-            //                    kUnmeasured to skip the check)
-            // Any PE viewer reports all three: `dumpbin /headers
-            // DisneyInfinity3.exe`, CFF Explorer, or PE-bear.
             .timeDateStamp = 0x5851C5D1,
             .sizeOfImage   = 0x0209B000,
             .checkSum      = 0x00000000,
@@ -237,15 +170,13 @@ namespace {
 
 namespace crabe::domain {
 
+    // Returns true if this profile carries a measured TimeDateStamp.
     bool GameProfile::hasDiscriminant() const noexcept
     {
-        // TimeDateStamp alone. SizeOfImage and CheckSum are confirmations: two
-        // builds of the same executable can share either, so neither can
-        // identify one on its own, and treating them as if they could is how a
-        // half-filled profile would start matching the wrong game.
         return timeDateStamp != kUnmeasured;
     }
 
+    // Resolves the RVA of a Lua C API function by name.
     std::uint32_t GameProfile::luaSymbolRva(std::string_view name) const noexcept
     {
         for (const SymbolRva& entry : luaSymbols) {
@@ -255,6 +186,7 @@ namespace crabe::domain {
         return kUnmeasured;
     }
 
+    // Resolves the RVA of an engine entry point by name.
     std::uint32_t GameProfile::engineSymbolRva(std::string_view name) const noexcept
     {
         for (const SymbolRva& entry : engineSymbols) {
@@ -264,6 +196,7 @@ namespace crabe::domain {
         return kUnmeasured;
     }
 
+    // Finds a patch site specification by its descriptive name.
     const PatchSite* GameProfile::patchSite(std::string_view name) const noexcept
     {
         for (const PatchSite& entry : patchSites) {
@@ -273,6 +206,7 @@ namespace crabe::domain {
         return nullptr;
     }
 
+    // Returns a readable description of a build support decision.
     std::string_view describe(LoadDecision decision) noexcept
     {
         switch (decision) {
@@ -283,6 +217,7 @@ namespace crabe::domain {
         return "unknown decision";
     }
 
+    // Determines the loader mode from profile matching and pattern scan status.
     LoadDecision decideLoad(bool profileMatched, bool allPatternScansResolved) noexcept
     {
         if (profileMatched)
@@ -290,6 +225,7 @@ namespace crabe::domain {
         return allPatternScansResolved ? LoadDecision::Degraded : LoadDecision::Refuse;
     }
 
+    // Reads PE identity fields from a memory or file image byte buffer.
     std::optional<PeIdentity> readPeIdentity(std::span<const unsigned char> image) noexcept
     {
         if (!fits(image, kDosMagicOffset, kDosHeaderSize))
@@ -325,15 +261,16 @@ namespace crabe::domain {
         return identity;
     }
 
+    // Returns the static list of built-in game profiles.
     std::span<const GameProfile> knownProfiles() noexcept
     {
         return kKnownProfiles;
     }
 
+    // Matches a PE header identity against a list of game profiles.
     std::optional<GameProfile> matchProfile(const PeIdentity& identity,
                                             std::span<const GameProfile> profiles) noexcept
     {
-        // A header that could not be read is not a wildcard.
         if (identity.timeDateStamp == kUnmeasured)
             return std::nullopt;
 
@@ -351,27 +288,13 @@ namespace crabe::domain {
         return std::nullopt;
     }
 
+    // Matches a PE header identity against known profiles.
     std::optional<GameProfile> matchProfile(const PeIdentity& identity) noexcept
     {
         return matchProfile(identity, knownProfiles());
     }
 
 } // namespace crabe::domain
-
-// ---------------------------------------------------------------------------
-// Purity, enforced by the compiler rather than by a comment.
-//
-// Same guards, and the same reasoning, as the foot of dependency_resolver.cpp:
-// they run after every include above has been expanded, so they see the whole
-// transitive graph. readPeIdentity() and matchProfile() are what make the
-// three load outcomes testable against synthetic headers, and they stop being
-// testable the moment this file can reach Win32 -- at which point the honest
-// way to read a PE header would be IMAGE_NT_HEADERS32 and the tests would need
-// a live process. So the build stops here instead.
-//
-// The impure half -- GetModuleHandle, reading the live image -- is
-// src/infrastructure/game_profile_detect.cpp, which is where windows.h belongs.
-// ---------------------------------------------------------------------------
 
 #if defined(_WINDOWS_) || defined(_INC_WINDOWS)
 #error "game_profile.cpp is not pure: windows.h reached it transitively"
@@ -388,8 +311,6 @@ namespace crabe::domain {
 #if defined(lua_h) || defined(LUA_VERSION) || defined(LUA_REGISTRYINDEX) || defined(lauxlib_h)
 #error "game_profile.cpp is not pure: a Lua header reached it transitively"
 #endif
-// MinHook.h opens with `#pragma once`, so there is no MINHOOK_H to test; the
-// one macro it defines, MH_ALL_HOOKS, is the only preprocessor evidence of it.
 #if defined(IMGUI_VERSION) || defined(MH_ALL_HOOKS)
 #error "game_profile.cpp is not pure: the renderer or the hook engine reached it"
 #endif

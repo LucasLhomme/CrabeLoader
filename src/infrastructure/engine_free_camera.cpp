@@ -20,22 +20,16 @@
 
 namespace {
 
-    // Prologue of LoopScenes::ActivateFreeCamera(int playerId, bool noNoControl),
-    // a __thiscall ending in `ret 8`. The wildcard is the camera-scene hook it calls first.
     constexpr const char* kActivatePattern =
         "83 EC 08 55 56 8B 74 24 14 57 56 8B E9 FF 15 ?? ?? ?? ?? "
         "8B F8 83 C4 04 85 FF 74 1D 80 BF B0 00 00 00 00";
 
-    // BaseLoop's own `s_Scenes.CreateFreeCameras(); s_Scenes.ActivateFreeCamera(0);`:
-    // the first call reaches CreateFreeCameras, the `mov ecx, imm32` carries s_Scenes,
-    // and the call after it must reach the prologue above.
     constexpr const char* kCallerPattern =
         "E8 ?? ?? ?? ?? 6A 00 6A 00 B9 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B CE 5E E9";
     constexpr std::uintptr_t kCallerCreateCallOffset = 0;
     constexpr std::uintptr_t kCallerScenesImmOffset = 10;
     constexpr std::uintptr_t kCallerCallOffset = 14;
 
-    // CreateFreeCameras opens with `push esi; mov esi, [CameraScene::s_Head]`.
     constexpr std::uint8_t kCreatePrologue[] = { 0x56, 0x8B, 0x35 };
 
     constexpr const char* kActivateSymbol = "LoopScenes::ActivateFreeCamera";
@@ -46,12 +40,8 @@ namespace {
     using CreateFreeCamerasFn = void(__fastcall*)(void* scenes, void* edx);
     using GetCameraSceneFn = void*(__cdecl*)(int playerId);
 
-    // Inside ActivateFreeCamera, measured on di3-gold-steam-1.0: the `call [imm32]`
-    // reaching the camera-scene hook.
     constexpr std::uintptr_t kSceneHookSlotOffset = 0x0F;
 
-    // Engine object layout, read off the same function and its callees.
-    // DeleteFreeCameras ends in `mov dword ptr [ebx+0x54], 0` (rva 0x29FF3F).
     constexpr std::uintptr_t kScenesPropertySetId = 0x54;
     constexpr std::uintptr_t kSceneCurrentCamera = 0x1A8;
     constexpr std::uintptr_t kSceneFallbackCamera = 0x1B8;
@@ -65,8 +55,7 @@ namespace {
         return *reinterpret_cast<const T*>(address);
     }
 
-    // True in degraded mode, where the scan is all there is; under a matched
-    // profile, true only when the scan landed exactly on the measured RVA.
+    // Verifies whether an address matches the profile symbol RVA, or true in degraded mode.
     bool matchesProfile(const crabe::domain::GameProfile* profile, std::uintptr_t base,
                         const char* symbol, std::uintptr_t address)
     {

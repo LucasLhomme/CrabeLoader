@@ -60,9 +60,7 @@ class RenderHook {
         // windows on the render thread. 0 before the first measurement.
         float getRenderFps() const noexcept { return _renderFps.load(); }
 
-        // The size the game renders at (its swap chain's back buffer), which is
-        // the resolution the player chose. The engine's own UI_GetCurrentResolution
-        // reports the window instead, so 4K on a 1440p screen read as 1440p.
+        // Returns the back buffer render resolution chosen by the player.
         // False until the first Present has sized the back buffer.
         bool getRenderResolution(UINT& width, UINT& height) const noexcept
         {
@@ -163,12 +161,7 @@ class RenderHook {
         // Hook for ShowWindow to suppress SW_MINIMIZE in borderless mode for instant Alt+Tab.
         static BOOL WINAPI hkShowWindow(HWND hWnd, int nCmdShow);
 
-        // Hooks for ScreenToClient / ClientToScreen. The engine reads the mouse
-        // with GetCursorPos + ScreenToClient and hands that to the UI as back
-        // buffer pixels; when the back buffer is not the window's size (4K on a
-        // 1440p screen, 21:9 stretched on a 16:9 one) the game's own calls are
-        // converted between client and back-buffer pixels. Calls from anywhere
-        // else, ImGui included, are untouched.
+        // Detours for coordinate conversions between client and back buffer space.
         static BOOL WINAPI hkScreenToClient(HWND hWnd, LPPOINT point);
         static BOOL WINAPI hkClientToScreen(HWND hWnd, LPPOINT point);
 
@@ -254,42 +247,24 @@ class RenderHook {
         std::atomic<bool> _menuOpen{false};
         std::atomic<bool> _cursorDirty{false};
 
-        // Back buffer size, refreshed whenever the render target is rebuilt.
         UINT _backBufferWidth = 0;
         UINT _backBufferHeight = 0;
 
-        // Render thread only. The mode the window was last put in, and the
-        // decorated rect it had the last time it left windowed mode, so a
-        // round trip through borderless puts it back where the user left it.
         bool _hasAppliedWindowMode = false;
         WindowMode _appliedWindowMode{WindowMode::BorderlessWindowed};
         bool _hasWindowedRect = false;
         RECT _windowedRect{};
 
-        // _windowModeDirty asks the render thread to (re)apply the requested
-        // mode; _persistWindowMode additionally writes it to crabe.toml, which
-        // only an explicit request (Lua, Alt+Enter) does -- re-asserting the
-        // mode after the game fought it is not a change of preference.
         std::atomic<bool> _windowModeDirty{false};
         std::atomic<bool> _persistWindowMode{false};
 
-        // What the game last asked SetFullscreenState for. The retail exe
-        // stops rendering until GetFullscreenState agrees with its request,
-        // so that is what GetFullscreenState reports while the swap chain
-        // really stays windowed.
         std::atomic<bool> _gameWantsFullscreen{false};
 
-        // The display mode the game last asked ResizeTarget for. ResizeTarget
-        // is swallowed, so a following ResizeBuffers(0, 0) would size the back
-        // buffer to the window instead; it is given this size instead, which is
-        // the resolution the player chose (4K on a 1440p screen is then
-        // rendered at 4K and scaled down, not silently dropped to 1440p).
         std::atomic<std::uint32_t> _frameLimit{0};
         std::atomic<std::uint32_t> _displayRefreshHz{0};
         std::uint32_t _refreshCheckFrames = 0;
         std::atomic<float> _renderFps{0.0f};
 
-        // Render thread only: frame pacing and the frame-rate measurement.
         struct HandleCloser { void operator()(HANDLE handle) const noexcept { if (handle) CloseHandle(handle); } };
         std::unique_ptr<void, HandleCloser> _frameTimer;
         long long _nextFrameTicks = 0;

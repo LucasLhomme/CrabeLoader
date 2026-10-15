@@ -45,24 +45,19 @@ namespace crabe::multiplayer::application {
 
         crabe::shared::Logger::getInstance().info("MultiplayerManager: initializing subsystem...");
 
-        // 1. WinHTTP redirection is crabe.toml [http.redirect] (infrastructure/http_redirect.cpp).
-        //    The legacy redirector hooks the same functions and keeps TLS, so it is not installed.
         crabe::shared::Logger::getInstance().info("MultiplayerManager: legacy WinHttpRedirector not installed; "
                                                   "[http.redirect] handles HTTP redirection.");
 
-        // 2. Immediately apply memory patches synchronously, then keep worker for retries if needed
         applyMemoryPatchesNow();
         _workerStop = false;
         _workerThread = std::thread(&MultiplayerManager::patchWorkerThread, this);
 
-        // 3. Request automatic UPnP port forwarding for Quazal Net-Z P2P (3074 UDP) in background
         if (_natService) {
             std::thread([this]() {
                 (void)_natService->forwardPort(3074, "UDP", "Disney Infinity 3.0 P2P");
             }).detach();
         }
 
-        // 4. Initialize Steamworks Integration
         if (_steamService) {
             (void)_steamService->initialize();
         }
@@ -119,8 +114,6 @@ namespace crabe::multiplayer::application {
         crabe::infrastructure::CrashReporter::pushBreadcrumb(
             "MultiplayerManager: patch worker started");
         crabe::shared::Logger::getInstance().debug("MultiplayerManager: patch worker thread started");
-
-        // Try applying patches over a 30-second window
         for (int i = 0; i < 60 && !_workerStop.load(); ++i) {
             if (_patcher) {
                 auto res = _patcher->applyPatches();

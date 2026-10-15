@@ -27,6 +27,7 @@
 
 namespace crabe::domain {
 
+    // Returns a readable description of a mod rejection reason.
     std::string_view describe(Rejection reason) noexcept
     {
         switch (reason) {
@@ -50,6 +51,7 @@ namespace crabe::domain {
         return "unrecognised rejection";
     }
 
+    // Finds the rejection record for the specified mod id if rejected.
     const RejectedMod* ResolutionResult::findRejection(std::string_view id) const noexcept
     {
         for (const RejectedMod& entry : rejected) {
@@ -59,6 +61,7 @@ namespace crabe::domain {
         return nullptr;
     }
 
+    // Checks whether the specified mod id was accepted into the load order.
     bool ResolutionResult::isLoaded(std::string_view id) const noexcept
     {
         return std::find(loadOrder.begin(), loadOrder.end(), id) != loadOrder.end();
@@ -66,24 +69,20 @@ namespace crabe::domain {
 
     namespace {
 
-        // One candidate, plus whether it is still in the running. Nothing is
-        // ever erased: a rejected mod has to stay addressable so the mod that
-        // depended on it can be told the dependency was *rejected* rather than
-        // *absent*, which are two different things to go and fix.
         struct Entry {
             ModId id;
             const ModManifest* manifest{nullptr};
             bool alive{true};
         };
 
+        // Formats the manifest version string or returns a placeholder.
         [[nodiscard]] std::string versionLabel(const ModManifest& manifest)
         {
             return manifest.getVersion().empty() ? std::string("(no version)")
                                                  : manifest.getVersion();
         }
 
-        // "*" and an omitted range are the same thing to VersionRange, and
-        // both read badly inside a sentence, so they get words instead.
+        // Returns a readable label for a dependency's requested version range.
         [[nodiscard]] std::string specLabel(const ManifestDependency& dependency)
         {
             if (dependency.versionSpec.empty() || dependency.versionSpec == "*")
@@ -91,7 +90,7 @@ namespace crabe::domain {
             return dependency.versionSpec;
         }
 
-        // Two names reach a mod: its own id, and any capability it provides.
+        // Checks whether an entry provides a given capability or mod id.
         [[nodiscard]] bool supplies(const Entry& entry, std::string_view name)
         {
             if (entry.id == name)
@@ -100,9 +99,7 @@ namespace crabe::domain {
             return std::find(provided.begin(), provided.end(), name) != provided.end();
         }
 
-        // An unconstrained range is satisfied by any supplier, including one
-        // that declares no version at all: a bare directory of .lua files has
-        // no version and must still answer "I need that mod present".
+        // Checks whether a supplier manifest satisfies a version range constraint.
         [[nodiscard]] bool versionSatisfies(const ModManifest& supplier, const VersionRange& range)
         {
             if (range.isAny())
@@ -111,37 +108,28 @@ namespace crabe::domain {
             return version.has_value() && range.matches(*version);
         }
 
-        // ------------------------------------------------------------------
-        // Which copy of a duplicated id survives.
-        //
-        // The version decides it, and that is the rule anyone reading the log
-        // cares about. Everything after the version exists for one reason: two
-        // copies declaring the *same* version must not resolve differently
-        // depending on which one std::filesystem::directory_iterator happened
-        // to yield first. Comparing the remaining fields makes the choice a
-        // function of the manifests alone; when even those are equal the two
-        // are indistinguishable to every rule below, so the choice cannot be
-        // observed at all.
-        // ------------------------------------------------------------------
         struct SupersedeKey {
             bool hasVersion{false};
             SemVer version;
             std::string tail;
         };
 
+        // Appends a string value followed by a unit separator.
         void appendField(std::string& out, std::string_view value)
         {
             out += value;
-            out += '\x1f'; // ASCII unit separator: cannot occur in a manifest string
+            out += '\x1f';
         }
 
+        // Appends a list of strings followed by a record separator.
         void appendList(std::string& out, const std::vector<std::string>& values)
         {
             for (const std::string& value : values)
                 appendField(out, value);
-            out += '\x1e'; // ASCII record separator
+            out += '\x1e';
         }
 
+        // Appends dependencies serialized with unit and record separators.
         void appendDependencies(std::string& out, const std::vector<ManifestDependency>& values)
         {
             for (const ManifestDependency& dependency : values) {
@@ -151,6 +139,7 @@ namespace crabe::domain {
             out += '\x1e';
         }
 
+        // Computes a deterministic ordering key for disambiguating duplicate mod IDs.
         [[nodiscard]] SupersedeKey supersedeKeyOf(const ModManifest& manifest)
         {
             SupersedeKey key;
@@ -172,11 +161,10 @@ namespace crabe::domain {
             return key;
         }
 
+        // Compares two supersede keys for deterministic disambiguation.
         [[nodiscard]] std::strong_ordering compareKeys(const SupersedeKey& lhs,
                                                        const SupersedeKey& rhs) noexcept
         {
-            // A manifest whose "version" is not a semantic version ranks below
-            // every one whose is: it cannot be shown to be newer.
             if (lhs.hasVersion != rhs.hasVersion)
                 return lhs.hasVersion ? std::strong_ordering::greater : std::strong_ordering::less;
             if (lhs.hasVersion) {
@@ -189,6 +177,7 @@ namespace crabe::domain {
 
     } // namespace
 
+    // Resolves dependencies, conflicts, and topological load order for discovered mods.
     ResolutionResult resolve(std::span<const ResolverInput> inputs, const SemVer& loaderVersion)
     {
         ResolutionResult result;
@@ -204,9 +193,6 @@ namespace crabe::domain {
             rejectId(entry.id, reason, std::move(detail));
         };
 
-        // -------------------------------------------------------------------
-        // 1. Admissibility.
-        // -------------------------------------------------------------------
         for (const ResolverInput& input : inputs) {
             Entry entry{input.id, input.manifest, true};
 
@@ -215,10 +201,6 @@ namespace crabe::domain {
                 rejectId(entry.id, Rejection::InvalidManifest,
                          "no manifest was supplied for it, so nothing about it could be checked");
             } else if (entry.manifest->isMalformed()) {
-                // The parse diagnostic is the actionable thing, so it is
-                // checked before the id: a malformed file has no id either,
-                // and "it declares no id" would send the author looking in the
-                // wrong place.
                 entry.alive = false;
                 rejectId(entry.id, Rejection::InvalidManifest,
                          std::format("its mod.json could not be read: {}",
@@ -241,21 +223,12 @@ namespace crabe::domain {
             entries.push_back(std::move(entry));
         }
 
-        // -------------------------------------------------------------------
-        // 2. The loader's own version. An absent manifest declares no bounds,
-        //    so only a valid one can fail here.
-        // -------------------------------------------------------------------
         for (Entry& entry : entries) {
             if (!entry.alive || !entry.manifest->isValid())
                 continue;
 
             const std::string& minimum = entry.manifest->getMinLoaderVersion();
             if (!minimum.empty()) {
-                // A minLoaderVersion that is not a semantic version constrains
-                // nothing, exactly as it constrained nothing before the schema
-                // existed: manifestVersion 1 refuses to parse one, so only a v0
-                // file reaches this line and rejecting it now would stop a mod
-                // that loads today.
                 if (const auto required = SemVer::parse(minimum); required
                     && loaderVersion < *required) {
                     rejectEntry(entry, Rejection::LoaderTooOld,
@@ -277,9 +250,6 @@ namespace crabe::domain {
             }
         }
 
-        // -------------------------------------------------------------------
-        // 3. Duplicate ids: the highest version wins.
-        // -------------------------------------------------------------------
         {
             std::map<ModId, std::size_t> champions;
             std::map<std::size_t, SupersedeKey> keys;
@@ -310,9 +280,6 @@ namespace crabe::domain {
             }
         }
 
-        // Every id still alive is now unique, so sorting by id is a total
-        // order over the survivors and every loop below can walk them in a
-        // sequence that owes nothing to the caller's input order.
         auto aliveSortedIndices = [&entries]() {
             std::vector<std::size_t> indices;
             for (std::size_t index = 0; index < entries.size(); ++index) {
@@ -326,8 +293,6 @@ namespace crabe::domain {
             return indices;
         };
 
-        // Sorted by id for the same reason: the candidate list ends up in
-        // messages and in the edge set, and neither may depend on input order.
         auto suppliersOf = [&entries, &aliveSortedIndices](std::string_view name) {
             std::vector<std::size_t> found;
             for (std::size_t index : aliveSortedIndices()) {
@@ -348,12 +313,6 @@ namespace crabe::domain {
             return out;
         };
 
-        // -------------------------------------------------------------------
-        // 4. Conflicts and unsatisfied dependencies, to a fixed point. Two
-        //    passes rather than one because each can create work for the other:
-        //    a conflict removes a mod others required, and a rejection removes
-        //    a mod whose own conflicts then stop biting.
-        // -------------------------------------------------------------------
         auto runConflictPass = [&]() {
             bool changed = false;
             const std::vector<std::size_t> snapshot = aliveSortedIndices();
@@ -363,14 +322,14 @@ namespace crabe::domain {
                 byId.emplace(entries[index].id, index);
 
             for (std::size_t index : snapshot) {
-                if (!entries[index].alive) // it died earlier in this very pass
+                if (!entries[index].alive)
                     continue;
                 if (!entries[index].manifest->isValid())
                     continue;
 
                 for (const std::string& other : entries[index].manifest->getConflicts()) {
                     if (other == entries[index].id)
-                        continue; // conflicting with itself is a no-op, not a reason to refuse
+                        continue;
                     const auto slot = byId.find(other);
                     if (slot == byId.end() || !entries[slot->second].alive)
                         continue;
@@ -385,7 +344,7 @@ namespace crabe::domain {
                                             "present",
                                             other));
                     changed = true;
-                    break; // this mod is out; the rest of its list is moot
+                    break;
                 }
             }
             return changed;
@@ -406,7 +365,7 @@ namespace crabe::domain {
                     if (candidates.empty()) {
                         const bool wasRejected = result.findRejection(dependency.id) != nullptr;
                         rejectEntry(entries[index], Rejection::MissingDependency,
-                                    wasRejected
+                                     wasRejected
                                         ? std::format("it requires \"{}\" {}, which was discovered "
                                                       "but rejected",
                                                       dependency.id, specLabel(dependency))
@@ -440,11 +399,6 @@ namespace crabe::domain {
             changed = runDependencyPass() || changed;
         }
 
-        // -------------------------------------------------------------------
-        // 5. The ordering graph. Nodes are numbered in ascending id order, so
-        //    "smallest node number" and "smallest id" are the same tie-break
-        //    and the topological sort needs no comparator of its own.
-        // -------------------------------------------------------------------
         const std::vector<std::size_t> survivors = aliveSortedIndices();
         const std::size_t count = survivors.size();
 
@@ -452,14 +406,11 @@ namespace crabe::domain {
         for (std::size_t node = 0; node < count; ++node)
             nodeOf.emplace(survivors[node], node);
 
-        std::vector<std::vector<std::size_t>> prerequisites(count); // must load before this node
-        std::vector<std::vector<std::size_t>> dependents(count);    // must load after this node
+        std::vector<std::vector<std::size_t>> prerequisites(count);
+        std::vector<std::vector<std::size_t>> dependents(count);
         std::set<std::pair<std::size_t, std::size_t>> edges;
 
         auto addEdge = [&](std::size_t before, std::size_t after) {
-            // A mod cannot load before itself. Such an edge is not an authoring
-            // error worth reporting as a one-node cycle: it falls out naturally
-            // when a mod provides a capability it also depends on.
             if (before == after)
                 return;
             if (!edges.emplace(before, after).second)
@@ -487,9 +438,6 @@ namespace crabe::domain {
 
             for (const ManifestDependency& dependency : manifest.getDependencies())
                 link(dependency.id, true, &dependency.range);
-            // An optional dependency orders only when it is actually satisfied:
-            // an absent one, or one whose version does not fit, is simply not
-            // there and constrains nothing.
             for (const ManifestDependency& dependency : manifest.getOptionalDependencies())
                 link(dependency.id, true, &dependency.range);
             for (const std::string& name : manifest.getLoadAfter())
@@ -498,9 +446,6 @@ namespace crabe::domain {
                 link(name, false, nullptr);
         }
 
-        // -------------------------------------------------------------------
-        // 6. Kahn's algorithm, always taking the smallest ready id.
-        // -------------------------------------------------------------------
         std::vector<std::size_t> indegree(count, 0);
         for (std::size_t node = 0; node < count; ++node)
             indegree[node] = prerequisites[node].size();
@@ -519,8 +464,6 @@ namespace crabe::domain {
             ready.pop();
             ordered[node] = true;
             result.loadOrder.push_back(entries[survivors[node]].id);
-            // `entries` is built one-for-one from `inputs`, so an entry index
-            // is an input index.
             result.sourceIndex.push_back(survivors[node]);
             for (std::size_t next : dependents[node]) {
                 if (--indegree[next] == 0)
@@ -528,15 +471,9 @@ namespace crabe::domain {
             }
         }
 
-        // -------------------------------------------------------------------
-        // 7. Whatever Kahn could not place sits on a cycle, or behind one.
-        // -------------------------------------------------------------------
         if (result.loadOrder.size() != count) {
             enum class Mark : std::uint8_t { White, Grey, Black };
 
-            // Nodes that were ordered are out of the picture; only the stuck
-            // subgraph is searched, and it is searched along `prerequisites`
-            // so a recorded path reads "A requires B requires C requires A".
             std::vector<Mark> mark(count, Mark::Black);
             for (std::size_t node = 0; node < count; ++node) {
                 if (!ordered[node])
@@ -548,9 +485,6 @@ namespace crabe::domain {
             auto recordCycle = [&](std::vector<std::size_t> cycle) {
                 if (cycle.empty())
                     return;
-                // Rotated to start at the smallest id so the same cycle is
-                // always spelled the same way, whichever node was reached
-                // first.
                 std::rotate(cycle.begin(), std::min_element(cycle.begin(), cycle.end()),
                             cycle.end());
 
@@ -607,9 +541,6 @@ namespace crabe::domain {
                 }
             }
 
-            // A stuck node that is not itself on a cycle is waiting behind
-            // one; walking its prerequisites finds it, and naming that cycle
-            // is what makes the rejection actionable.
             auto blockingCycle = [&](std::size_t from) -> std::optional<std::size_t> {
                 std::vector<bool> seen(count, false);
                 std::queue<std::size_t> frontier;
@@ -649,9 +580,6 @@ namespace crabe::domain {
                     continue;
                 }
 
-                // Unreachable as the graph is built -- a node is only stuck
-                // behind a cycle -- but a rejection with an empty detail would
-                // be worse than a vague one, so it never happens.
                 rejectEntry(mod, Rejection::CyclicDependency,
                             "it waits on a dependency cycle that could not be spelled out");
             }
@@ -669,6 +597,7 @@ namespace crabe::domain {
         return result;
     }
 
+    // Resolves mod manifests directly using their declared IDs.
     ResolutionResult resolve(std::span<const ModManifest> manifests, const SemVer& loaderVersion)
     {
         std::vector<ResolverInput> inputs;
@@ -679,21 +608,6 @@ namespace crabe::domain {
     }
 
 } // namespace crabe::domain
-
-// ---------------------------------------------------------------------------
-// Purity, enforced by the compiler rather than by a comment.
-//
-// These run after every include above has been expanded, so they see the whole
-// transitive graph: if any header this file reaches were to drag in a Win32 API
-// header or Lua, one of the guards below would already be defined and the build
-// would stop here with the reason spelled out.
-//
-// The C standard library is not in the list on purpose. On MSVC it ships inside
-// the Windows SDK tree (corecrt.h, stdio.h, wchar.h under ucrt/), so "no header
-// from the Windows SDK" would be a claim about <string> rather than about this
-// file. What matters is that nothing from the SDK's um/ or shared/ directories
-// -- the Win32 API proper -- is reachable, and that is what these check.
-// ---------------------------------------------------------------------------
 
 #if defined(_WINDOWS_) || defined(_INC_WINDOWS)
 #error "dependency_resolver.cpp is not pure: windows.h reached it transitively"
@@ -710,8 +624,6 @@ namespace crabe::domain {
 #if defined(lua_h) || defined(LUA_VERSION) || defined(LUA_REGISTRYINDEX) || defined(lauxlib_h)
 #error "dependency_resolver.cpp is not pure: a Lua header reached it transitively"
 #endif
-// MinHook.h opens with `#pragma once`, so there is no MINHOOK_H to test; the
-// one macro it defines, MH_ALL_HOOKS, is the only preprocessor evidence of it.
 #if defined(IMGUI_VERSION) || defined(MH_ALL_HOOKS)
 #error "dependency_resolver.cpp is not pure: the renderer or the hook engine reached it"
 #endif

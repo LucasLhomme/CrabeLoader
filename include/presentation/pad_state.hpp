@@ -16,7 +16,6 @@
 
 namespace crabe::presentation {
 
-// Last gamepad state the game read for one slot, as XInput returned it.
 struct PadState {
     bool connected = false;
     uint16_t buttons = 0;
@@ -28,8 +27,6 @@ struct PadState {
     int16_t rightY = 0;
 };
 
-// Keeps what XInputGetState answered per slot and, while captured, hands the
-// caller an idle gamepad instead of the real one.
 class PadStateStore final {
     public:
         static constexpr uint32_t kMaxSlots = 4;
@@ -38,15 +35,16 @@ class PadStateStore final {
         // call marks the slot disconnected; while captured, the gamepad is blanked.
         void observe(uint32_t slot, uint32_t result, void* state);
 
-        // Last state recorded for `slot`; disconnected until one is.
+        // Returns the last state recorded for the given slot.
         PadState pad(uint32_t slot) const;
 
+        // Enables or disables gamepad input capture.
         void setCaptured(bool captured);
+
+        // Returns true if gamepad input is currently captured.
         bool isCaptured() const;
 
     private:
-        // Packed so one slot is published by three independent stores:
-        // buttons | lt << 16 | rt << 24, then x | y << 16 for each stick.
         std::atomic<uint32_t> _buttons[kMaxSlots] = {};
         std::atomic<uint32_t> _leftStick[kMaxSlots] = {};
         std::atomic<uint32_t> _rightStick[kMaxSlots] = {};

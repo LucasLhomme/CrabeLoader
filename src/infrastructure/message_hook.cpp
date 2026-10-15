@@ -22,14 +22,14 @@ namespace {
     constexpr size_t kMaxRecorded = 200;
 }
 
+// Returns the singleton instance of the MessageHook.
 MessageHook& MessageHook::get()
 {
     static MessageHook instance;
     return instance;
 }
 
-// Registered by emitted code (mov eax,<fn>; xor ecx,ecx; push <name>), so the
-// native's address sits 6 bytes before the push naming it.
+// Resolves the engine named-message dispatcher function address.
 uintptr_t MessageHook::resolveDispatcher()
 {
     for (uintptr_t nameAddr = crabe::memory::findString("System_StartButtonPushed"); nameAddr;
@@ -58,6 +58,7 @@ uintptr_t MessageHook::resolveDispatcher()
     return 0;
 }
 
+// Installs the detour on the engine message dispatcher.
 bool MessageHook::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -79,11 +80,13 @@ bool MessageHook::initialize()
     return true;
 }
 
+// Removes the hook on the engine message dispatcher.
 void MessageHook::uninitialize()
 {
     _hook.remove();
 }
 
+// Adds a substring filter to trace dispatched messages.
 void MessageHook::watch(const std::string& substring)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -91,19 +94,19 @@ void MessageHook::watch(const std::string& substring)
     _watchCount.store(_watched.size(), std::memory_order_relaxed);
 }
 
+// Clears all recorded message dispatches.
 void MessageHook::clear()
 {
     std::lock_guard<std::mutex> lock(_mutex);
     _recorded.clear();
 }
 
+// Detour function invoked when the engine dispatches a named message.
 void __fastcall MessageHook::hkDispatch(void* self, void* edx, const char* name, int arg1, int arg2)
 {
     MessageHook& hook = get();
     auto original = reinterpret_cast<t_dispatch>(hook._hook.getOriginal());
 
-    // Nothing watched is the normal case, and this runs on every message the
-    // engine dispatches -- return before the isReadable syscall and the lock.
     if (hook._watchCount.load(std::memory_order_relaxed) == 0) {
         if (original) original(self, edx, name, arg1, arg2);
         return;
@@ -123,6 +126,7 @@ void __fastcall MessageHook::hkDispatch(void* self, void* edx, const char* name,
     if (original) original(self, edx, name, arg1, arg2);
 }
 
+// Generates a formatted report containing all captured message dispatches.
 std::string MessageHook::report() const
 {
     std::lock_guard<std::mutex> lock(_mutex);

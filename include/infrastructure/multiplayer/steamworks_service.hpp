@@ -57,8 +57,6 @@ namespace crabe::multiplayer {
 
     private:
         bool bindSteamFunctions();
-
-        // Raw function pointer types from steam_api.dll
         using FnSteamAPI_Init = bool (__cdecl*)();
         using FnSteamAPI_RunCallbacks = void (__cdecl*)();
         using FnSteamFriends = void* (__cdecl*)();

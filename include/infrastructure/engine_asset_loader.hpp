@@ -18,34 +18,20 @@
 
 namespace crabe::infrastructure {
 
-/**
- * @brief Gives loose mod textures a way into the engine's own file loader.
- *
- * The Win32 VFS only sees a file when the engine asks Windows for it. Textures are requested by
- * id from the engine's loader, which reads them out of the mounted archives, so a loose file under
- * mods/<mod>/textures/ was indexed but never served. This hook sits on that loader (path, size
- * out-parameter, four flags, returns a heap buffer or null): when the VfsOverrideManager knows a
- * loose file for a requested .tbody, the file is read, copied into a buffer from the engine's own
- * allocator (the engine frees it by pointer) and returned in place of the archive member.
- * Every other request is forwarded untouched.
- *
- * Two marker files next to the executable change its behaviour. crabe_probe_asset_loader.txt adds
- * a log line per request; crabe_disable_asset_override.txt turns the substitution off.
- */
 class EngineAssetLoader final {
 public:
     static EngineAssetLoader& get();
 
-    /// Installs the loader hook unless the profile lacks its symbols or the override is disabled.
+    // Installs the loader hook unless the profile lacks its symbols or the override is disabled.
     void initialize();
 
-    /// Removes the hook and logs the totals it collected.
+    // Removes the hook and logs the totals it collected.
     void uninitialize();
 
-    /// Whether the loader hook is installed.
+    // Whether the loader hook is installed.
     [[nodiscard]] bool isHooked() const noexcept;
 
-    /// Number of requests answered with a loose mod file instead of the archive member.
+    // Number of requests answered with a loose mod file instead of the archive member.
     [[nodiscard]] std::uint32_t servedCount() const noexcept;
 
 private:

@@ -20,24 +20,24 @@
 
 namespace crabe::presentation {
 
-// Counts which XInput slots the game polls, and which answer "connected", and
-// keeps the last state each returned. Always forwards to the real function;
-// while captured, the game is handed an idle gamepad instead of the real one.
 class InputHook {
     public:
+        // Returns the singleton instance of InputHook.
         static InputHook& get();
 
-        // Returns false if XINPUT9_1_0.dll is absent; the loader works without it.
+        // Initializes the XInput detour hook.
         bool initialize();
+
+        // Uninstalls the XInput detour hook.
         void uninitialize();
 
-        // "slot0=polled:N connected:N | slot1=..." since the hook went in.
+        // Generates a diagnostic summary of polled and connected input slots.
         std::string report() const;
 
-        // Last state the game read from `slot`; disconnected until it polls it.
+        // Returns the last state recorded for the given gamepad slot.
         PadState pad(uint32_t slot) const;
 
-        // While true, the game sees an idle gamepad; mods still read the real one.
+        // While captured, the game receives an idle gamepad state while mods read real inputs.
         void setCaptured(bool captured);
 
     private:
@@ -51,8 +51,6 @@ class InputHook {
 
         crabe::infrastructure::Hook _hookGetState;
 
-        // Relaxed: written from whichever thread polls input, read from the
-        // Lua thread. Only the counts matter, never their ordering.
         static constexpr uint32_t kMaxSlots = 4;
         std::atomic<uint32_t> _polled[kMaxSlots] = {};
         std::atomic<uint32_t> _connected[kMaxSlots] = {};
@@ -62,15 +60,14 @@ class InputHook {
 
 } // namespace crabe::presentation
 
-// Lua C function for reading live key state. It lives here rather than in
-// lua_natives.cpp only because that file is at the line cap.
-//
-// This reads the keyboard directly instead of going through the game's input
-// path. A mod that has to steer something every frame -- a free camera -- needs
-// key state at tick time, and the engine never hands that to Lua.
 namespace crabe::input_natives {
+    // Lua binding to query asynchronous keyboard key state.
     int __cdecl keyDown(void* L);
+
+    // Lua binding to query gamepad state for a slot.
     int __cdecl padState(void* L);
+
+    // Lua binding to capture or release gamepad input from the game.
     int __cdecl setPadCaptured(void* L);
 }
 
