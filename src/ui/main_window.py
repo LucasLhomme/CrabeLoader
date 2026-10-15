@@ -807,11 +807,16 @@ class MainWindow(ctk.CTk):
         self.install_button = ctk.CTkButton(tab, text="2. Install into the game", fg_color="#fbbf24",
                                             text_color="#09090b", hover_color="#f59e0b",
                                             font=ctk.CTkFont(weight="bold"), command=self.on_install)
-        self.install_button.grid(row=14, column=0, sticky="ew", pady=(4, 8))
+        self.install_button.grid(row=15, column=0, sticky="ew", pady=(4, 8))
+        self.zip_var = ctk.BooleanVar(value=bool(self.settings.get("legacy_zip", False)))
+        ctk.CTkCheckBox(tab, text="Also ship the texture archive (.zip) - try this if the textures are black in game",
+                        variable=self.zip_var, font=ctk.CTkFont(size=11),
+                        command=lambda: self.settings.update(legacy_zip=bool(self.zip_var.get()))
+                        ).grid(row=14, column=0, sticky="w", pady=(4, 0))
         self.log_box = ctk.CTkTextbox(tab, height=240, fg_color="#0c0c0e", font=ctk.CTkFont(family="Consolas", size=11),
                                       wrap="word")
-        self.log_box.grid(row=15, column=0, sticky="nsew")
-        tab.grid_rowconfigure(15, weight=1)
+        self.log_box.grid(row=16, column=0, sticky="nsew")
+        tab.grid_rowconfigure(16, weight=1)
 
     def _on_entity_type_changed(self, choice: str):
         if choice == "Avatar":
@@ -1548,5 +1553,6 @@ class MainWindow(ctk.CTk):
         rig = self.rig
         texture = self.model.texture
         abilities = self.abilities
-        self._run(lambda: install(rig, texture, ident, game_dir, self.log, entity_cfg, abilities=abilities), done)
+        self._run(lambda: install(rig, texture, ident, game_dir, self.log, entity_cfg, abilities=abilities,
+                                    use_legacy_zip=bool(self.zip_var.get())), done)
 

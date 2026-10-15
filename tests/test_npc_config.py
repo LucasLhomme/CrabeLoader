@@ -71,7 +71,7 @@ class TestNPCConfig(unittest.TestCase):
 
             # Check Lua entry
             lua_code = (mod_dir / f"{ident.slug}.lua").read_text(encoding="utf-8")
-            self.assertIn('Crabe.Enemies["stormtrooper_elite"]', lua_code)
+            self.assertIn("creator.stormtrooper_elite", lua_code)
             self.assertIn('health = 300', lua_code)
             self.assertIn('damage = 50', lua_code)
             self.assertIn('Game.SpawnActor', lua_code)
@@ -100,7 +100,7 @@ class TestNPCConfig(unittest.TestCase):
             self.assertEqual(mod_json["entityType"], "Ally")
 
             lua_code = (mod_dir / f"{ident.slug}.lua").read_text(encoding="utf-8")
-            self.assertIn('Crabe.NPCs["town_guard"]', lua_code)
+            self.assertIn("creator.town_guard", lua_code)
 
             patch_code = (mod_dir / "skilltrees" / "ActorList.patch").read_text(encoding="utf-8")
             self.assertIn('Type = "NPC"', patch_code)
