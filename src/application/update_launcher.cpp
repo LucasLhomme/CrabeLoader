@@ -27,6 +27,7 @@ namespace crabe::application {
 
         std::atomic_flag s_started;
 
+        // Executes the update check workflow inside a crash-guarded worker thread.
         void runUpdateCheck()
         {
             crabe::infrastructure::CrashReporter::declareThreadRole(crabe::infrastructure::ThreadRole::Worker);
@@ -44,6 +45,7 @@ namespace crabe::application {
 
     } // namespace
 
+    // Spawns a background thread to check for updates if enabled in configuration.
     void startUpdateCheckInBackground(bool enabled)
     {
         crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();

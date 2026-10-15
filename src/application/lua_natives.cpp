@@ -369,8 +369,7 @@ namespace {
         return 0;
     }
 
-    // Crabe._asiReport() -> one string, a "file\tsource\tstatus\tdetail\n" line per .asi plugin found,
-    // in load order, with the file relative to the game folder. Crabe.Plugins.list parses it.
+    // Crabe._asiReport() -> one string, a "file\tsource\tstatus\tdetail\n" line per .asi plugin found.
     int __cdecl nativeAsiReport(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -427,12 +426,8 @@ namespace {
         return 0;
     }
 
-    // Crabe._vfsList([prefix]) -> one string, a "virtualPath\toriginMod\n" line
-    // per override whose virtual path starts with prefix (normalized like any
-    // virtual path; every override when absent). One string rather than a
-    // table because LuaCall cannot build tables, and rather than one value per
-    // override because a mod with thousands of textures would overflow the
-    // stack. Crabe.Vfs.list parses it.
+    // Crabe._vfsList([prefix]) -> returns tab-separated virtualPath and originMod lines
+    // for overrides starting with prefix, or all overrides when prefix is omitted.
     int __cdecl nativeVfsList(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -515,8 +510,6 @@ namespace {
         crabe::infrastructure::MessageHook::get().clear();
         return 0;
     }
-
-    // --- Generic Memory & Patch Primitives ---
 
     // Crabe._patternScan("55 8B EC ...") -> address, or nil
     int __cdecl nativePatternScan(void* L)
@@ -1068,6 +1061,7 @@ namespace {
 
 } // namespace
 
+// Registers all Crabe native C functions into the game Lua state.
 bool crabe::lua_runtime::registerNatives(void* L)
 {
     struct Entry {

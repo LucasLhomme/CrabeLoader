@@ -44,8 +44,6 @@ namespace crabe::multiplayer::application {
         [[nodiscard]] crabe::multiplayer::NatStatus getNatStatus() const noexcept;
         bool triggerPortForward(uint16_t port = 3074, std::string_view protocol = "UDP");
         void releasePortForward(uint16_t port = 3074, std::string_view protocol = "UDP");
-
-        // Steamworks Integration
         [[nodiscard]] bool isSteamAvailable() const noexcept;
         [[nodiscard]] std::string getSteamPersonaName() const;
         [[nodiscard]] uint64_t getSteamId() const noexcept;

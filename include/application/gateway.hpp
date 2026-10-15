@@ -14,76 +14,56 @@
 #include <string>
 #include <vector>
 
-// The gateway (assets/gateway*.lua) is the game's figure registry: it maps an
-// encrypted sku_id to a character record, and a character with no slot is
-// refused at selection time -- "Figurine Disney Infinity manquante" -- however
-// correct its catalog row and actor data are.
-//
-// This module builds the missing slots as Lua source, for the patch mechanism
-// to run right after the gateway chunk loads. The registry is therefore only
-// ever changed in memory, and a modder declares nothing but a character name.
 namespace crabe::application::gateway {
 
-    // One character needing a registry slot.
     struct Entry {
-        std::string name;            // catalog Name, and the slot's `name` field
-        std::string sku;             // empty -> derived from `name` by allocateSku
-        std::string baseCharacter;   // optional: base character to inherit ActorList/DataMap/Progression from
-        std::string displayName;     // optional: localized display name
-        std::string icon;            // optional: HUD icon name
-        std::string progressionTree; // optional: ProgressionTree name
-        std::string origin;          // file or manifest that declared it, for diagnostics only
+        std::string name;
+        std::string sku;
+        std::string baseCharacter;
+        std::string displayName;
+        std::string icon;
+        std::string progressionTree;
+        std::string origin;
     };
 
-    // Deterministic sku_id for a character name, inside the range reserved for
-    // mods. Arithmetic only, no bitwise ops, so src/api/12_virtualreader.lua can
-    // mirror it in Lua 5.1. Stable across installs, which is what lets a shared
-    // characters/*.lua keep working.
+    // Generates deterministic SKU ID for a character name.
     [[nodiscard]] std::string allocateSku(const std::string& name);
 
-    // Gives every entry a unique sku_id among mod entries and returns one message per
-    // problem: duplicate Names are dropped, a taken explicit id drops its entry, a
-    // taken derived id moves up by one (in Name order) until free.
+    // Resolves unique SKU IDs among mod entries and reports conflicts.
     [[nodiscard]] std::vector<std::string> resolveSkus(std::vector<Entry>& entries);
 
-    // Byte string identifying the gateway chunk, which doubles as the _G key its
-    // slot table lives under. Serves as the patch's match hint.
+    // Returns gateway chunk identifier key.
     [[nodiscard]] const std::string& containerKey();
 
-    // Characters declared by exposeCharacter{...} in one characters/*.lua source.
-    // addCharacter rows are skipped on purpose: they reuse an existing character's
-    // sku_id, which already owns a slot.
+    // Parses characters declared via exposeCharacter in Lua source.
     [[nodiscard]] std::vector<Entry> parseExposedCharacters(const std::string& luaSource);
 
-    // Characters declared in mod.json under "character" or "characters".
+    // Parses character definitions from manifest JSON source.
     [[nodiscard]] std::vector<Entry> parseManifestCharacters(const std::string& jsonSource,
                                                              const std::string& origin);
 
-    // Lua source inserting one AVATAR slot per entry into the live registry, never
-    // overwriting an existing slot. Calls no standard library function: gateway
-    // chunks run in a Lua state with no base library loaded.
+    // Builds Lua code to inject avatar slots into live registry.
     [[nodiscard]] std::string buildInjectionLua(const std::vector<Entry>& entries);
 
-    // Lua source defining the Name -> sku_id table for these entries, so the Lua
-    // API can look ids up instead of re-deriving them. Keeping the hash on one
-    // side only is what stops a row and its registry slot from disagreeing.
+    // Builds Lua source defining name-to-SKU mapping table.
     [[nodiscard]] std::string buildSkuTableLua(const std::vector<Entry>& entries);
 
-    // Lua source calling Crabe.VirtualReader.exposeCharacter for manifest characters.
+    // Builds Lua call to expose a manifest character.
     [[nodiscard]] std::string buildExposeCallLua(const Entry& entry);
 
-    // Auto-patch sources for ActorList and DataMap for characters declaring baseCharacter.
+    // Builds ActorList patch Lua source for baseCharacter entries.
     [[nodiscard]] std::string buildActorListPatchLua(const std::vector<Entry>& entries);
+
+    // Builds DataMap patch Lua source for baseCharacter entries.
     [[nodiscard]] std::string buildDataMapPatchLua(const std::vector<Entry>& entries);
 
-    // AES-128-CBC + PKCS7 under the gateway's fixed key and IV, behind the game's
-    // type tag. Exposed for tests and diagnostics.
+    // Encrypts string using AES-128-CBC with gateway key and IV.
     [[nodiscard]] std::string encryptString(const std::string& value);
+
+    // Encrypts number using AES-128-CBC with gateway key and IV.
     [[nodiscard]] std::string encryptNumber(double value);
 
-    // Lua string literal for arbitrary bytes. Decimal escapes are padded to three
-    // digits ("\011", never "\11"): Lua consumes up to three, so an unpadded escape
-    // merges with a digit that follows it.
+    // Formats arbitrary bytes as a padded Lua string literal.
     [[nodiscard]] std::string luaLiteral(const std::string& bytes);
 
 } // namespace crabe::application::gateway

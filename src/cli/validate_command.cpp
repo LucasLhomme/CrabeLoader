@@ -21,13 +21,7 @@ namespace crabe::cli {
 
     namespace {
 
-        // Entry resolution used to be duplicated here, with a comment asking
-        // the next reader to keep this copy in step with ModManager's by eye.
-        // They had already drifted on the case that matters: this one refused
-        // a folder holding no Lua, the loader reported it loaded. Both now ask
-        // crabe::domain::planModEntry, which is also what makes the rule
-        // testable without a Lua state.
-
+        // Formats a list of ignored JSON keys into a comma-separated string.
         [[nodiscard]] std::string joinIgnoredKeys(const std::vector<std::string>& keys)
         {
             std::string out;
@@ -39,11 +33,7 @@ namespace crabe::cli {
             return out;
         }
 
-        // Shared tail of validateMod() for every case that resolves to an
-        // actual (possibly absent) mod.json: `manifestPath` may or may not
-        // exist on disk -- ModManifest's constructor treats a missing file
-        // as the (non-defect) Absent state -- and `modDir` is the directory
-        // an entry script would be resolved against.
+        // Validates the manifest and folder structure, recording errors and warnings.
         [[nodiscard]] ValidateReport validateManifest(const std::filesystem::path& manifestPath,
                                                        const std::filesystem::path& modDir)
         {
@@ -113,6 +103,7 @@ namespace crabe::cli {
             return report;
         }
 
+        // Converts a validation report into JSON format.
         [[nodiscard]] nlohmann::json toJson(const ValidateReport& report)
         {
             nlohmann::json findings = nlohmann::json::array();
@@ -143,6 +134,7 @@ namespace crabe::cli {
 
     } // namespace
 
+    // Validates a mod folder, manifest file, or standalone script.
     ValidateReport validateMod(const std::filesystem::path& path)
     {
         std::error_code ec;
@@ -161,9 +153,6 @@ namespace crabe::cli {
             if (path.extension() == ".json")
                 return validateManifest(path, path.parent_path());
 
-            // A standalone script mod (mods/<name>.lua): nothing declares an
-            // id or a version, so there is nothing left to check beyond "is
-            // it actually there, and does it hold anything".
             ValidateReport report;
             report.target = path;
             report.hasManifest = false;
@@ -181,9 +170,6 @@ namespace crabe::cli {
 
         const std::filesystem::path manifestPath = path / "mod.json";
         if (!std::filesystem::exists(manifestPath, ec)) {
-            // A bare directory of .lua files is a legitimate mod shape (see
-            // domain/mod_manifest.hpp's ManifestState::Absent) -- but if
-            // there is nothing to run either, that is worth a warning.
             ValidateReport report;
             report.target = path;
             report.hasManifest = false;
@@ -208,6 +194,7 @@ namespace crabe::cli {
         return validateManifest(manifestPath, path);
     }
 
+    // Returns 0 if clean, 1 on errors, or 2 on warnings only.
     int ValidateReport::exitCode() const noexcept
     {
         bool hasError = false;
@@ -225,6 +212,7 @@ namespace crabe::cli {
         return 0;
     }
 
+    // Formats and prints the validate report to the given stream.
     void printHuman(const ValidateReport& report, std::ostream& out)
     {
         out << "validate: " << report.target.string() << "\n";
@@ -245,8 +233,6 @@ namespace crabe::cli {
             out << "  content: " << joined << "/ (read by the loader at startup)\n";
         }
 
-        // A content mod has no entry script, so reporting one as missing would
-        // read as a defect it does not have.
         if (report.contentOnly) {
             out << "  entry:   none -- this mod ships content, not Lua\n";
         } else {
@@ -268,6 +254,7 @@ namespace crabe::cli {
         }
     }
 
+    // Parses command line arguments and runs the mod validation command.
     int runValidate(std::span<const std::string> args, std::ostream& out, std::ostream& err)
     {
         std::filesystem::path target;

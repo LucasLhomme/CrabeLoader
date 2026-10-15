@@ -32,6 +32,7 @@ namespace {
 
 } // namespace
 
+// Returns the path to the disk api directory if present.
 std::filesystem::path crabe::lua_runtime::apiFolder()
 {
     return std::filesystem::current_path() / kApiFolderName;
@@ -57,13 +58,12 @@ return 'game'
     return StateKind::Unusable;
 }
 
+// Injects the embedded or disk API modules into the given Lua state.
 bool crabe::lua_runtime::injectAll(void* L)
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     std::filesystem::path folder = apiFolder();
 
-    // 1. Developer override: If an 'api/' directory exists on disk and contains .lua files,
-    // load from disk so developers can test modifications without recompiling the DLL.
     if (std::filesystem::exists(folder)) {
         std::vector<std::filesystem::path> diskModules;
         for (const auto& entry : std::filesystem::directory_iterator(folder)) {
@@ -91,7 +91,6 @@ bool crabe::lua_runtime::injectAll(void* L)
         }
     }
 
-    // 2. Standard release: Load all embedded API modules directly from DLL memory.
     logger.info("LuaRuntime: Loading embedded API ({} modules)...", crabe::embedded_api::kModuleCount);
 
     bool allOk = true;

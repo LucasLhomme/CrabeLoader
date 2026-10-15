@@ -29,6 +29,7 @@ namespace crabe::cli {
             crabe::domain::ModManifest manifest;
         };
 
+        // Returns the string identifier for a rejection reason.
         [[nodiscard]] std::string_view reasonName(crabe::domain::Rejection reason)
         {
             using crabe::domain::Rejection;
@@ -53,6 +54,7 @@ namespace crabe::cli {
             return "Unknown";
         }
 
+        // Converts a resolution report into JSON format.
         [[nodiscard]] nlohmann::json toJson(const ResolveReport& report)
         {
             nlohmann::json loadOrder = nlohmann::json::array();
@@ -89,16 +91,13 @@ namespace crabe::cli {
 
     } // namespace
 
+    // Resolves dependencies across all mods in the specified directory.
     std::expected<ResolveReport, std::string> resolveModsDir(const std::filesystem::path& modsDir)
     {
         std::error_code ec;
         if (!std::filesystem::is_directory(modsDir, ec))
             return std::unexpected(std::format("'{}' is not a directory", modsDir.string()));
 
-        // ---- Steps 1-2, copied from ModManager::discoverAndLoadMods: find
-        // the candidates the same way, and give a malformed mod.json the
-        // same absent-manifest fallback (see domain/mod_manager.cpp for why
-        // that is the right answer for a loader, not a resolver). ----
         std::vector<Candidate> candidates;
         std::vector<std::string> notes;
 
@@ -129,7 +128,6 @@ namespace crabe::cli {
             }
         }
 
-        // ---- Step 3: the same pure id assignment ModManager itself calls.
         std::vector<crabe::domain::ModIdCandidate> idCandidates;
         idCandidates.reserve(candidates.size());
         for (const Candidate& candidate : candidates) {
@@ -149,7 +147,6 @@ namespace crabe::cli {
                 candidates[collision.index].name, collision.wantedId, collision.chosenId));
         }
 
-        // ---- Step 4: resolve, with the loader's own compiled-in version.
         std::vector<crabe::domain::ResolverInput> inputs;
         inputs.reserve(candidates.size());
         for (std::size_t i = 0; i < candidates.size(); ++i)
@@ -171,10 +168,6 @@ namespace crabe::cli {
                 ids[index], candidates[index].name, candidates[index].manifest.getVersion() });
         }
 
-        // Match each rejection back to a folder on disk, one candidate per
-        // rejection of that id -- the same rule ModManager's own report
-        // applies, so a duplicated id's several rejections each name a
-        // different copy.
         std::vector<bool> loaded(candidates.size(), false);
         for (const std::size_t index : resolution.sourceIndex)
             loaded[index] = true;
@@ -203,11 +196,13 @@ namespace crabe::cli {
         return report;
     }
 
+    // Returns 0 when no mod was rejected, or 1 otherwise.
     int ResolveReport::exitCode() const noexcept
     {
         return rejected.empty() ? 0 : 1;
     }
 
+    // Formats and prints the resolve report to the given stream.
     void printHuman(const ResolveReport& report, std::ostream& out)
     {
         out << "resolve: " << report.modsDir.string() << " (loader v" << report.loaderVersion << ")\n";
@@ -232,6 +227,7 @@ namespace crabe::cli {
         }
     }
 
+    // Parses command line arguments and runs the mod dependency resolution command.
     int runResolve(std::span<const std::string> args, std::ostream& out, std::ostream& err)
     {
         std::filesystem::path modsDir;

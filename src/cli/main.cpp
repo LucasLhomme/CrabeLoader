@@ -8,14 +8,6 @@
 ** Authors: @LucasLhomme
 */
 
-// crabe-cli -- offline mod-authoring tools for CrabeLoader (T16).
-//
-// Links the domain layer only (manifest parsing, SemVer, the dependency
-// resolver) plus the shared layer it already sits on: no Win32 API, no
-// Direct3D, no Dear ImGui, no Lua runtime. See tests/resolver_purity.cmake,
-// which audits every translation unit here the same way it already audits
-// src/domain/dependency_resolver.cpp.
-
 #include "cli/check_api.hpp"
 #include "cli/mod_scaffold.hpp"
 #include "cli/resolve_command.hpp"
@@ -32,6 +24,7 @@
 
 namespace {
 
+    // Prints usage information and available subcommands for crabe-cli.
     void printUsage(std::ostream& out)
     {
         out << "crabe-cli " CRABE_CLI_VERSION " -- offline mod-authoring tools for CrabeLoader\n"
@@ -47,6 +40,7 @@ namespace {
 
 } // namespace
 
+// Entry point for crabe-cli: parses commands and dispatches to subcommands.
 int main(int argc, char** argv)
 {
     const std::vector<std::string> allArgs(argv + 1, argv + argc);

@@ -23,8 +23,6 @@ namespace crabe::multiplayer::natives {
     int __cdecl setDirectConnect(void* L);
     int __cdecl buildLocation(void* L);
     int __cdecl checkServerReachability(void* L);
-
-    // Steamworks Natives
     int __cdecl steamIsAvailable(void* L);
     int __cdecl steamGetPersonaName(void* L);
     int __cdecl steamGetLocalId(void* L);

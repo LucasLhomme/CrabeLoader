@@ -35,7 +35,6 @@ namespace crabe::multiplayer::natives {
         char hostA[128]{};
         WideCharToMultiByte(CP_UTF8, 0, hostW.c_str(), -1, hostA, sizeof(hostA), nullptr, nullptr);
 
-        // Return multiple values: patchesActive (1/0), patchedCount (num), redirectorActive (1/0), host (string), port (num)
         lua.pushNumber(L, patchesActive ? 1.0 : 0.0);
         lua.pushNumber(L, static_cast<double>(patchedCount));
         lua.pushNumber(L, redirectorActive ? 1.0 : 0.0);
@@ -88,7 +87,6 @@ namespace crabe::multiplayer::natives {
         auto& mp = application::MultiplayerManager::getInstance();
         auto nat = mp.getNatStatus();
 
-        // Return: upnpAvailable, portForwarded, externalIp, externalPort, localIp, internalPort, statusMsg
         lua.pushNumber(L, nat.upnpAvailable ? 1.0 : 0.0);
         lua.pushNumber(L, nat.portForwarded ? 1.0 : 0.0);
         lua.pushString(L, nat.externalIp.c_str());
@@ -243,7 +241,6 @@ namespace crabe::multiplayer::natives {
         auto& mp = application::MultiplayerManager::getInstance();
         auto st = mp.getSteamLobbyStatus();
 
-        // Return: inLobby (1/0), isHost (1/0), lobbyId (string), hostId (string), memberCount (num), memberLimit (num)
         lua.pushNumber(L, st.inLobby ? 1.0 : 0.0);
         lua.pushNumber(L, st.isHost ? 1.0 : 0.0);
         lua.pushString(L, std::to_string(st.lobbyId).c_str());
@@ -270,7 +267,6 @@ namespace crabe::multiplayer::natives {
         auto& mp = application::MultiplayerManager::getInstance();
         auto friends = mp.getSteamFriends();
 
-        // Return count of friends as simple confirmation
         lua.pushNumber(L, static_cast<double>(friends.size()));
         return 1;
     }
@@ -288,7 +284,6 @@ namespace crabe::multiplayer::natives {
         ok = lua.registerNativeFunction(L, "Crabe", "_mpBuildLocation", &buildLocation) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_mpCheckServerReachability", &checkServerReachability) && ok;
 
-        // Steamworks bindings
         ok = lua.registerNativeFunction(L, "Crabe", "_steamIsAvailable", &steamIsAvailable) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_steamGetPersonaName", &steamGetPersonaName) && ok;
         ok = lua.registerNativeFunction(L, "Crabe", "_steamGetLocalId", &steamGetLocalId) && ok;
