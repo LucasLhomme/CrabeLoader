@@ -1144,7 +1144,9 @@ class MainWindow(ctk.CTk):
                     self.model_info.configure(text="This format needs Blender: set blender.exe in the Rig & Export "
                                                    "tab.", text_color=RED)
                     return
-                self._finish_import(path, path, [])  # no Blender: import the file as it is
+                errorlog.info(f"import without cleaning: blender path {blender!r} is not a file")
+                self._finish_import(path, path, [f"NOT cleaned: blender.exe not found ('{blender or 'empty'}'). "
+                                                  "Set it in the Rig & Export tab, then import again."])
                 return
             self.model_info.configure(text=f"Cleaning {Path(path).name} with Blender...", text_color=YELLOW)
 

@@ -90,7 +90,8 @@ def load_source(path: str | Path) -> SourceModel:
         raise ValueError(f"{model_file.name} contains no triangles")
 
     report: list = []
-    pieces = [_piece(p, i, report) for i, p in enumerate(parts)]
+    fallback = _folder_image(model_file.parent, model_file, path.suffix.lower() == ".zip")
+    pieces = [_piece(p, i, report, fallback) for i, p in enumerate(parts)]
     atlas, rects = _pack_atlas([piece[3] for piece in pieces])
     vertices, faces, uvs, windings = [], [], [], []
     base = 0
@@ -106,7 +107,34 @@ def load_source(path: str | Path) -> SourceModel:
     return SourceModel(model_file.stem, np.vstack(vertices), np.vstack(faces), np.vstack(uvs), atlas, winding, report)
 
 
-def _piece(mesh: trimesh.Trimesh, index: int = 0, report: list | None = None):
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".webp")
+
+
+def _is_placeholder(image) -> bool:
+    """trimesh invents a 2x2 grey image when an .obj points at a missing .mtl/texture."""
+    return image is None or image.width * image.height <= 16
+
+
+def _folder_image(folder: Path, model_file: Path, from_zip: bool):
+    """A texture lying next to the model, for files whose material does not link to it.
+
+    Inside a .zip every image counts; next to a loose file only an image with a similar name (or the only image)."""
+    images = sorted((p for p in folder.rglob("*") if p.suffix.lower() in IMAGE_EXTENSIONS and p.is_file()),
+                    key=lambda p: -p.stat().st_size)
+    if not from_zip:
+        images = [p for p in images if p.parent == folder]
+        stem = model_file.stem.lower()
+        similar = [p for p in images if stem[:6] in p.stem.lower() or p.stem.lower()[:6] in stem]
+        images = similar or (images if len(images) == 1 else [])
+    for path in images:
+        try:
+            return Image.open(path).convert("RGB"), path.name
+        except OSError:
+            continue
+    return None
+
+
+def _piece(mesh: trimesh.Trimesh, index: int = 0, report: list | None = None, fallback=None):
     """One material's worth of geometry: vertices, faces, top-left UVs, its texture tile and winding sign."""
     report = report if report is not None else []
     vertices = np.asarray(mesh.vertices, float)
@@ -119,13 +147,17 @@ def _piece(mesh: trimesh.Trimesh, index: int = 0, report: list | None = None):
     name = str(getattr(material, "name", None) or getattr(mesh, "metadata", {}).get("name") or f"part {index}")
     if visual.kind == "texture" and visual.uv is not None and len(visual.uv) == len(vertices):
         image = _material_image(material)
-        if image is not None:
+        if _is_placeholder(image) and fallback is not None:
+            image = fallback[0]
+            report.append(f"'{name}': material without texture, '{fallback[1]}' found next to the model and used")
+        if image is not None and not _is_placeholder(image):
             uv = np.asarray(visual.uv, float)
             uv = np.c_[uv[:, 0], 1.0 - uv[:, 1]]
             image = _tint(image, material)
             image, uv = _tile_if_repeating(image, uv, name, report)
             return vertices, faces, uv, image, winding
-        report.append(f"'{name}' ({len(faces)} triangles): no texture image found, flat colour used")
+        report.append(f"'{name}' ({len(faces)} triangles): no texture image found, flat colour used. "
+                      "Put the .png/.tga files in the same .zip, or import with Blender cleaning enabled")
         color = _material_color(material)
     elif visual.kind in ("vertex", "face"):
         vertices, faces, uvs, image = _palette_texture(mesh, vertices, faces)
