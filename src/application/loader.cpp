@@ -36,7 +36,9 @@
 #include "infrastructure/http_redirect.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
-#include "infrastructure/memory.hpp"
+#include "infrastructure/patch/patch_borderless.hpp"
+#include "infrastructure/patch/patch_keybind.hpp"
+#include "infrastructure/patch/patch_resolution.hpp"
 #include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
 #include "presentation/input_remap.hpp"
@@ -288,6 +290,9 @@ void Loader::runTicks(void* L)
         crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
         crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(std::filesystem::current_path() / "mods");
         crabe::domain::ModManager::get().reloadAllMods(L);
+        crabe::infrastructure::patch::PatchResolution::apply(L);
+        crabe::infrastructure::patch::PatchBorderless::apply(L);
+        crabe::infrastructure::patch::PatchKeybind::apply(L);
     }
 
     constexpr auto kInterval = std::chrono::milliseconds(16);
@@ -438,6 +443,10 @@ void Loader::ensureRuntimeReady(void* L)
 
     crabe::lua_runtime::injectAll(L);
     crabe::lua_runtime::registerNatives(L);
+
+    crabe::infrastructure::patch::PatchResolution::apply(L);
+    crabe::infrastructure::patch::PatchBorderless::apply(L);
+    crabe::infrastructure::patch::PatchKeybind::apply(L);
 
     if (!_characterInjectionScript.empty()) {
         crabe::shared::Logger::getInstance().info("Loader: injecting character definitions into Lua state ({} bytes).",

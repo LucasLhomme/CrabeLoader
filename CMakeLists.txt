@@ -215,6 +215,9 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_meridian.cpp
     src/infrastructure/engine_resolution.cpp
+    src/infrastructure/patch/patch_resolution.cpp
+    src/infrastructure/patch/patch_borderless.cpp
+    src/infrastructure/patch/patch_keybind.cpp
     src/infrastructure/engine_shaders.cpp
     src/infrastructure/engine_asset_loader.cpp
     src/infrastructure/engine_sky.cpp
