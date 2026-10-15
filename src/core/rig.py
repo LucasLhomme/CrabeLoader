@@ -16,6 +16,7 @@ from src.core.rigging import compute_weights, quantize_weights, weld
 from src.core.skeleton import SIDES
 
 MAX_VERTICES = 65536 - 4
+HEAVY_TRIANGLES = 10000
 
 
 @dataclass
@@ -175,6 +176,9 @@ def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender
         merged[:, col] += w[:, j]
     idx, wq = quantize_weights(merged, palette_cols)
     log(f"  {len(baked)} vertices, {len(vfaces)} triangles, weights: {method}")
+    if len(vfaces) > HEAVY_TRIANGLES:
+        log(f"  WARNING: {len(vfaces)} triangles is heavy for this engine (typical characters: 3000-8000) and "
+            "lowers the frame rate in game. Re-import with a Triangle budget (e.g. 8000).")
     return RigResult(base, tpose, baked, vfaces, vuv, bnormals, tangents, tsign, idx, wq, method, anchors)
 
 

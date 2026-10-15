@@ -242,7 +242,7 @@ class MainWindow(ctk.CTk):
         budget_row = ctk.CTkFrame(import_box, fg_color="transparent")
         budget_row.grid(row=2, column=0, sticky="w", pady=(2, 0))
         ctk.CTkLabel(budget_row, text="Triangle budget (cleaning):", font=ctk.CTkFont(size=11)).grid(row=0, column=0)
-        self.budget_var = ctk.StringVar(value=str(self.settings.get("triangle_budget", "No limit")))
+        self.budget_var = ctk.StringVar(value=str(self.settings.get("triangle_budget", "8000")))
         ctk.CTkOptionMenu(budget_row, values=["No limit", "12000", "8000", "5000", "3000"], variable=self.budget_var,
                           width=100, height=22, font=ctk.CTkFont(size=11),
                           command=lambda v: self.settings.update(triangle_budget=v)).grid(row=0, column=1, padx=6)
