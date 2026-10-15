@@ -14,6 +14,7 @@ from scipy.spatial import ConvexHull
 from src.core.base_character import BaseCharacter
 
 SIDES = (("Left", 1.0), ("Right", -1.0))
+NECK_WINDOW = 0.10  # how far above the arm line the neck may be (fraction of the height)
 
 
 @dataclass
@@ -194,7 +195,7 @@ def measure(vertices: np.ndarray, faces: np.ndarray, base: BaseCharacter) -> tup
 
     # Neck: narrowest central cross-section just above the arm line.
     neck_y, best_w = arm_y + 0.01 * h, None
-    for yy in np.linspace(arm_y + 0.01 * h, min(arm_y + 0.18 * h, 0.95 * h), 25):
+    for yy in np.linspace(arm_y + 0.01 * h, min(arm_y + NECK_WINDOW * h, 0.95 * h), 25):
         pts = _sections(mesh, yy)
         pts = pts[np.abs(pts[:, 0]) < shoulder_x] if len(pts) else pts
         if len(pts) >= 3:
