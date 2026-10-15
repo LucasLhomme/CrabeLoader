@@ -215,3 +215,4 @@ Game.SpawnActor("TCW_NiktoThug_Bruiser", x, y, z)
 4. Navigate to your custom category (e.g. **Bosses** or **Spawners > Enemies**).
 5. Select your enemy and press **Enter** (or `A` on gamepad) to spawn.
 6. **Live Iteration**: If you tweak your Lua spawner or behavior script, press **`F4`** in-game to hot-reload all mod scripts without quitting the game!
+

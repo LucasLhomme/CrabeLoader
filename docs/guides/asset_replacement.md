@@ -186,3 +186,4 @@ Vanilla audio banks reside in `assets/audio/`:
 | **HUD Icons** | `.tbody` + `.mtb` | `mods/<mod>/textures/` | VFS texture & material descriptor |
 | **Audio Banks** | `.fsb`, `.fev` | `mods/<mod>/audio/...` | Win32 file hook shadowing |
 | **World Props** | `.zip` or loose | `mods/<mod>/props/...` or `assets/...` | Win32 file hook shadowing |
+
