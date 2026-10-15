@@ -24,19 +24,16 @@ namespace crabe::presentation {
 
 namespace {
 
-    // Defined here instead of linking dxguid.lib: these are the published values, and a
-    // wrong one makes initialize() fail loudly instead of hooking the wrong thing.
     const GUID kSysKeyboard = { 0x6F1D2B61, 0xD5A0, 0x11CF, { 0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 } };
     const GUID kSysMouse = { 0x6F1D2B60, 0xD5A0, 0x11CF, { 0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 } };
     const GUID kIidDirectInput8A = { 0xBF798030, 0x483A, 0x4DA2, { 0xAA, 0x99, 0x5D, 0x64, 0xED, 0x36, 0x97, 0x00 } };
 
-    // IDirectInputDevice8 vtable slots: IUnknown 0-2, GetCapabilities 3 ... GetDeviceState 9, GetDeviceData 10.
     constexpr size_t kSlotGetDeviceState = 9;
     constexpr size_t kSlotGetDeviceData = 10;
 
     constexpr unsigned long kKeyboardStateSize = 256;
-    constexpr size_t kMouseButtonsOffset = 3 * sizeof(LONG);  // DIMOUSESTATE and DIMOUSESTATE2 both: lX, lY, lZ first.
-    constexpr DWORD kMouseButtonOffsetBase = 12;              // DIMOFS_BUTTON0
+    constexpr size_t kMouseButtonsOffset = 3 * sizeof(LONG);
+    constexpr DWORD kMouseButtonOffsetBase = 12;
 
     typedef HRESULT(WINAPI* t_DirectInput8Create)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
 
@@ -64,7 +61,7 @@ namespace {
         return kept;
     }
 
-    // Same for the mouse; only the button offsets move, axes and wheel pass through.
+    // Applies input remap to buffered mouse events, adjusting button offsets.
     unsigned long remapMouseEvents(unsigned char* events, unsigned long objectSize, unsigned long count)
     {
         const InputRemap& remap = InputRemap::get();
@@ -87,12 +84,14 @@ namespace {
 
 }
 
+// Returns the singleton instance of DirectInputHook.
 DirectInputHook& DirectInputHook::get()
 {
     static DirectInputHook instance;
     return instance;
 }
 
+// Initializes DirectInput hooks on keyboard and mouse devices.
 bool DirectInputHook::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -112,7 +111,6 @@ bool DirectInputHook::initialize()
         return false;
     }
 
-    // A device that is created and never acquired disturbs nothing; it only lends its vtable.
     IDirectInputDevice8A* keyboard = nullptr;
     IDirectInputDevice8A* mouse = nullptr;
     input->CreateDevice(kSysKeyboard, &keyboard, nullptr);
@@ -144,8 +142,6 @@ bool DirectInputHook::initialize()
     logger.info("DirectInputHook: watching GetDeviceState @ 0x{:X}, GetDeviceData @ 0x{:X}.",
                 reinterpret_cast<uintptr_t>(stateCode), reinterpret_cast<uintptr_t>(dataCode));
 
-    // Each function the mouse does not share with the keyboard needs its own detour, because a
-    // detour reaches the real function through its own trampoline.
     if (mouseStateCode && mouseStateCode != stateCode) {
         if (_hookMouseState.install(mouseStateCode, reinterpret_cast<void*>(&DirectInputHook::hkMouseGetDeviceState),
                                     "DirectInputHook::MouseGetDeviceState")) {
@@ -157,7 +153,7 @@ bool DirectInputHook::initialize()
     }
     if (mouseDataCode && mouseDataCode != dataCode) {
         if (_hookMouseData.install(mouseDataCode, reinterpret_cast<void*>(&DirectInputHook::hkMouseGetDeviceData),
-                                   "DirectInputHook::MouseGetDeviceData")) {
+                                    "DirectInputHook::MouseGetDeviceData")) {
             logger.info("DirectInputHook: the mouse has its own GetDeviceData @ 0x{:X}.",
                         reinterpret_cast<uintptr_t>(mouseDataCode));
         } else {
@@ -167,6 +163,7 @@ bool DirectInputHook::initialize()
     return true;
 }
 
+// Removes all installed DirectInput hooks.
 void DirectInputHook::uninitialize()
 {
     _hookState.remove();
@@ -175,6 +172,7 @@ void DirectInputHook::uninitialize()
     _hookMouseData.remove();
 }
 
+// Post-processes device state buffer after GetDeviceState invocation.
 long DirectInputHook::afterState(unsigned long size, void* data, long result)
 {
     if (FAILED(result) || !data) return result;
@@ -186,8 +184,6 @@ long DirectInputHook::afterState(unsigned long size, void* data, long result)
     } else if (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2)) {
         _mouseStates.fetch_add(1, std::memory_order_relaxed);
 
-        // lZ, the wheel, comes right after lX and lY in both layouts; read it before the remap
-        // touches the buttons, and whether or not a remap is active.
         LONG wheel = 0;
         std::memcpy(&wheel, static_cast<const uint8_t*>(data) + 2 * sizeof(LONG), sizeof(wheel));
         _wheel.add(static_cast<int32_t>(wheel));
@@ -199,13 +195,12 @@ long DirectInputHook::afterState(unsigned long size, void* data, long result)
     return result;
 }
 
+// Post-processes device data events after GetDeviceData invocation.
 long DirectInputHook::afterData(IDirectInputDevice8A* self, unsigned long objectSize, void* events,
                                 unsigned long* count, long result)
 {
     if (FAILED(result) || !events || !count || *count == 0 || objectSize < sizeof(DWORD)) return result;
 
-    // The device kind is asked for on every call instead of cached by address: a recreated
-    // device can land on a freed one's address, and a stale kind would remap the wrong events.
     DIDEVCAPS caps = {};
     caps.dwSize = sizeof(caps);
     if (FAILED(self->GetCapabilities(&caps))) return result;
@@ -222,6 +217,7 @@ long DirectInputHook::afterData(IDirectInputDevice8A* self, unsigned long object
     return result;
 }
 
+// Intercepts IDirectInputDevice8::GetDeviceState calls.
 long __stdcall DirectInputHook::hkGetDeviceState(IDirectInputDevice8A* self, unsigned long size, void* data)
 {
     DirectInputHook& hook = get();
@@ -230,6 +226,7 @@ long __stdcall DirectInputHook::hkGetDeviceState(IDirectInputDevice8A* self, uns
     return hook.afterState(size, data, original(self, size, data));
 }
 
+// Intercepts IDirectInputDevice8::GetDeviceData calls.
 long __stdcall DirectInputHook::hkGetDeviceData(IDirectInputDevice8A* self, unsigned long objectSize, void* events,
                                                 unsigned long* count, unsigned long flags)
 {
@@ -239,6 +236,7 @@ long __stdcall DirectInputHook::hkGetDeviceData(IDirectInputDevice8A* self, unsi
     return hook.afterData(self, objectSize, events, count, original(self, objectSize, events, count, flags));
 }
 
+// Intercepts distinct mouse GetDeviceState calls.
 long __stdcall DirectInputHook::hkMouseGetDeviceState(IDirectInputDevice8A* self, unsigned long size, void* data)
 {
     DirectInputHook& hook = get();
@@ -247,6 +245,7 @@ long __stdcall DirectInputHook::hkMouseGetDeviceState(IDirectInputDevice8A* self
     return hook.afterState(size, data, original(self, size, data));
 }
 
+// Intercepts distinct mouse GetDeviceData calls.
 long __stdcall DirectInputHook::hkMouseGetDeviceData(IDirectInputDevice8A* self, unsigned long objectSize, void* events,
                                                      unsigned long* count, unsigned long flags)
 {
@@ -256,11 +255,13 @@ long __stdcall DirectInputHook::hkMouseGetDeviceData(IDirectInputDevice8A* self,
     return hook.afterData(self, objectSize, events, count, original(self, objectSize, events, count, flags));
 }
 
+// Returns and resets accumulated wheel notches.
 int DirectInputHook::takeWheelNotches()
 {
     return _wheel.takeNotches();
 }
 
+// Returns a diagnostic report string for DirectInput calls.
 std::string DirectInputHook::report() const
 {
     return std::format("dinput kbdState:{} kbdData:{} mouseState:{} mouseData:{} otherState:{} wheel:{}",

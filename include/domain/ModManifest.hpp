@@ -18,16 +18,30 @@ namespace Crabe::Domain {
 
     class ModManifest {
     public:
+        // Parses a mod.json manifest file from the given path.
         explicit ModManifest(const std::filesystem::path& manifestPath);
+
+        // Constructs an empty, invalid manifest.
         ModManifest();
+
         ~ModManifest() = default;
 
+        // Returns true if the manifest was parsed successfully.
         [[nodiscard]] bool isValid() const;
+
+        // Returns the declared name of the mod.
         [[nodiscard]] const std::string& getName() const;
+
+        // Returns the declared version of the mod.
         [[nodiscard]] const std::string& getVersion() const;
+
+        // Returns the minimum required CrabeLoader version.
         [[nodiscard]] const std::string& getMinLoaderVersion() const;
+
+        // Returns the relative entry script path.
         [[nodiscard]] const std::string& getEntry() const;
 
+        // Returns true if the manifest is compatible with the current loader version.
         [[nodiscard]] bool isCompatible() const;
 
     private:

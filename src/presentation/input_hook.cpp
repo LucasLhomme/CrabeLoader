@@ -20,15 +20,14 @@
 
 namespace crabe::presentation {
 
+// Returns the singleton instance of InputHook.
 InputHook& InputHook::get()
 {
     static InputHook instance;
     return instance;
 }
 
-// The game imports from XINPUT9_1_0.dll specifically (confirmed: the other
-// xinput DLL names do not appear in the image), so hook the module it
-// actually uses rather than whichever one happens to be loaded.
+// Installs the XInputGetState hook on XINPUT9_1_0.dll.
 bool InputHook::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -55,11 +54,13 @@ bool InputHook::initialize()
     return true;
 }
 
+// Removes the XInputGetState hook.
 void InputHook::uninitialize()
 {
     _hookGetState.remove();
 }
 
+// Detour for XInputGetState, recording pad polling, state capture, and button remapping.
 uint32_t __stdcall InputHook::hkXInputGetState(uint32_t userIndex, void* state)
 {
     InputHook& self = get();
@@ -75,8 +76,6 @@ uint32_t __stdcall InputHook::hkXInputGetState(uint32_t userIndex, void* state)
     }
     self._pads.observe(userIndex, result, state);
 
-    // observe() has already kept the real buttons for mods, so the remap only touches what the
-    // game receives; while captured the game's copy is blank and there is nothing to remap.
     if (result == ERROR_SUCCESS && state && !self._pads.isCaptured()) {
         XINPUT_GAMEPAD& gamepad = static_cast<XINPUT_STATE*>(state)->Gamepad;
         gamepad.wButtons = InputRemap::get().remapPad(gamepad.wButtons);
@@ -84,16 +83,19 @@ uint32_t __stdcall InputHook::hkXInputGetState(uint32_t userIndex, void* state)
     return result;
 }
 
+// Returns the cached pad state for the given controller slot.
 PadState InputHook::pad(uint32_t slot) const
 {
     return _pads.pad(slot);
 }
 
+// Sets whether pad input is captured, blanking the state passed to the game.
 void InputHook::setCaptured(bool captured)
 {
     _pads.setCaptured(captured);
 }
 
+// Generates a diagnostic summary of polled and connected controller slots.
 std::string InputHook::report() const
 {
     std::string out;
@@ -110,11 +112,7 @@ std::string InputHook::report() const
 
 } // namespace crabe::presentation
 
-// Crabe._keyDown(virtualKey) -> 1 while the key is held, 0 otherwise.
-//
-// GetAsyncKeyState reports the physical state regardless of which window has
-// focus, which is what a tick-driven mod needs: the overlay may own the
-// keyboard while the mod still has to steer.
+// Lua binding for Crabe._keyDown; checks if a virtual key is currently held.
 int __cdecl crabe::input_natives::keyDown(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -131,9 +129,7 @@ int __cdecl crabe::input_natives::keyDown(void* L)
     return 1;
 }
 
-// Crabe._padState([slot]) -> connected, buttons, leftTrigger, rightTrigger,
-// leftX, leftY, rightX, rightY: what the game last read from that slot (0-3).
-// buttons is the XINPUT_GAMEPAD_* bitmask; it reads the real pad while captured.
+// Lua binding for Crabe._padState; pushes gamepad connection, buttons, triggers, and axes.
 int __cdecl crabe::input_natives::padState(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -153,10 +149,11 @@ int __cdecl crabe::input_natives::padState(void* L)
     return 8;
 }
 
-// Crabe._setPadCaptured(on): while on, the game reads an idle gamepad.
+// Lua binding for Crabe._setPadCaptured; suppresses gamepad inputs passed to the game.
 int __cdecl crabe::input_natives::setPadCaptured(void* L)
 {
     bool captured = crabe::infrastructure::LuaCall::get().argToBoolean(L, 1, false);
     crabe::presentation::InputHook::get().setCaptured(captured);
     return 0;
 }
+

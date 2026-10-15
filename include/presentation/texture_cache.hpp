@@ -18,11 +18,9 @@
 
 namespace crabe::presentation {
 
-// Decodes PNG, JPEG, BMP and the other formats Windows Imaging Component reads.
-// A path is decoded once; one that failed is remembered so a missing file does
-// not hit the disk every frame.
 class TextureCache final {
     public:
+        // Returns the singleton instance of TextureCache.
         static TextureCache& get();
 
         // Binds the cache to the device textures are created on.
@@ -44,6 +42,7 @@ class TextureCache final {
         TextureCache(const TextureCache&) = delete;
         TextureCache& operator=(const TextureCache&) = delete;
 
+        // Loads and creates a Direct3D 11 texture view from disk.
         ID3D11ShaderResourceView* load(const std::string& path) const;
 
         ID3D11Device* _device = nullptr;

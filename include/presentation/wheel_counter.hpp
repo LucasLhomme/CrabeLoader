@@ -16,9 +16,6 @@
 
 namespace crabe::presentation {
 
-// Windows reports the wheel in units of 120 per notch, and a high-resolution wheel sends fractions
-// of that. The counter keeps the units and gives out whole notches, so a fraction waits for the rest
-// of its notch instead of being lost.
 class WheelCounter final {
     public:
         static constexpr int32_t kUnitsPerNotch = 120;

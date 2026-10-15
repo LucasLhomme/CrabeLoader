@@ -16,6 +16,7 @@
 
 namespace crabe::domain {
 
+    // Converts a folder or script name into a sanitized "local.<name>" mod id.
     std::string synthesiseModId(std::string_view folderName)
     {
         std::string suffix;
@@ -39,12 +40,12 @@ namespace crabe::domain {
         return "local." + suffix;
     }
 
+    // Assigns deterministic mod ids to all candidates, resolving collisions by renumbering.
     std::vector<std::string> assignModIds(const std::vector<ModIdCandidate>& candidates,
                                           std::vector<ModIdRenumbering>* renumbered)
     {
         std::vector<std::string> ids(candidates.size());
 
-        // ---- 1. Declared ids go first and are never renamed. ----
         std::set<std::string> takenIds;
         for (std::size_t index = 0; index < candidates.size(); ++index) {
             if (!candidates[index].declaredId.empty()) {
@@ -53,10 +54,6 @@ namespace crabe::domain {
             }
         }
 
-        // ---- 2. Everything else is synthesised in sortKey order, so two
-        //         folders that sanitise to the same id are numbered apart the
-        //         same way regardless of what order the caller discovered
-        //         them in. ----
         std::vector<std::size_t> unnamed;
         for (std::size_t index = 0; index < candidates.size(); ++index) {
             if (candidates[index].declaredId.empty())

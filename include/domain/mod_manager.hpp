@@ -23,37 +23,36 @@ namespace crabe::domain {
     class ModManifest;
 
     struct Mod {
-        // The name the dependency resolver knows this mod by: what its mod.json
-        // declares, or the "local.<folder>" id ModManager synthesised for a
-        // manifest that declares none. Unique across a single discovery pass.
         std::string id;
-
-        // The folder or script name as it appears on disk, which is what the
-        // Lua sandbox is keyed on and what the reader has to go and look at.
         std::string name;
-
         std::filesystem::path rootPath;
         bool isLoaded = false;
     };
 
-    // Manages discovered mods, sandboxed execution, drawing dispatch
-    // and hot reloading lifecycles.
     class ModManager {
     public:
+        // Returns the singleton instance of ModManager.
         static ModManager& get();
 
+        // Discovers and loads mods located in the specified folder.
         void discoverAndLoadMods(void* L, const std::filesystem::path& modsFolder);
+
+        // Triggers lifecycle shutdown and completely reloads all mods.
         void reloadAllMods(void* L);
+
+        // Dispatches mod drawing callbacks for the current frame.
         void dispatchDraw(void* L);
 
-        // Asked per state, from inside that state's own pcall, rather than
-        // once globally: a hot reload has to reach every live state, and the
-        // only safe thread to reach one from is its own. See
-        // domain/reload_generation.hpp for why this is not a loop.
+        // Queries whether the given Lua state needs a hot reload.
         [[nodiscard]] bool needsReload(void* L) const;
+
+        // Flags a hot reload request across all tracked states.
         void requestHotReload();
 
+        // Returns the list of tracked mods.
         [[nodiscard]] const std::vector<Mod>& getMods() const noexcept;
+
+        // Returns the root folder containing discovered mods.
         [[nodiscard]] const std::filesystem::path& getModsFolder() const noexcept;
 
     private:
@@ -62,16 +61,11 @@ namespace crabe::domain {
         ModManager(const ModManager&) = delete;
         ModManager& operator=(const ModManager&) = delete;
 
-        // Both run one mod and return whether it ran. Neither records anything
-        // in _mods and neither decides whether the mod should run at all: by
-        // the time either is called the dependency resolver has already said
-        // so, and discoverAndLoadMods owns the load report.
-        // Both take the manifest the caller already parsed rather than reading
-        // mod.json a second time: parsing it twice would also report any defect
-        // in it twice. Which script a directory runs is domain/mod_entry.hpp's
-        // answer, not one this class works out for itself.
+        // Loads a mod directory using its resolved manifest.
         bool loadModDirectory(void* L, const std::filesystem::path& modPath,
                               const std::string& modName, const ModManifest& manifest);
+
+        // Loads a standalone Lua mod script.
         bool loadStandaloneScript(void* L, const std::filesystem::path& scriptPath,
                                   const std::string& modName);
 

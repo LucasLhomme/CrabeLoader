@@ -30,12 +30,14 @@ namespace {
 
 }
 
+// Returns the singleton instance of InputRemap.
 InputRemap& InputRemap::get()
 {
     static InputRemap instance;
     return instance;
 }
 
+// Stores a remap value in a slot and updates the active entries count.
 bool InputRemap::store(std::atomic<uint16_t>& slot, uint16_t value, std::atomic<uint32_t>& entries)
 {
     uint16_t previous = slot.exchange(value, std::memory_order_relaxed);
@@ -44,20 +46,21 @@ bool InputRemap::store(std::atomic<uint16_t>& slot, uint16_t value, std::atomic<
     return true;
 }
 
+// Resets an array of remap slots to zero and adjusts the active entries count.
 void InputRemap::wipe(std::atomic<uint16_t>* slots, size_t count, std::atomic<uint32_t>& entries)
 {
     for (size_t i = 0; i < count; ++i) store(slots[i], 0, entries);
 }
 
+// Sets or clears the remap target for a keyboard scan code.
 bool InputRemap::setKey(uint32_t from, int to)
 {
     if (from == 0 || from >= kKeys || to >= static_cast<int>(kKeys)) return false;
-    // Scan code 0 is not a key, so mapping to it, like a negative target, swallows the input.
     if (to <= 0) return store(_keys[from], 1, _entries);
-    // A key mapped to itself is the same as no entry, and keeps the table minimal.
     return store(_keys[from], static_cast<uint32_t>(to) == from ? 0 : static_cast<uint16_t>(to + 2), _entries);
 }
 
+// Sets or clears the remap target for a mouse button index.
 bool InputRemap::setMouseButton(uint32_t from, int to)
 {
     if (from >= kMouseButtons || to >= static_cast<int>(kMouseButtons)) return false;
@@ -65,6 +68,7 @@ bool InputRemap::setMouseButton(uint32_t from, int to)
     return store(_mouse[from], static_cast<uint32_t>(to) == from ? 0 : static_cast<uint16_t>(to + 2), _entries);
 }
 
+// Sets or clears the remap target for a controller button bitmask.
 bool InputRemap::setPadButton(uint32_t fromMask, uint32_t toMask)
 {
     int from = singleBit(fromMask);
@@ -81,10 +85,16 @@ bool InputRemap::setPadButton(uint32_t fromMask, uint32_t toMask)
     return store(_pad[from], value, _entries);
 }
 
+// Clears all keyboard remap rules.
 void InputRemap::clearKeys() { wipe(_keys, kKeys, _entries); }
+
+// Clears all mouse button remap rules.
 void InputRemap::clearMouseButtons() { wipe(_mouse, kMouseButtons, _entries); }
+
+// Clears all gamepad button remap rules.
 void InputRemap::clearPadButtons() { wipe(_pad, kPadBits, _entries); }
 
+// Clears all active input remap rules.
 void InputRemap::clearAll()
 {
     clearKeys();
@@ -92,11 +102,13 @@ void InputRemap::clearAll()
     clearPadButtons();
 }
 
+// Checks if any remap rules are currently active.
 bool InputRemap::isActive() const
 {
     return _entries.load(std::memory_order_relaxed) != 0;
 }
 
+// Resolves the remapped scan code for a given physical key.
 int InputRemap::keyTarget(uint32_t from) const
 {
     if (from >= kKeys) return static_cast<int>(from);
@@ -105,6 +117,7 @@ int InputRemap::keyTarget(uint32_t from) const
     return entry == 1 ? kDropped : static_cast<int>(entry - 2);
 }
 
+// Resolves the remapped button index for a given physical mouse button.
 int InputRemap::mouseTarget(uint32_t from) const
 {
     if (from >= kMouseButtons) return static_cast<int>(from);
@@ -113,6 +126,7 @@ int InputRemap::mouseTarget(uint32_t from) const
     return entry == 1 ? kDropped : static_cast<int>(entry - 2);
 }
 
+// Applies keyboard remapping in-place across a DIK key state buffer.
 void InputRemap::remapKeyboardState(uint8_t* state, size_t size) const
 {
     if (!state || size < kKeys || !isActive()) return;
@@ -128,6 +142,7 @@ void InputRemap::remapKeyboardState(uint8_t* state, size_t size) const
     }
 }
 
+// Applies mouse button remapping in-place across button states.
 void InputRemap::remapMouseButtons(uint8_t* buttons, size_t count) const
 {
     if (!buttons || count == 0 || !isActive()) return;
@@ -146,6 +161,7 @@ void InputRemap::remapMouseButtons(uint8_t* buttons, size_t count) const
     }
 }
 
+// Transforms an XInput button bitmask according to active gamepad remap rules.
 uint16_t InputRemap::remapPad(uint16_t buttons) const
 {
     if (buttons == 0 || !isActive()) return buttons;

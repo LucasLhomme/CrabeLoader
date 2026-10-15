@@ -37,22 +37,11 @@
 
 namespace crabe::domain {
 
-// Mod names and paths come from whatever an archive unpacked into mods/, so
-// they are attacker-controlled. Both chunks below are compile-time constants
-// and receive every such value as a `...` argument: a directory called
-// `Bob's mod` is then a plain string, and one called `x'); os.exit() --` is
-// still a plain string instead of a second statement running outside the
-// sandbox.
-
 static constexpr std::string_view kSetPackagePathChunk = R"LUA(
     local root = ...
     package.path = root .. '/?.lua;' .. root .. '/modules/?.lua;' .. package.path
 )LUA";
 
-// setCurrentOwner brackets the chunk so every subscription it registers is
-// attributed to this mod and revoked on the next hot reload (Crabe.Registry,
-// src/api/02b_registry.lua). The owner is cleared on both exits, so a mod that
-// fails to load never leaves the next one registering under its name.
 static constexpr std::string_view kLoadModChunk = R"LUA(
     local path, modName = ...
     if not (Crabe and Crabe.Sandbox and Crabe.Sandbox.create) then
@@ -78,17 +67,6 @@ namespace {
         return manifest.getVersion().empty() ? std::string("(no version)") : manifest.getVersion();
     }
 
-    // The v0 id gap, and the one place this loader decides what to do about
-    // it -- manifestVersion 0 has no "id" key, so ModManifest::getId() is
-    // empty for every mod that shipped before T8 and for every mod with no
-    // mod.json at all, and the dependency resolver is keyed on id throughout.
-    // Naming them ("local.<sanitised-folder-name>", numbered apart on
-    // collision) is policy, not something the resolver or ModManifest decide
-    // -- see domain/mod_id.hpp, which T16 pulled this out into so that
-    // crabe-cli's `resolve` command computes exactly the id ModManager would,
-    // rather than a guess that can drift out of step with it.
-
-    // One mod as it was found on disk, before anything has been run.
     struct Candidate {
         std::string id;
         std::string name;
@@ -139,9 +117,6 @@ const std::filesystem::path& ModManager::getModsFolder() const noexcept
 }
 
 // Loads a modular directory into an isolated sandbox environment.
-//
-// Whether this mod should load at all was settled before the call: the manifest
-// was parsed during discovery and the resolver ruled on it. This runs it.
 bool ModManager::loadModDirectory(void* L, const std::filesystem::path& modPath,
                                   const std::string& modName, const ModManifest& manifest)
 {
@@ -157,20 +132,12 @@ bool ModManager::loadModDirectory(void* L, const std::filesystem::path& modPath,
 
     const ModEntryPlan plan = planModEntry(modPath, modName, manifest);
 
-    // A content mod runs no Lua by design: its characters/ or skilltrees/ were
-    // read at boot by Loader, before this Lua state existed. mods/crabe_heroes
-    // is exactly that -- one exposeCharacter declaration and no script -- so
-    // reporting it as failed would be as wrong as the silent success below was.
     if (plan.isContentOnly()) {
         logger.debug("ModManager: mod '{}' ships no Lua; its {} were read at startup.",
                      modName, plan.describeContentDirectories());
         return true;
     }
 
-    // A folder with nothing at all used to return true and be reported as
-    // `loaded in 0.1 ms`. Nothing downstream can detect that: the sandbox is
-    // never entered, so there is no error to propagate. It has to be refused
-    // here or not at all.
     if (plan.isEmpty()) {
         logger.error("ModManager: mod '{}' ran nothing -- no entry script, no .lua file at the "
                      "top level of '{}', and no characters/ or skilltrees/ folder either. "
@@ -190,8 +157,6 @@ bool ModManager::loadModDirectory(void* L, const std::filesystem::path& modPath,
         if (!loaded) {
             logger.error("ModManager: mod '{}' failed to run: {}", modName, outError);
         } else {
-            // The load report is the one INFO line per mod; this names the file
-            // that ran, which only matters when something went wrong.
             logger.debug("ModManager: mod '{}' ran entry '{}'.",
                          modName, plan.entryScript.filename().string());
         }
@@ -228,20 +193,12 @@ bool ModManager::loadStandaloneScript(void* L, const std::filesystem::path& scri
     return loaded;
 }
 
-// Discovers and loads mods from the given directory.
-//
-// Five steps, in this order: find the candidates, name them, resolve them, run
-// them in the order that came back, report. The order used to be whatever
-// std::filesystem::directory_iterator yielded, which the standard does not
-// specify and which nothing could configure.
+// Discovers and loads mods from the given directory in resolved dependency order.
 void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsFolder)
 {
     if (!L)
         return;
 
-    // A state that has just loaded every mod is current by definition. Recorded
-    // outside _mutex: _reloads has its own lock, and taking one inside the
-    // other is how a lock-ordering problem gets built for a later thread.
     _reloads.markReloaded(L);
 
     std::lock_guard<std::mutex> lock(_mutex);
@@ -258,14 +215,11 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         return;
     }
 
-    // ---- 1. Discover, parsing each mod.json exactly once. ----
     std::vector<Candidate> candidates;
 
     for (const auto& entry : std::filesystem::directory_iterator(modsFolder, ec)) {
         if (entry.is_directory()) {
             std::string folderName = entry.path().filename().string();
-            // Unchanged: a leading '.' or '_' marks a directory that is not a
-            // mod (mods/_template is a worked example, not something to run).
             if (folderName.empty() || folderName[0] == '.' || folderName[0] == '_')
                 continue;
             Candidate candidate;
@@ -283,17 +237,10 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         }
     }
 
-    // ---- 2. Report what the manifests say about themselves. ----
     for (Candidate& candidate : candidates) {
         if (candidate.manifest.isMalformed() && candidate.manifest.diagnostic().has_value()) {
             logger.error("ModManager: mod '{}' has an unusable mod.json, ignoring it: {}",
                          candidate.name, candidate.manifest.diagnostic()->what());
-            // Unchanged behaviour, deliberately: the mod then loads as though it
-            // had no manifest at all, because refusing it would be a stricter
-            // contract than the one mods were written against. Handing the
-            // malformed manifest to the resolver would refuse it -- which is the
-            // right answer for a resolver and the wrong one here -- so it is
-            // replaced by the absent state it falls back to.
             candidate.manifest = ModManifest{};
         } else if (candidate.manifest.isValid() && !candidate.manifest.getIgnoredKeys().empty()) {
             std::string keys;
@@ -308,13 +255,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         }
     }
 
-    // ---- 2b. Filter by the active profile (T11). A provisional id only --
-    //          the declared one, or the same unnumbered synthesiseModId()
-    //          step 3 would assign for real -- because a collision between
-    //          two mods a profile drops on the floor never needs
-    //          disambiguating. Filtering happens here, before naming and
-    //          before resolution: a disabled mod is simply not a candidate
-    //          from this point on, never a rejection the resolver reports.
     {
         crabe::domain::Config& activeConfig = crabe::domain::Config::active();
         std::vector<Candidate> enabledCandidates;
@@ -334,8 +274,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         candidates = std::move(enabledCandidates);
     }
 
-    // ---- 3. Name every mod, via the same pure rule crabe-cli's `resolve`
-    //         command applies to the same folder (domain/mod_id.hpp).
     std::vector<ModIdCandidate> idCandidates;
     idCandidates.reserve(candidates.size());
     for (const Candidate& candidate : candidates) {
@@ -360,8 +298,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
                        candidates[collision.index].name, collision.wantedId, collision.chosenId);
     }
 
-    // ---- 4. Resolve. Pure, so everything above this line is what decides the
-    //         answer -- and everything below it is bookkeeping.
     std::vector<ResolverInput> inputs;
     inputs.reserve(candidates.size());
     for (const Candidate& candidate : candidates)
@@ -371,7 +307,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
                                crabe::version::Patch);
     const ResolutionResult resolution = resolve(inputs, loaderVersion);
 
-    // ---- 5. Run, in order, and report one line per mod. ----
     logger.info("ModManager: {} mod(s) found in '{}': {} to load, {} rejected (loader v{}).",
                 candidates.size(), modsFolder.string(), resolution.loadOrder.size(),
                 resolution.rejected.size(), crabe::version::String);
@@ -379,10 +314,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
     std::vector<bool> ran(candidates.size(), false);
     _mods.reserve(resolution.loadOrder.size());
 
-    // The reporter's own mod list is rebuilt here rather than read from _mods
-    // at crash time: a handler must not walk a std::vector of std::string that
-    // another thread may be resizing, and domain::Mod carries no version to
-    // report in the first place.
     crabe::infrastructure::CrashReporter::forgetMods();
 
     for (std::size_t position = 0; position < resolution.loadOrder.size(); ++position) {
@@ -390,10 +321,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         Candidate& candidate = candidates[index];
         ran[index] = true;
 
-        // This is the one place in C++ where the running mod is actually
-        // known. Once control is inside Lua, Crabe.Mod.dispatchDraw() picks
-        // the mod and the loader cannot see which -- so a fault during a draw
-        // is attributed to the hook, not to a mod, and that is honest.
         const crabe::infrastructure::ScopedMod scopedMod(candidate.id);
         crabe::infrastructure::CrashReporter::pushBreadcrumb("ModManager: running ", candidate.id);
 
@@ -421,10 +348,6 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
         });
     }
 
-    // Each rejection is matched back to the copy on disk it came from, so the
-    // line names a folder the reader can go and look at. A duplicated id has
-    // several rejections and several copies, so they are consumed in step and
-    // each line names a different folder.
     std::multimap<std::string, std::size_t> rejectedCopies;
     for (std::size_t index = 0; index < candidates.size(); ++index) {
         if (!ran[index])
@@ -462,8 +385,6 @@ void ModManager::reloadAllMods(void* L)
     if (!L)
         return;
 
-    // Recorded before anything runs, so that a reload which faults partway
-    // through does not leave this state asking for the same generation forever.
     const bool firstOfGeneration = _reloads.markReloaded(L);
 
     crabe::shared::Logger::getInstance().info(
@@ -475,24 +396,6 @@ void ModManager::reloadAllMods(void* L)
         "    Crabe.Mod.reload() "
         "end");
 
-    // Lua-side subscriptions are revoked by the chunk above; native hooks are
-    // not, because nothing in Lua knows about them. A hook left installed
-    // across a reload points its detour at a closure the new Lua state does not
-    // contain, which is a crash on the next call rather than a stale callback.
-    //
-    // Nothing owns a hook yet -- mods reach the registry only once T17 lands --
-    // so today every call below returns 0. The wiring is here rather than
-    // waiting for the first owner precisely so that it cannot be forgotten
-    // then: a mod that installs a hook must not be the change that also has to
-    // remember to tear it down.
-    //
-    // The ids are copied out under the lock and the registry is called without
-    // it: discoverAndLoadMods below takes _mutex for its whole body, and
-    // holding it across a call into another subsystem's lock is how an ordering
-    // problem gets built for a later thread to find.
-    // Once per generation, not once per state: native hooks are global, so
-    // revoking them again after the second state has reinstalled them would
-    // tear down what the reload had just put back.
     std::vector<std::string> owners;
     if (firstOfGeneration) {
         std::lock_guard<std::mutex> lock(_mutex);
@@ -516,11 +419,6 @@ void ModManager::reloadAllMods(void* L)
 
     discoverAndLoadMods(L, targetFolder);
 
-    // How many live states have yet to catch up. A dormant state -- the
-    // front-end while a world is running, say -- reloads only when it next
-    // executes Lua, which can be much later. Without this line that is
-    // indistinguishable from the state having been missed entirely, which is
-    // exactly the confusion the single-bool version created.
     const std::size_t behind = _reloads.statesBehind();
     if (behind != 0) {
         crabe::shared::Logger::getInstance().info(
@@ -530,9 +428,7 @@ void ModManager::reloadAllMods(void* L)
     }
 }
 
-// Records one frame of mod ImGui calls on the script thread. Nothing is drawn
-// here: the commands are replayed later by RenderHook inside Present, which is
-// the only place allowed to touch Direct3D (Architecture Blueprint, Rule 3).
+// Records one frame of mod ImGui calls on the script thread.
 void ModManager::dispatchDraw(void* L)
 {
     if (!L || !crabe::application::Loader::get().isRuntimeReady())

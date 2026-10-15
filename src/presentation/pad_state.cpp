@@ -18,6 +18,7 @@ namespace crabe::presentation {
 
 namespace {
 
+    // Packs two 16-bit stick axes into a single 32-bit unsigned integer.
     uint32_t packStick(int16_t x, int16_t y)
     {
         return static_cast<uint16_t>(x) | (static_cast<uint32_t>(static_cast<uint16_t>(y)) << 16);
@@ -25,6 +26,7 @@ namespace {
 
 }
 
+// Records the current polling outcome and gamepad state for a controller slot.
 void PadStateStore::observe(uint32_t slot, uint32_t result, void* state)
 {
     if (slot >= kMaxSlots) return;
@@ -44,6 +46,7 @@ void PadStateStore::observe(uint32_t slot, uint32_t result, void* state)
         std::memset(pad, 0, sizeof(*pad));
 }
 
+// Unpacks and returns the latest observed gamepad state for a slot.
 PadState PadStateStore::pad(uint32_t slot) const
 {
     PadState out;
@@ -64,11 +67,13 @@ PadState PadStateStore::pad(uint32_t slot) const
     return out;
 }
 
+// Toggles whether observed pad states are cleared before passing to the caller.
 void PadStateStore::setCaptured(bool captured)
 {
     _captured.store(captured, std::memory_order_relaxed);
 }
 
+// Returns whether gamepad capture mode is currently active.
 bool PadStateStore::isCaptured() const
 {
     return _captured.load(std::memory_order_relaxed);

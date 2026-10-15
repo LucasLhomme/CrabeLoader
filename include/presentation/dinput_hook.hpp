@@ -22,24 +22,21 @@ struct IDirectInputDevice8A;
 
 namespace crabe::presentation {
 
-// Hooks IDirectInputDevice8::GetDeviceState and GetDeviceData. The keyboard and the
-// mouse do not share that code on every Windows build (a session logged the mouse
-// using its own), so each distinct address gets its own hook; the device kind is
-// still read per call, which makes every detour correct whichever device reaches it.
 class DirectInputHook {
     public:
+        // Returns the singleton instance of DirectInputHook.
         static DirectInputHook& get();
 
-        // Returns false if DirectInput is unavailable; the loader works without it.
+        // Initializes DirectInput hooks on available devices.
         bool initialize();
+
+        // Removes all installed DirectInput hooks.
         void uninitialize();
 
-        // Whole wheel notches the game has read since the last call (positive up), for mods that need the wheel
-        // at tick time: the engine hands it to the menus as an input action and a mod cannot read that.
+        // Returns accumulated mouse wheel notches since the previous call.
         int takeWheelNotches();
 
-        // "dinput kbdState:N kbdData:N mouseState:N mouseData:N otherState:N wheel:N" calls seen since the hook went in.
-        // This is how a session shows which path the game actually reads its keyboard through.
+        // Generates a diagnostic summary of intercepted DirectInput calls.
         std::string report() const;
 
     private:
@@ -56,12 +53,12 @@ class DirectInputHook {
         static long __stdcall hkGetDeviceData(IDirectInputDevice8A* self, unsigned long objectSize, void* events,
                                               unsigned long* count, unsigned long flags);
 
-        // The mouse's own code, hooked only when it is not the keyboard's.
+        // Intercepts mouse device state queries when distinct from keyboard.
         static long __stdcall hkMouseGetDeviceState(IDirectInputDevice8A* self, unsigned long size, void* data);
         static long __stdcall hkMouseGetDeviceData(IDirectInputDevice8A* self, unsigned long objectSize, void* events,
                                                    unsigned long* count, unsigned long flags);
 
-        // What every detour does once the real call has returned.
+        // Processes device state buffer after the real call completes.
         long afterState(unsigned long size, void* data, long result);
         long afterData(IDirectInputDevice8A* self, unsigned long objectSize, void* events, unsigned long* count, long result);
 
@@ -70,7 +67,6 @@ class DirectInputHook {
         crabe::infrastructure::Hook _hookMouseState;
         crabe::infrastructure::Hook _hookMouseData;
 
-        // Relaxed: only the counts matter, never their ordering.
         std::atomic<uint32_t> _keyboardStates{ 0 };
         std::atomic<uint32_t> _keyboardEvents{ 0 };
         std::atomic<uint32_t> _mouseStates{ 0 };

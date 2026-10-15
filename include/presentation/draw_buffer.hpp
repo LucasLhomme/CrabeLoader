@@ -54,16 +54,12 @@ namespace crabe::presentation {
         ShapeImage,
     };
 
-    // Fonts a draw command can ask for: the atlas default plus the two UI faces
-    // the overlay loads at startup. A missing face falls back to Default.
     enum class DrawFont : std::uint8_t {
         Default = 0,
         Body = 1,
         Display = 2,
     };
 
-    // One recorded ImGui call. The numeric slots and `b0` are op-specific, but
-    // `b1` always means "the script recorded a matching close for this scope".
     struct DrawCommand {
         DrawOp op = DrawOp::Separator;
         std::uint32_t id = 0;
@@ -82,8 +78,6 @@ namespace crabe::presentation {
         bool b1 = false;
     };
 
-    // What the render thread measured for one widget, read back by the script
-    // thread on the following frame.
     struct WidgetResult {
         bool flag = false;
         bool open = true;
@@ -91,46 +85,35 @@ namespace crabe::presentation {
         std::string text;
     };
 
-    // Turns an image path into an ImGui texture id, or nullptr when it cannot.
-    // Called on the render thread only; the renderer installs it once at startup.
     using ImageResolver = void* (*)(const std::string& path);
 
-    // Carries one frame of Lua-issued ImGui calls from the script thread to the
-    // render thread, and the resulting widget states back, so that the Lua VM is
-    // never touched outside Loader::runTicks (Architecture Blueprint, Rule 3).
     class DrawBuffer final {
     public:
+        // Returns the singleton instance of DrawBuffer.
         static DrawBuffer& get();
 
-        // Script thread: opens a new recording, dropping any unpublished one.
+        // Opens a new recording on the script thread, dropping any unpublished frame.
         void beginFrame();
 
-        // Script thread: appends a command and returns its generated widget id.
+        // Appends a command on the script thread and returns its generated widget id.
         std::uint32_t record(DrawCommand command);
 
-        // Script thread: appends a scope-opening command, returns last frame's
-        // state for it, and stores that state in the command so the replay knows
-        // whether a matching close follows in the stream.
+        // Appends a scope-opening command and returns previous frame state for it.
         bool recordScope(DrawCommand command, bool fallback);
 
-        // Script thread: publishes the recording for the render thread to replay.
+        // Publishes the recorded frame for the render thread to replay.
         void endFrame();
 
-        // Script thread: reads back what the render thread measured for `id`.
-        // False when that widget was never drawn, leaving `out` untouched.
+        // Reads back measured widget state for the given widget id.
         bool tryResult(std::uint32_t id, WidgetResult& out) const;
 
-        // Render thread: replays the published frame through native ImGui and
-        // records every widget state for the script thread to read next frame.
-        // Publishing an empty frame is what resets stale widget state.
+        // Replays the published frame through native ImGui on the render thread.
         void replay();
 
-        // Render thread: installs the function ShapeImage uses to find a texture.
-        // Without one, an image command draws nothing.
+        // Configures the texture resolver callback for image drawing operations.
         static void setImageResolver(ImageResolver resolver);
 
-        // Script thread: the display size the render thread saw on its last
-        // frame, or 0x0 before the first one.
+        // Retrieves the last recorded display size from the render thread.
         void displaySize(float& width, float& height) const;
 
     private:
