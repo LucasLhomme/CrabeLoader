@@ -31,3 +31,11 @@ class TestRanking(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_stress_poses_registered():
+    from src.core.quality import ALL_POSES
+    from src.core.rig import POSES
+
+    assert {"overhead", "reach", "elbow", "twist"} <= set(POSES)
+    assert all(pose in POSES for pose, _ in ALL_POSES)

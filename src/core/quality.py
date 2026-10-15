@@ -18,6 +18,11 @@ BROKEN_RATIO = 2.0
 MEAN_LIMIT, BROKEN_LIMIT, TORN_LIMIT = 0.08, 0.035, 0.03
 """Values at which each penalty is maxed out (calibrated on 59 test rigs: the middle rigs score ~60-70, the worst ~20)."""
 QUALITY_POSES = (("arms", "Arms up"), ("walk", "Walk"))
+STRESS_POSES = (("overhead", "Arms overhead"), ("reach", "Arms forward"), ("elbow", "Elbows bent"),
+                ("twist", "Torso twist"))
+"""Harder poses: shoulders, elbows and spine. They count for 40 % of the stretch penalty."""
+STRESS_WEIGHT = 0.4
+ALL_POSES = QUALITY_POSES + STRESS_POSES
 
 
 @dataclass
@@ -41,8 +46,10 @@ class DeformationReport:
         if self.collapsed:
             return "Deformation: FAILED - the model is collapsed (flattened or crushed). The skinning weights are broken."
         lines = [f"Deformation: {label} ({self.score}/100) - {100 * self.broken:.1f}% of edges changed more than 2x"]
-        for pose, title in QUALITY_POSES:
-            count, worst = self.per_pose.get(pose, (0, 0.0))
+        for pose, title in ALL_POSES:
+            if pose not in self.per_pose:
+                continue
+            count, worst = self.per_pose[pose]
             lines.append(f"  {title}: {count} stretched edge(s), worst ×{worst:.1f}")
         lines.append(f"  Baking into the game pose: {100 * self.bake:.1f}% of triangles distorted more than 2x "
                      "(shoulders, neck)")
@@ -95,18 +102,26 @@ def deformation_report(rig, amount: float = 1.0) -> DeformationReport:
     if not np.isfinite(after).all() or ratio[0] * ratio[2] < COLLAPSE_AREA or ratio[1] < COLLAPSE_HEIGHT:
         return DeformationReport(0, "bad", {}, 0, 0.0, collapsed=True, broken=1.0)
     edges = unique_edges(rig.faces)
-    per_pose, means, brokens, torns = {}, [], [], []
-    for pose, _ in QUALITY_POSES:
-        mask, worst = stretched_edges(rig.baked, rig.posed(pose, amount), edges)
-        ratio = edge_ratios(rig.baked, rig.posed(pose, amount), edges)
+    stats, per_pose = {}, {}
+    for pose, _ in ALL_POSES:
+        posed = rig.posed(pose, amount)
+        mask, worst = stretched_edges(rig.baked, posed, edges)
+        ratio = edge_ratios(rig.baked, posed, edges)
         if len(ratio) == 0:
             ratio = np.ones(1)
-        means.append(float(np.abs(np.log(np.clip(ratio, 1e-3, 1e3))).mean()))
-        brokens.append(float(((ratio > BROKEN_RATIO) | (ratio < 1 / BROKEN_RATIO)).mean()))
-        torns.append(float((ratio > STRETCH_LIMIT).mean()))
+        stats[pose] = (float(np.abs(np.log(np.clip(ratio, 1e-3, 1e3))).mean()),
+                       float(((ratio > BROKEN_RATIO) | (ratio < 1 / BROKEN_RATIO)).mean()),
+                       float((ratio > STRETCH_LIMIT).mean()))
         per_pose[pose] = (int(mask.sum()), worst)
-    penalty = (0.5 * min(1.0, max(means) / MEAN_LIMIT) + 0.3 * min(1.0, max(brokens) / BROKEN_LIMIT)
-               + 0.2 * min(1.0, max(torns) / TORN_LIMIT))
+
+    def penalty_of(poses):
+        means, brokens, torns = zip(*(stats[p] for p, _ in poses))
+        return (0.5 * min(1.0, max(means) / MEAN_LIMIT) + 0.3 * min(1.0, max(brokens) / BROKEN_LIMIT)
+                + 0.2 * min(1.0, max(torns) / TORN_LIMIT))
+
+    means = [stats[p][0] for p, _ in QUALITY_POSES]
+    brokens = [stats[p][1] for p, _ in QUALITY_POSES]
+    penalty = (1 - STRESS_WEIGHT) * penalty_of(QUALITY_POSES) + STRESS_WEIGHT * penalty_of(STRESS_POSES)
     score = int(round(100 * (1.0 - penalty)))
     level = "good" if score >= GOOD_SCORE else "warn" if score >= WARN_SCORE else "bad"
     return DeformationReport(score, level, per_pose, len(edges), float(np.mean(means)), broken=max(brokens),
@@ -115,7 +130,7 @@ def deformation_report(rig, amount: float = 1.0) -> DeformationReport:
 
 def stretched_segments(rig, pose: str, amount: float = 1.0) -> np.ndarray:
     """Line list (2K, 3) of the stretched edges in a pose, in the posed vertex positions (for the red overlay)."""
-    if pose not in dict(QUALITY_POSES):
+    if pose not in dict(ALL_POSES):
         return np.zeros((0, 3), np.float32)
     posed = rig.posed(pose, amount)
     edges = unique_edges(rig.faces)

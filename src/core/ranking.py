@@ -47,6 +47,9 @@ class Candidate:
     deformation: int = 0
     bake: float = 0.0
     note: str = ""
+    tested: bool = True
+    """False: only the silhouette was compared (no rig built yet)."""
+    franchise: str = ""
 
 
 def _arm_angle(shoulder_x: float, shoulder_y: float, tip_x: float, tip_y: float) -> float:
@@ -169,14 +172,16 @@ def rank_by_shape(model_profile: np.ndarray, figures: dict) -> list[tuple[float,
 
 
 def rank_bases(source, entries, work: Path, progress=lambda text: None, shortlist: int = SHORTLIST,
-               blender: Path | None = None, weight_transfer: bool = False) -> list[Candidate]:
-    """Ranked candidates (best first). `entries` are roster entries; `progress` gets short status lines."""
+               blender: Path | None = None, weight_transfer: bool = False, skip=()) -> list[Candidate]:
+    """Every distinct figure, ranked: the `shortlist` best not in `skip` get the full rig test (best first), the
+    others follow in silhouette order, marked untested. `entries` are roster entries."""
     reference = CharacterModel(source, auto_placement(source, 2.0))
     ref_props, _ = measure(reference.vertices(), reference.faces, None)
     figures = figure_features(entries, work, progress)
     by_actor = {e.actor: e for e in entries}
     ordered = rank_by_shape(silhouette_profile(reference.vertices()), figures)
-    picks = diverse_shortlist([(d, actor, f) for d, actor, f, _ in ordered], shortlist)
+    skip = set(skip)
+    picks = diverse_shortlist([(d, actor, f) for d, actor, f, _ in ordered if actor not in skip], shortlist)
 
     ranked = []
     for n, (distance, actor, _) in enumerate(picks, 1):
@@ -197,6 +202,12 @@ def rank_bases(source, entries, work: Path, progress=lambda text: None, shortlis
         level = "good" if score >= 70 else "warn" if score >= 50 else "bad"
         note = f"shape {match}%, stretch {report.score}/100, bake {100 * report.bake:.0f}%"
         ranked.append(Candidate(actor, name, score, level, distance, report.summary(), report.distortion, match,
-                                report.score, report.bake, note))
+                                report.score, report.bake, note, True, by_actor[actor].franchise))
     ranked.sort(key=lambda c: (-c.score, c.distortion))
+    tested = {c.actor for c in ranked} | skip
+    for distance, actor, _, _ in ordered:
+        if actor not in tested:
+            match = shape_match(distance)
+            ranked.append(Candidate(actor, figures[actor][2], match, "warn", distance, "", 0.0, match, 0, 0.0,
+                                    f"shape {match}%, not tested", False, by_actor[actor].franchise))
     return ranked

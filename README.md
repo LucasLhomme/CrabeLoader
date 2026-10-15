@@ -101,6 +101,14 @@ figures pour toi : il compare la silhouette de ton modèle à celle de chaque fi
 corps différents (pas cinq clones), puis construit le vrai rig des meilleures et mesure l'étirement dans les poses de
 test et la déformation au moment de caler ton T-pose sur la pose du jeu. Chaque ligne affiche ces trois mesures.
 
+Comme le moveset vient avec la figure, **toute la liste (~90 figures) reste affichée** : les 12 meilleures sont testées
+d'office, les autres sont classées par silhouette (« not tested »). Le bouton **« Test the next 12 figures »** teste
+le lot suivant, et le champ de filtre cherche par nom ou par licence (Avengers, Star Wars…).
+
+Les poses de test comptent six poses : bras levés, marche, **bras au-dessus de la tête, bras devant, coudes pliés et
+torsion du buste** (40 % de la pénalité d'étirement). Elles sont aussi disponibles dans le sélecteur de pose pour
+voir où les épaules cassent.
+
 La case **« in T-pose »** (sous « Show the base figure alongside ») remet la figure de comparaison et son squelette cyan
 en T-pose, pour les aligner avec ton modèle.
 

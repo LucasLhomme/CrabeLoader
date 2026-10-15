@@ -47,7 +47,8 @@ from src.render.gl_widget import GLRenderer
 from src.ui.timeline import TimelineWidget
 
 GREEN, RED, YELLOW, GREY = "#4ade80", "#f87171", "#fbbf24", "#a1a1aa"
-POSES = {"T-pose": "tpose", "In-game pose": "bind", "Arms up": "arms", "Walk": "walk"}
+POSES = {"T-pose": "tpose", "In-game pose": "bind", "Arms up": "arms", "Walk": "walk", "Overhead": "overhead",
+         "Forward": "reach", "Elbows": "elbow", "Twist": "twist"}
 DEFAULT_BASE = "EMP_Luke"
 GROW_MAX_PIECE = 3000
 """"Grow" only absorbs loose pieces this small (in vertices): never the body or the head."""
@@ -1120,24 +1121,23 @@ class MainWindow(ctk.CTk):
             self._refresh_piece_list()
             self._geometry_changed()
 
-    def on_suggest_bases(self):
-        """Try every figure on the imported model in the background and list the ones that deform the least."""
+    def on_suggest_bases(self, more: bool = False):
+        """Compare every figure with the imported model; the best ones get the full rig test, `more` tests the next
+        batch (the moveset comes with the figure, so the whole roster stays pickable)."""
         if self.busy:
             return
         if not self.model:
             self.base_info.configure(text="Import a model first (tab 1), then ask for suggestions.", text_color=YELLOW)
             return
-        for child in self.suggest_frame.winfo_children():
-            child.destroy()
         source, blender = self.model.source, normalize_blender_path(self.blender_entry.get()) if hasattr(self, "blender_entry") else ""
+        previous = {c.actor: c for c in getattr(self, "_candidates", []) if c.tested} if more else {}
         self.suggest_button.configure(state="disabled", text="Testing the figures… (1 to 2 minutes)")
-
         transfer = self._weight_transfer()
 
         def job():
             return rank_bases(source, load_roster(), WORK_DIR / "rank", lambda text: self._events.put(
                 lambda: self.suggest_button.configure(text=text)),
-                blender=Path(blender) if blender else None, weight_transfer=transfer)
+                blender=Path(blender) if blender else None, weight_transfer=transfer, skip=set(previous))
 
         def done(result, error):
             self._set_busy(False)
@@ -1145,16 +1145,54 @@ class MainWindow(ctk.CTk):
             if error:
                 self._failed(error)
                 return
-            for i, c in enumerate(result[:6]):
-                colour = {"good": GREEN, "warn": YELLOW, "bad": RED}[c.level]
-                ctk.CTkButton(self.suggest_frame, anchor="w", height=26, fg_color="#18181b", hover_color="#27272a",
-                              text=f"{i + 1}. {c.display_name} — {c.score}/100  ({c.note})", text_color=colour,
-                              command=lambda a=c.actor: self.on_pick_base(a)).grid(row=i, column=0, sticky="ew", pady=1)
-            ctk.CTkLabel(self.suggest_frame, text="Score = body shape match (silhouette), little stretching in the test poses, "
-                                                  "and little distortion when baking your T-pose into the figure's "
-                                                  "pose. It cannot judge looks: check the comparison view.", text_color=GREY,
-                         wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(row=7, column=0, sticky="w")
+            tested = sorted([c for c in result if c.tested] + list(previous.values()),
+                            key=lambda c: (-c.score, c.distortion))
+            self._candidates = tested + [c for c in result if not c.tested]
+            self._show_candidates()
         self._run(job, done)
+
+    def _show_candidates(self):
+        """The whole ranked roster in a scrollable list, filterable by name or franchise."""
+        for child in self.suggest_frame.winfo_children():
+            child.destroy()
+        candidates = getattr(self, "_candidates", [])
+        if not candidates:
+            return
+        self.suggest_filter = ctk.StringVar()
+        entry = ctk.CTkEntry(self.suggest_frame, textvariable=self.suggest_filter, height=24,
+                             placeholder_text="Filter by name or franchise (Avengers, Star Wars…)")
+        entry.grid(row=0, column=0, sticky="ew", pady=(0, 2))
+        entry.bind("<KeyRelease>", lambda _e: self._fill_candidates())
+        self.suggest_list = ctk.CTkScrollableFrame(self.suggest_frame, height=230, fg_color="transparent")
+        self.suggest_list.grid(row=1, column=0, sticky="ew")
+        self.suggest_list.grid_columnconfigure(0, weight=1)
+        self.suggest_more = ctk.CTkButton(self.suggest_frame, height=24, fg_color="#27272a",
+                                          text="Test the next 12 figures on this model",
+                                          command=lambda: self.on_suggest_bases(more=True))
+        self.suggest_more.grid(row=2, column=0, sticky="ew", pady=2)
+        ctk.CTkLabel(self.suggest_frame, text="Tested figures: score = body shape match, little stretching in 6 test "
+                                              "poses (shoulders, elbows, torso), little distortion when baking your "
+                                              "T-pose. Untested ones are ranked by silhouette only. The moveset comes "
+                                              "with the figure: check the comparison view.", text_color=GREY,
+                     wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(row=3, column=0, sticky="w")
+        self._fill_candidates()
+
+    def _fill_candidates(self):
+        for child in self.suggest_list.winfo_children():
+            child.destroy()
+        needle = self.suggest_filter.get().strip().lower()
+        shown = 0
+        for i, c in enumerate(self._candidates, 1):
+            if needle and needle not in c.display_name.lower() and needle not in c.franchise.lower():
+                continue
+            colour = {"good": GREEN, "warn": YELLOW, "bad": RED}[c.level] if c.tested else GREY
+            franchise = f" [{c.franchise}]" if c.franchise else ""
+            ctk.CTkButton(self.suggest_list, anchor="w", height=24, fg_color="#18181b", hover_color="#27272a",
+                          text=f"{i}. {c.display_name}{franchise} — {c.score}/100  ({c.note})", text_color=colour,
+                          command=lambda a=c.actor: self.on_pick_base(a)).grid(row=shown, column=0, sticky="ew", pady=1)
+            shown += 1
+            if shown >= 120:
+                break
 
     def _weight_transfer(self) -> bool:
         """True when the robust weight transfer option is on and usable (the reason is logged otherwise)."""

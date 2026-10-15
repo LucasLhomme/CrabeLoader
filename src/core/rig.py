@@ -248,7 +248,51 @@ def _walk(base, world, amount=1.0):
     return _rotate_chain(base, world, "Thigh", ("Thigh", "Knee", "Ankle", "Ball", "Toes"), rx)
 
 
-POSES = {"arms": _arms_up, "walk": _walk}
+def _overhead(base, world, amount=1.0):
+    """Arms raised above the head (150 degrees from hanging): the hardest case for shoulder skinning."""
+    def rz(sx):
+        a = np.radians(150 * amount) * sx
+        return np.array([[np.cos(a), np.sin(a), 0], [-np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    return _rotate_chain(base, world, "Shoulder", ("Shoulder", "Elbow", "Forearm", "Hand", "Thumb", "Index", "Middle"), rz)
+
+
+def _rx(deg):
+    a = np.radians(deg)
+    return np.array([[1, 0, 0], [0, np.cos(a), np.sin(a)], [0, -np.sin(a), np.cos(a)]])
+
+
+def _reach(base, world, amount=1.0):
+    """Arms swung straight forward (punch / grab)."""
+    return _rotate_chain(base, world, "Shoulder", ("Shoulder", "Elbow", "Forearm", "Hand", "Thumb", "Index", "Middle"),
+                         lambda sx: _rx(85 * amount))
+
+
+def _elbow(base, world, amount=1.0):
+    """Arms halfway forward with the elbows bent at a right angle (guard, carrying)."""
+    arms = _rotate_chain(base, world, "Shoulder", ("Shoulder", "Elbow", "Forearm", "Hand", "Thumb", "Index", "Middle"),
+                         lambda sx: _rx(60 * amount))
+    return _rotate_chain(base, arms, "Elbow", ("Elbow", "Forearm", "Hand", "Thumb", "Index", "Middle"),
+                         lambda sx: _rx(100 * amount))
+
+
+def _twist(base, world, amount=1.0):
+    """Torso turned 40 degrees around the spine (swing, throw): chest, arms and head turn, the hips stay."""
+    a = np.radians(40 * amount)
+    r = np.array([[np.cos(a), 0, -np.sin(a)], [0, 1, 0], [np.sin(a), 0, np.cos(a)]])
+    pivot = world[base.bone_index("Spine2")][3, :3]
+    rot = np.eye(4)
+    rot[:3, :3] = r
+    rot[3, :3] = pivot - pivot @ r
+    posed = world.copy()
+    upper = ("Spine3", "Spine4", "Neck", "Head", "Clavicle", "Shoulder", "Elbow", "Forearm", "Hand", "Thumb", "Index",
+             "Middle")
+    for i, n in enumerate(base.bone_names):
+        if n.startswith(upper):
+            posed[i] = world[i] @ rot
+    return posed
+
+
+POSES = {"arms": _arms_up, "walk": _walk, "overhead": _overhead, "reach": _reach, "elbow": _elbow, "twist": _twist}
 
 
 def base_tpose(base: BaseCharacter) -> tuple[np.ndarray, dict]:
