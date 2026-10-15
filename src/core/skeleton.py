@@ -219,7 +219,7 @@ def measure(vertices: np.ndarray, faces: np.ndarray, base: BaseCharacter) -> tup
                 break
     # Where the base figure's legs start, as a fraction of its height: the fallback when the cross-sections lie
     # (a long coat or skirt joins across the midline down to its hem, so "the last joined section" is the hem).
-    thigh = base.joints.get("Thigh_Left")
+    thigh = base.joints.get("Thigh_Left") if base is not None else None
     prior = float(np.clip(thigh[1] / base.height, 0.40, 0.56)) * h if thigh is not None else 0.47 * h
     if crotch_y is None or crotch_y < 0.15 * h or crotch_y > arm_y - 0.12 * h:
         crotch_y = prior
