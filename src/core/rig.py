@@ -1,0 +1,218 @@
+"""Turn a placed T-pose model into a mesh skinned on the base character's own skeleton.
+
+The base skeleton and its inverse-bind matrices are kept byte-exact, so every shipped animation plays on the new
+mesh. Instead of rigging the mesh to a new skeleton, the mesh is baked into the base's bind pose: each body part
+is rotated/stretched from its fitted joint segment onto the base's segment (arms come down, joints line up).
+"""
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+
+from src.core.base_character import BaseCharacter
+from src.core.model import CharacterModel
+from src.core.rigging import compute_weights, quantize_weights, weld
+from src.core.skeleton import SIDES
+
+MAX_VERTICES = 65536 - 4
+
+
+@dataclass
+class RigResult:
+    base: BaseCharacter
+    tpose: np.ndarray
+    baked: np.ndarray
+    faces: np.ndarray
+    uvs: np.ndarray
+    normals: np.ndarray
+    tangents: np.ndarray
+    tangent_sign: np.ndarray
+    bone_idx: np.ndarray
+    bone_w: np.ndarray
+    method: str
+    anchors: dict
+
+    def posed(self, pose: str, amount: float = 1.0) -> np.ndarray:
+        """Vertices in a preview pose; `amount` scales the pose angle (1.0 = the standard test pose)."""
+        world = self.base.bind_world
+        if pose == "tpose":
+            return self.tpose
+        if pose == "bind":
+            return self.baked
+        posed = POSES[pose](self.base, world, amount)
+        return skin(self.baked, self.bone_idx, self.bone_w, world, posed)
+
+    def bind_roundtrip_error(self) -> float:
+        world = self.base.bind_world
+        return float(np.abs(skin(self.baked, self.bone_idx, self.bone_w, world, world) - self.baked).max())
+
+
+def rotation_between(a, b):
+    a = a / np.linalg.norm(a)
+    b = b / np.linalg.norm(b)
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    if c < -0.9999:
+        axis = np.cross(a, [1.0, 0, 0] if abs(a[0]) < 0.9 else [0, 1.0, 0])
+        axis /= np.linalg.norm(axis)
+        return 2 * np.outer(axis, axis) - np.eye(3)
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + vx + vx @ vx / (1.0 + c)
+
+
+def segment_transform(js, cs, jl, cl, axial=False, thicken=False):
+    """Row-vector affine map taking segment js->cs onto jl->cl (stretches along it if axial, limbs thickened by sqrt(k))."""
+    ds, dl = cs - js, cl - jl
+    rot_row = rotation_between(ds, dl).T
+    k = float(np.clip(np.linalg.norm(dl) / np.linalg.norm(ds), 0.85, 1.15)) if axial else 1.0
+    r = float(np.sqrt(k)) if thicken and k > 1.0 else 1.0
+    u = ds / np.linalg.norm(ds)
+    m = (r * np.eye(3) + (k - r) * np.outer(u, u)) @ rot_row
+    return m, jl - js @ m
+
+
+def bake_transforms(anchors, base_pos, preserve_proportions=True) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    stretch = not preserve_proportions
+    specs = {"Hips": ("Hips", "Spine2", "Hips", "Spine2", False),
+             "Spine2": ("Spine2", "Spine3", "Spine2", "Spine3", stretch),
+             "Spine3": ("Spine3", "Neck", "Spine3", "Neck", stretch),
+             "Neck": ("Neck", "Head", "Neck", "Head", stretch)}
+    for side, _ in SIDES:
+        specs[f"Clavicle_{side}"] = (f"Clavicle_{side}", f"Shoulder_{side}", f"Clavicle_{side}", f"Shoulder_{side}", stretch)
+        specs[f"Shoulder_{side}"] = (f"Shoulder_{side}", f"Elbow_{side}", f"Shoulder_{side}", f"Elbow_{side}", stretch)
+        specs[f"Elbow_{side}"] = (f"Elbow_{side}", f"Hand_{side}", f"Elbow_{side}", f"Hand_{side}", stretch)
+        specs[f"Hand_{side}"] = (f"Hand_{side}", f"HandTip_{side}", f"Hand_{side}", f"Middle1_{side}", False)
+        specs[f"Thigh_{side}"] = (f"Thigh_{side}", f"Knee_{side}", f"Thigh_{side}", f"Knee_{side}", stretch)
+        specs[f"Knee_{side}"] = (f"Knee_{side}", f"Ankle_{side}", f"Knee_{side}", f"Ankle_{side}", stretch)
+    out = {}
+    for bone, (sj, sc, lj, lc, axial) in specs.items():
+        limb = bone.startswith(("Shoulder_", "Elbow_", "Thigh_", "Knee_")) and stretch
+        out[bone] = segment_transform(anchors[sj], anchors[sc], base_pos[lj], base_pos[lc], axial, thicken=limb)
+    out["Head"] = (np.eye(3), base_pos["Head"] - anchors["Head"])
+    for side, _ in SIDES:
+        foot = (np.eye(3), base_pos[f"Ankle_{side}"] - anchors[f"Ankle_{side}"])
+        out[f"Ankle_{side}"] = foot
+        out[f"Ball_{side}"] = foot
+    return out
+
+
+def vertex_normals(verts, faces):
+    fn = np.cross(verts[faces[:, 1]] - verts[faces[:, 0]], verts[faces[:, 2]] - verts[faces[:, 0]])
+    n = np.zeros_like(verts)
+    for c in range(3):
+        np.add.at(n, faces[:, c], fn)
+    return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+
+
+def vertex_tangents(verts, uvs, normals, faces):
+    p0, p1, p2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+    t0, t1, t2 = uvs[faces[:, 0]], uvs[faces[:, 1]], uvs[faces[:, 2]]
+    e1, e2, d1, d2 = p1 - p0, p2 - p0, t1 - t0, t2 - t0
+    r = d1[:, 0] * d2[:, 1] - d2[:, 0] * d1[:, 1]
+    r = np.where(np.abs(r) < 1e-12, 1e-12, r)
+    sdir = (e1 * d2[:, 1:2] - e2 * d1[:, 1:2]) / r[:, None]
+    tdir = (e2 * d1[:, 0:1] - e1 * d2[:, 0:1]) / r[:, None]
+    tan, bit = np.zeros_like(verts), np.zeros_like(verts)
+    for c in range(3):
+        np.add.at(tan, faces[:, c], sdir)
+        np.add.at(bit, faces[:, c], tdir)
+    tan = tan - normals * (tan * normals).sum(1, keepdims=True)
+    bad = np.linalg.norm(tan, axis=1) < 1e-9
+    tan[bad] = np.cross(normals[bad], [0.0, 0.0, 1.0]) + 1e-6
+    tan /= np.linalg.norm(tan, axis=1, keepdims=True)
+    w = np.where((np.cross(normals, tan) * bit).sum(1) < 0, -1.0, 1.0)
+    return tan, w
+
+
+def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
+              log: Callable[[str], None], piece_overrides=None) -> RigResult:
+    """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone."""
+    positions = model.vertices()
+    faces = model.faces
+    uvs = model.uvs
+
+    log(f"Welding UV seams ({len(positions)} vertices, {len(faces)} triangles)...")
+    wverts, wfaces, corner_to_weld, ok = weld(positions, faces)
+    faces = faces[ok]
+    overrides = [(positions[i], bone) for indices, bone in (piece_overrides or []) for i in indices
+                 if 0 <= i < len(positions)]
+    names, weights, method = compute_weights(wverts, wfaces[ok], anchors, blender, work, log, overrides)
+
+    log("Building the final vertex set...")
+    uv_key = np.round(uvs * 65536).astype(np.int64)
+    keys = np.c_[corner_to_weld, uv_key]
+    _, first, remap = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+    remap = remap.reshape(-1)
+    vweld, vuv, vfaces = corner_to_weld[first], uvs[first], remap[faces]
+    if len(vweld) > MAX_VERTICES:
+        raise ValueError(f"model too detailed: {len(vweld)} vertices (max {MAX_VERTICES}). "
+                         "Decimate it in Blender (Decimate modifier) and import it again.")
+    sign = model.source.winding_sign
+    if base.winding_sign * sign < 0:
+        vfaces = vfaces[:, ::-1]
+        log("  triangle winding flipped to match the game")
+
+    log(f"Baking into {base.display_name}'s bind pose...")
+    bake = bake_transforms(anchors, base.joints)
+    w = weights[vweld]
+    tpose = wverts[vweld]
+    tnormals = sign * vertex_normals(wverts, wfaces[ok])[vweld]
+    baked = np.zeros_like(tpose)
+    bnormals = np.zeros_like(tpose)
+    for col, bone in enumerate(names):
+        m, t = bake[bone]
+        baked += w[:, col:col + 1] * (tpose @ m + t)
+        bnormals += w[:, col:col + 1] * (tnormals @ np.linalg.inv(m).T)
+    bnormals /= np.maximum(np.linalg.norm(bnormals, axis=1, keepdims=True), 1e-12)
+    tangents, tsign = vertex_tangents(baked, vuv, bnormals, vfaces)
+
+    # Several canonical joints can share a palette bone on adapted skeletons (feet on the ball bone...): merge
+    # their columns so each vertex keeps four distinct influences.
+    palette_cols, column = np.unique([base.bone_index(n) for n in names], return_inverse=True)
+    merged = np.zeros((len(w), len(palette_cols)))
+    for j, col in enumerate(column):
+        merged[:, col] += w[:, j]
+    idx, wq = quantize_weights(merged, palette_cols)
+    log(f"  {len(baked)} vertices, {len(vfaces)} triangles, weights: {method}")
+    return RigResult(base, tpose, baked, vfaces, vuv, bnormals, tangents, tsign, idx, wq, method, anchors)
+
+
+def skin(verts, idx, wq, bind_world, posed_world):
+    mats = np.array([np.linalg.inv(b) @ p for b, p in zip(bind_world, posed_world)])
+    hom = np.c_[verts, np.ones(len(verts))]
+    out = np.zeros_like(verts)
+    for k in range(4):
+        out += (wq[:, k:k + 1] / 255.0) * np.einsum("ni,nij->nj", hom, mats[idx[:, k]])[:, :3]
+    return out
+
+
+def _rotate_chain(base, world, pivot_bone, chain, rot3):
+    posed = world.copy()
+    for side, sx in SIDES:
+        pivot = world[base.bone_index(f"{pivot_bone}_{side}")][3, :3]
+        r = rot3(sx)
+        rot = np.eye(4)
+        rot[:3, :3] = r
+        rot[3, :3] = pivot - pivot @ r
+        for i, n in enumerate(base.bone_names):
+            if n.endswith(side) and n.startswith(chain):
+                posed[i] = world[i] @ rot
+    return posed
+
+
+def _arms_up(base, world, amount=1.0):
+    def rz(sx):
+        a = np.radians(70 * amount) * sx
+        return np.array([[np.cos(a), np.sin(a), 0], [-np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    return _rotate_chain(base, world, "Shoulder", ("Shoulder", "Elbow", "Forearm", "Hand", "Thumb", "Index", "Middle"), rz)
+
+
+def _walk(base, world, amount=1.0):
+    def rx(sx):
+        a = np.radians(35 * amount) * sx
+        return np.array([[1, 0, 0], [0, np.cos(a), np.sin(a)], [0, -np.sin(a), np.cos(a)]])
+    return _rotate_chain(base, world, "Thigh", ("Thigh", "Knee", "Ankle", "Ball", "Toes"), rx)
+
+
+POSES = {"arms": _arms_up, "walk": _walk}

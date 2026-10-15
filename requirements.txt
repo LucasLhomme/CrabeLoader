@@ -1,0 +1,6 @@
+customtkinter
+moderngl
+numpy
+Pillow
+trimesh
+scipy
