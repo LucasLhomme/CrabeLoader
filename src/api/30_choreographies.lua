@@ -8,8 +8,6 @@
 
 Game = Game or {}
 
--- One name per line, lower case like the archives. Kept as one long string and
--- split on first use so the embedded API does not build 7000+ tables at load.
 local RAW = [[
 aaa_test_nestedlayouts3
 aaa_test_scenesettingsref_in3
@@ -7799,7 +7797,7 @@ zt_camerapush
 
 local catalog = nil
 
---- Returns every choreography name, sorted. The same table on every call: do not modify it.
+-- Returns sorted list of all shipped choreography names.
 function Game.ListChoreographies()
     if not catalog then
         catalog = {}
@@ -7808,8 +7806,7 @@ function Game.ListChoreographies()
     return catalog
 end
 
---- Plays a choreography on a player (the host by default). The native takes the
---- player first and the name second, as economy_alert.lua calls it.
+-- Plays a choreography animation on a player.
 function Game.PlayChoreography(name, playerId)
     if type(name) ~= "string" or name == "" then
         error("Game.PlayChoreography: name must be a non-empty string", 2)

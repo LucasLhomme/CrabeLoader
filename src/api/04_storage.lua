@@ -11,8 +11,8 @@ Crabe.Storage = Crabe.Storage or {}
 
 local parseValue, parseArray, parseObject
 
---- Advances the string index past ASCII whitespace characters.
---- Returns the next non-whitespace character position.
+-- Advances the string index past ASCII whitespace characters.
+-- Returns the next non-whitespace character position.
 local function skipWhitespace(str, idx)
     local len = #str
     while idx <= len do
@@ -26,8 +26,8 @@ local function skipWhitespace(str, idx)
     return idx
 end
 
---- Parses a JSON quoted string token and handles escape sequences.
---- Returns the decoded string and the next parse position.
+-- Parses a JSON quoted string token and handles escape sequences.
+-- Returns the decoded string and the next parse position.
 local function parseString(str, idx)
     idx = idx + 1
     local len = #str
@@ -67,8 +67,8 @@ local function parseString(str, idx)
     error("JSON parse error: unterminated string", 2)
 end
 
---- Matches and parses a numeric JSON value at the current index.
---- Returns the converted Lua number and next parse position.
+-- Matches and parses a numeric JSON value at the current index.
+-- Returns the converted Lua number and next parse position.
 local function parseNumber(str, idx)
     local match = string.match(str, "^%-?%d+%.?%d*[eE]?[%+%-]?%d*", idx)
     if not match or match == "" or match == "-" then
@@ -77,8 +77,8 @@ local function parseNumber(str, idx)
     return tonumber(match), idx + #match
 end
 
---- Parses a JSON array structure into a sequential Lua table.
---- Recursively evaluates contained values until the closing bracket.
+-- Parses a JSON array structure into a sequential Lua table.
+-- Recursively evaluates contained values until the closing bracket.
 parseArray = function(str, idx)
     idx = idx + 1
     local arr = {}
@@ -102,8 +102,8 @@ parseArray = function(str, idx)
     end
 end
 
---- Parses a JSON object structure into a key-value Lua dictionary table.
---- Recursively evaluates key strings and values until closing brace.
+-- Parses a JSON object structure into a key-value Lua dictionary table.
+-- Recursively evaluates key strings and values until closing brace.
 parseObject = function(str, idx)
     idx = idx + 1
     local obj = {}
@@ -137,8 +137,8 @@ parseObject = function(str, idx)
     end
 end
 
---- Dispatches parsing to the appropriate JSON datatype handler.
---- Evaluates objects, arrays, strings, booleans, null, or numbers.
+-- Dispatches parsing to the appropriate JSON datatype handler.
+-- Evaluates objects, arrays, strings, booleans, null, or numbers.
 parseValue = function(str, idx)
     idx = skipWhitespace(str, idx)
     local c = string.sub(str, idx, idx)
@@ -159,8 +159,8 @@ parseValue = function(str, idx)
     end
 end
 
---- Recursively converts a Lua value into valid JSON formatted text.
---- Handles tables as arrays or key-value objects depending on indices.
+-- Recursively converts a Lua value into valid JSON formatted text.
+-- Handles tables as arrays or key-value objects depending on indices.
 local function encodeValue(val)
     local t = type(val)
     if t == "nil" then
@@ -218,14 +218,14 @@ local function encodeValue(val)
     end
 end
 
---- Serializes a Lua table or primitive value into a JSON string.
---- Returns the resulting JSON formatted string.
+-- Serializes a Lua table or primitive value into a JSON string.
+-- Returns the resulting JSON formatted string.
 function Crabe.Storage.encode(dataTable)
     return encodeValue(dataTable)
 end
 
---- Deserializes a JSON formatted string into a Lua table structure.
---- Returns the decoded value or nil and error message upon failure.
+-- Deserializes a JSON formatted string into a Lua table structure.
+-- Returns the decoded value or nil and error message upon failure.
 function Crabe.Storage.decode(jsonString)
     if type(jsonString) ~= "string" or jsonString == "" then
         return nil, "empty or non-string input"
@@ -240,8 +240,8 @@ function Crabe.Storage.decode(jsonString)
     return res
 end
 
---- Serializes a table to JSON and persists it to a file on disk.
---- Returns boolean success flag and optional error message.
+-- Serializes a table to JSON and persists it to a file on disk.
+-- Returns boolean success flag and optional error message.
 function Crabe.Storage.save(filename, dataTable)
     if type(filename) ~= "string" or filename == "" then
         error("Crabe.Storage.save: expected non-empty filename string", 2)
@@ -256,8 +256,8 @@ function Crabe.Storage.save(filename, dataTable)
     return true
 end
 
---- Reads a file from disk and parses its JSON content into a Lua table.
---- Returns the decoded table or nil and error message if missing.
+-- Reads a file from disk and parses its JSON content into a Lua table.
+-- Returns the decoded table or nil and error message if missing.
 function Crabe.Storage.load(filename)
     if type(filename) ~= "string" or filename == "" then
         error("Crabe.Storage.load: expected non-empty filename string", 2)
@@ -274,8 +274,8 @@ function Crabe.Storage.load(filename)
     return Crabe.Storage.decode(content)
 end
 
---- Returns a mod-scoped storage interface targeting mods/<modName>/.
---- Provides bound load and save helpers tailored for the specified mod.
+-- Returns a mod-scoped storage interface targeting mods/<modName>/.
+-- Provides bound load and save helpers tailored for the specified mod.
 function Crabe.Storage.forMod(modName)
     local prefix = "mods/" .. tostring(modName) .. "/"
     local scoped = {}

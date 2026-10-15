@@ -6,10 +6,6 @@
 --
 -- Authors: @LucasLhomme
 
--- Themes, Skydomes & Environment API for Disney Infinity 3.0
---
--- Exposes Toy Box skydome / skybox theme customizers and world customization.
-
 Game = Game or {}
 
 Game.THEME_CATALOG = {
@@ -24,6 +20,7 @@ Game.THEME_CATALOG = {
     { id = "Sunset", label = "Golden Sunset" },
 }
 
+-- Sets active environment theme or skydome by theme ID.
 function Game.SetTheme(themeId)
     if type(themeId) ~= "string" or themeId == "" then
         error("Game.SetTheme: themeId must be a non-empty string", 2)
@@ -37,6 +34,7 @@ function Game.SetTheme(themeId)
     return false
 end
 
+-- Returns catalog list of available environment themes.
 function Game.ListThemes()
     return Game.THEME_CATALOG
 end

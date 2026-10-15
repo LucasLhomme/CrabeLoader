@@ -6,18 +6,12 @@
 --
 -- Authors: @LucasLhomme
 
--- `Crabe.Events` - Unified Event Bus for Disney Infinity 3.0 Modding
--- Enables decoupled pub/sub event communication across mods and engine hooks.
-
 Crabe = Crabe or {}
 Crabe.Events = Crabe.Events or {
     _listeners = {}
 }
 
---- Registers an event handler for the given event name.
----@param eventName string The name of the event to listen for
----@param handler function The callback function to execute when the event fires
----@return function handler The registered handler function (can be passed to off)
+-- Registers an event handler for the given event name, returning the handler.
 function Crabe.Events.on(eventName, handler)
     if type(eventName) ~= "string" or type(handler) ~= "function" then
         error("Crabe.Events.on: expected eventName (string) and handler (function)", 2)
@@ -29,9 +23,6 @@ function Crabe.Events.on(eventName, handler)
         Crabe.Events._listeners[eventName] = list
     end
     list[#list + 1] = handler
-    -- Owned by the calling mod and revoked on hot reload. Removal is by
-    -- identity: indices shift, and a `once` handler may already have removed
-    -- itself, in which case the search finds nothing and does nothing.
     Crabe.Registry.track(function()
         for i = #list, 1, -1 do
             if list[i] == handler then
@@ -43,10 +34,7 @@ function Crabe.Events.on(eventName, handler)
     return handler
 end
 
---- Registers a one-shot event handler that automatically unregisters itself after firing once.
----@param eventName string The name of the event
----@param handler function The callback function to execute
----@return function wrapper The registered wrapper function
+-- Registers a one-shot event handler that automatically unregisters itself after firing once.
 function Crabe.Events.once(eventName, handler)
     if type(eventName) ~= "string" or type(handler) ~= "function" then
         error("Crabe.Events.once: expected eventName (string) and handler (function)", 2)
@@ -60,10 +48,7 @@ function Crabe.Events.once(eventName, handler)
     return Crabe.Events.on(eventName, wrapper)
 end
 
---- Unregisters a previously registered event handler.
----@param eventName string The name of the event
----@param handler function The handler function to remove
----@return boolean success True if removed, false otherwise
+-- Unregisters a previously registered event handler by identity.
 function Crabe.Events.off(eventName, handler)
     local list = Crabe.Events._listeners[eventName]
     if not list then return false end
@@ -77,15 +62,11 @@ function Crabe.Events.off(eventName, handler)
     return false
 end
 
---- Emits an event to all registered listeners.
---- Handlers are invoked safely inside pcall to prevent failures from impacting other mods.
----@param eventName string The name of the event to fire
----@param ... any Arguments to forward to each listener
+-- Emits an event to all registered listeners safely with forwarded arguments.
 function Crabe.Events.emit(eventName, ...)
     local list = Crabe.Events._listeners[eventName]
     if not list or #list == 0 then return end
 
-    -- Clone listener array to allow safe modification during emission
     local snapshot = {}
     for i = 1, #list do
         snapshot[i] = list[i]
@@ -102,9 +83,7 @@ function Crabe.Events.emit(eventName, ...)
     end
 end
 
---- Clears registered listeners. If eventName is given, clears only that event.
---- If eventName is omitted, clears all listeners across all events.
----@param eventName? string Optional event name
+-- Clears registered listeners for the specified event, or all listeners if omitted.
 function Crabe.Events.clear(eventName)
     if eventName then
         Crabe.Events._listeners[eventName] = nil

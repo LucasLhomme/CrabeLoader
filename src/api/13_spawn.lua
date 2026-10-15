@@ -6,24 +6,10 @@
 --
 -- Authors: @LucasLhomme
 
--- Spawning: putting objects, vehicles and enemies into the world.
---
--- Built on top of the placer recipe already proven in 10_game.lua
--- (Game.SpawnItem). This module generalises it: several copies at once, an
--- explicit world location, the live inventory enumeration the ribbon UI uses,
--- and the vehicle summon path -- which is a different native entirely.
---
--- Like 11_avatar.lua, everything raises on failure. The mod menu already runs
--- its handlers under pcall; a second layer here would only hide which native
--- was missing.
-
 Game = Game or {}
 
 local DEFAULT_META = "MCAT_Classic"
 
--- Where the generated Toy Box catalog may sit, relative to the game's working
--- directory. The loader's own api/ folder is tried first, then the crabe/
--- folder the previous menu shipped it in.
 local CATALOG_PATHS = {
     "api/spawn_catalog.lua",
     "crabe/spawn_catalog.lua",
@@ -37,14 +23,7 @@ local function requireName(value, caller, what)
     return value
 end
 
--- ---------------------------------------------------------------------------
--- Placement
--- ---------------------------------------------------------------------------
-
--- The placer only reacts once the player is in editor object mode: without
--- SetEditorState, CalculateSpawnPosition yields nothing and the ghost is
--- created but never placed. Passing x makes it CreateGhostAtLocation, which
--- catalog.lua:691 uses for a world position the screen already knows.
+-- Helper to place an object ghost in editor object mode.
 local function placeGhost(playerId, rrofile, x, y, z)
     Place_SetEditorState(playerId, "Editor::ObjectMode")
     Place_CalculateSpawnPosition(playerId)
@@ -60,9 +39,7 @@ local function placeGhost(playerId, rrofile, x, y, z)
     return ghost
 end
 
--- StopPlaceMode must run even after a failed placement, or the player stays
--- locked in editor mode with no way out -- that is the one pcall this file
--- allows. Returns how many went in plus the error that stopped it, if any.
+-- Helper to run multiple placement attempts and exit place mode safely.
 local function runPlacement(playerId, count, x, y, z, rrofile)
     local placed, ok, err = 0, true, nil
 
@@ -76,8 +53,7 @@ local function runPlacement(playerId, count, x, y, z, rrofile)
     return placed, (not ok) and err or nil
 end
 
--- Places an already-resolved rrofile, count times. The name-based entry
--- points below all funnel through here.
+-- Places an already-resolved RRO file count times.
 function Game.SpawnByFile(rrofile, count, playerId)
     requireName(rrofile, "Game.SpawnByFile", "rrofile")
     playerId = Crabe.hostPlayer(playerId)
@@ -93,9 +69,7 @@ function Game.SpawnByFile(rrofile, count, playerId)
     return placed
 end
 
--- Spawns an inventory item several times in one editor session, which is
--- cheaper and safer than calling Game.SpawnItem in a loop: the editor is
--- entered and left once.
+-- Spawns an inventory item multiple times in one editor session.
 function Game.SpawnItemMany(invName, count, playerId)
     requireName(invName, "Game.SpawnItemMany", "invName")
     playerId = Crabe.hostPlayer(playerId)
@@ -107,9 +81,7 @@ function Game.SpawnItemMany(invName, count, playerId)
     return Game.SpawnByFile(rro, count or 1, playerId)
 end
 
--- Spawns at an absolute world position. Nothing in the Lua surface reports
--- where the avatar stands, so the caller has to already know the coordinates
--- (read from a save, or from a previous dump) -- otherwise use SpawnItemMany.
+-- Spawns an inventory item at an absolute world position.
 function Game.SpawnItemAt(invName, x, y, z, playerId)
     requireName(invName, "Game.SpawnItemAt", "invName")
     if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
@@ -128,16 +100,9 @@ function Game.SpawnItemAt(invName, x, y, z, playerId)
     return placed
 end
 
--- ---------------------------------------------------------------------------
--- Live inventory enumeration
--- ---------------------------------------------------------------------------
-
 Game._invCache = Game._invCache or nil
 
--- Place_GetInvItems is a C native that fills the two tables it is handed:
--- typeList[category] = { {invItemName=, rroObjectName=, summonTag=, ...}, ... }
--- and catNames as the ordered category list. The three nils are the exclude
--- and filter maps the shipped screens also leave empty (inventorysourcegrid).
+-- Queries engine inventory items into categorized cache table.
 local function enumerate(playerId, meta)
     local getInv = Crabe.native("Place_GetInvItems", "Game.RefreshInventory")
     local typeList, catNames = {}, {}
@@ -171,9 +136,7 @@ local function enumerate(playerId, meta)
     return cache
 end
 
--- Rebuilds the inventory snapshot. Everything below reads the cache, so call
--- this after the player gains items; meta is the ribbon's super-category,
--- "MCAT_Classic" being the one that yields the whole classic Toy Box set.
+-- Refreshes cached inventory items for specified player and meta category.
 function Game.RefreshInventory(playerId, meta)
     playerId = Crabe.hostPlayer(playerId)
     meta = meta or DEFAULT_META
@@ -188,6 +151,7 @@ function Game.RefreshInventory(playerId, meta)
     return cache.count
 end
 
+-- Helper returning active inventory cache, refreshing if needed.
 local function cacheFor(playerId, meta, caller)
     playerId = Crabe.hostPlayer(playerId)
     meta = meta or DEFAULT_META
@@ -201,12 +165,12 @@ local function cacheFor(playerId, meta, caller)
     return cache
 end
 
--- Category names the game itself groups the inventory by (CAT_* keys), sorted.
+-- Returns sorted list of inventory category names.
 function Game.GetInventoryCategories(playerId, meta)
     return cacheFor(playerId, meta, "Game.GetInventoryCategories").categories
 end
 
--- The { name, category, rro, summonTag } rows of one category, sorted by name.
+-- Returns inventory item rows for the specified category.
 function Game.GetInventoryItems(category, playerId, meta)
     requireName(category, "Game.GetInventoryItems", "category")
     local cache = cacheFor(playerId, meta, "Game.GetInventoryItems")
@@ -218,15 +182,13 @@ function Game.GetInventoryItems(category, playerId, meta)
     return rows
 end
 
--- One row by exact inventory name, or nil. The row carries the summonTag,
--- which no UI_GetItemDetails field exposes -- only this enumeration does.
+-- Returns inventory entry row for an exact item name, or nil.
 function Game.GetInventoryEntry(invName, playerId, meta)
     requireName(invName, "Game.GetInventoryEntry", "invName")
     return cacheFor(playerId, meta, "Game.GetInventoryEntry").byName[invName]
 end
 
--- Case-insensitive substring search over every inventory name. limit caps the
--- result so a menu built from it stays navigable.
+-- Performs case-insensitive substring search over inventory names.
 function Game.FindInventoryItems(pattern, limit, playerId, meta)
     requireName(pattern, "Game.FindInventoryItems", "pattern")
     local cache = cacheFor(playerId, meta, "Game.FindInventoryItems")
@@ -244,12 +206,7 @@ function Game.FindInventoryItems(pattern, limit, playerId, meta)
     return out
 end
 
--- ---------------------------------------------------------------------------
--- Vehicles
--- ---------------------------------------------------------------------------
-
--- Every inventory row that carries a summonTag, i.e. everything the game
--- considers summonable rather than merely placeable. Sorted by name.
+-- Returns sorted list of summonable vehicle inventory rows.
 function Game.ListVehicles(playerId, meta)
     local cache = cacheFor(playerId, meta, "Game.ListVehicles")
     local out = {}
@@ -264,9 +221,7 @@ function Game.ListVehicles(playerId, meta)
     return out
 end
 
--- Note the argument order: the item name comes first, the player second is
--- NOT the case here -- Place_CanSummonVehicle takes no player at all
--- (ribbontoybox.lua:416). Defaults the tag to the one the inventory reports.
+-- Returns true if the vehicle item can currently be summoned.
 function Game.CanSummonVehicle(invName, summonTag, playerId, meta)
     requireName(invName, "Game.CanSummonVehicle", "invName")
 
@@ -280,9 +235,7 @@ function Game.CanSummonVehicle(invName, summonTag, playerId, meta)
     return Crabe.native("Place_CanSummonVehicle", "Game.CanSummonVehicle")(invName, summonTag)
 end
 
--- Summons a vehicle the player rides, which is a different engine path from
--- placing its prop: no editor mode, no ghost. The tag comes from the
--- inventory enumeration when the caller does not supply one.
+-- Summons a rideable vehicle using engine summon native.
 function Game.SummonVehicle(invName, summonTag, playerId, meta)
     requireName(invName, "Game.SummonVehicle", "invName")
     playerId = Crabe.hostPlayer(playerId)
@@ -298,15 +251,9 @@ function Game.SummonVehicle(invName, summonTag, playerId, meta)
     return Crabe.native("Place_SummonVehicle", "Game.SummonVehicle")(playerId, invName, summonTag)
 end
 
--- ---------------------------------------------------------------------------
--- Generated catalog file
--- ---------------------------------------------------------------------------
-
 Game._spawnCatalog = Game._spawnCatalog or nil
 
--- Reads the pre-generated { {type, { {franchise, {names} } } } } tree from
--- disk instead of hardcoding 4337 names into a menu. io.open + loadstring
--- rather than require, so the loader's own chunk hooks stay out of the way.
+-- Loads pre-generated spawn catalog tree from disk.
 function Game.LoadSpawnCatalog(path)
     if Game._spawnCatalog and not path then return Game._spawnCatalog end
     if not (io and io.open) then
@@ -338,27 +285,19 @@ function Game.LoadSpawnCatalog(path)
           .. " exists next to the game executable", 2)
 end
 
--- ---------------------------------------------------------------------------
--- Editor housekeeping
--- ---------------------------------------------------------------------------
-
--- Drops the editor's working objects. includeGhosts=true also clears the
--- preview ghost (ribbonbase.lua:92 passes true on exit, modeselect.lua:387
--- passes false mid-session).
+-- Clears editor working objects and optionally preview ghosts.
 function Game.ClearEditorObjects(includeGhosts, playerId)
     playerId = Crabe.hostPlayer(playerId)
     Crabe.native("Place_ClearEditorObjects", "Game.ClearEditorObjects")(playerId, includeGhosts and true or false)
 end
 
--- Takes one argument only (ribbontoybox.lua:1185), unlike ClearEditorObjects.
+-- Removes editor objects for the player.
 function Game.RemoveEditorObjects(playerId)
     playerId = Crabe.hostPlayer(playerId)
     Crabe.native("Place_RemoveEditorObjects", "Game.RemoveEditorObjects")(playerId)
 end
 
--- objectHandle is a placed/ghost handle as returned by Place_CreateGhost or
--- Place_SelectObject -- there is no native that finds one by name, so this is
--- only usable on a handle the caller already holds.
+-- Deletes a placed object or ghost by handle.
 function Game.DeletePlacedObject(objectHandle, playerId)
     if objectHandle == nil then
         error("Game.DeletePlacedObject: objectHandle is required", 2)
@@ -367,13 +306,13 @@ function Game.DeletePlacedObject(objectHandle, playerId)
     Crabe.native("Place_DeletePickedObject", "Game.DeletePlacedObject")(playerId, objectHandle)
 end
 
--- Favourites take the item name first and the player second, the reverse of
--- every other Place_ native (ribbonbase.lua:428).
+-- Returns true if the inventory item is marked as favorite.
 function Game.IsFavorite(invName, playerId)
     requireName(invName, "Game.IsFavorite", "invName")
     return Crabe.native("Place_IsFavorite", "Game.IsFavorite")(invName, Crabe.hostPlayer(playerId))
 end
 
+-- Adds or removes an inventory item from favorites.
 function Game.SetFavorite(invName, on, playerId)
     requireName(invName, "Game.SetFavorite", "invName")
     playerId = Crabe.hostPlayer(playerId)
@@ -383,8 +322,7 @@ function Game.SetFavorite(invName, on, playerId)
     return on and true or false
 end
 
--- Asks the object-budget manager whether one more of this item fits. Takes
--- the rrofile, not the inventory name (ribbontoybox.lua:357).
+-- Returns true if limit manager allows placing one more item.
 function Game.CanPlaceItem(invName, playerId)
     requireName(invName, "Game.CanPlaceItem", "invName")
     playerId = Crabe.hostPlayer(playerId)
@@ -396,7 +334,7 @@ function Game.CanPlaceItem(invName, playerId)
     return Crabe.native("Place_LimitManagerCanPlace", "Game.CanPlaceItem")(playerId, rro)
 end
 
--- The budget cost the same item counts for, same rrofile argument.
+-- Returns placement budget cost value for the item.
 function Game.GetPlacementValue(invName, playerId)
     requireName(invName, "Game.GetPlacementValue", "invName")
     playerId = Crabe.hostPlayer(playerId)
@@ -408,47 +346,30 @@ function Game.GetPlacementValue(invName, playerId)
     return Crabe.native("Place_LimitManagerTotalValue", "Game.GetPlacementValue")(playerId, rro)
 end
 
+-- Returns the total count of placed objects in the world.
 function Game.GetPlacedObjectCount()
     return Crabe.native("VirtualReader_GetPlacedObjectCount", "Game.GetPlacedObjectCount")()
 end
 
--- ---------------------------------------------------------------------------
--- Enemies and sidekicks
--- ---------------------------------------------------------------------------
---
--- These are the "glue" tier. The engine drives them from a screen that was
--- opened by a toy already standing in the world (a Wave Generator, a Sidekick
--- Creator), and the handle of that toy arrives in the screen's DataTable from
--- C++. No native hands a toy handle to Lua, so the two functions that need one
--- are pass-throughs: they are only callable when the caller has obtained a
--- handle some other way. Free enemy spawning goes through Game.SpawnItemMany
--- on the INV_NPC_* names instead -- those are ordinary placeable inventory
--- items.
-
--- Opens the game's own enemy chooser for the player (lootgridenemies.lua:44).
--- It only lands somewhere if a wave/loot toy selection is already in progress.
+-- Displays the engine enemy picker interface for the player.
 function Game.OpenEnemyPicker(playerId)
     playerId = Crabe.hostPlayer(playerId)
     Crabe.native("UI_DisplayEnemyList", "Game.OpenEnemyPicker")(playerId)
 end
 
--- Adds an enemy to the wave list currently being edited. One argument, the
--- raw enemy name without the "@"/"_name" localisation wrapping
--- (lootlist.lua:55). It affects the pending selection, it does not spawn.
+-- Adds an enemy to the active wave selection list.
 function Game.AddEnemyToWaveList(enemyName)
     requireName(enemyName, "Game.AddEnemyToWaveList", "enemyName")
     Crabe.native("UI_AddEnemyToList", "Game.AddEnemyToWaveList")(enemyName)
 end
 
--- listType is "Loot" in the only call site (lootgridenemies.lua:55); "Chest"
--- is the other value the sibling UI_AddToyToLoot uses.
+-- Removes an enemy from active loot or chest selection.
 function Game.RemoveEnemyFromLoot(enemyName, listType)
     requireName(enemyName, "Game.RemoveEnemyFromLoot", "enemyName")
     Crabe.native("UI_RemoveEnemyFromLoot", "Game.RemoveEnemyFromLoot")(enemyName, listType or "Loot")
 end
 
--- toyHandle must come from a Sidekick Creator screen's DataTable.ToyHandle
--- (sidekickselector.lua:152); nothing in the Lua surface produces one.
+-- Spawns a sidekick using creator toy handle.
 function Game.SpawnSideKick(toyHandle, id, playerId)
     if toyHandle == nil or id == nil then
         error("Game.SpawnSideKick: toyHandle and id are both required", 2)
@@ -457,8 +378,7 @@ function Game.SpawnSideKick(toyHandle, id, playerId)
     Crabe.native("UI_SpawnSideKick", "Game.SpawnSideKick")(playerId, toyHandle, id)
 end
 
--- Same toyHandle problem as SpawnSideKick (logiccategories.lua:316): opens the
--- wave-enemy picker bound to one placed Wave Generator toy.
+-- Triggers wave enemy selection on a wave generator toy.
 function Game.TriggerWaveEnemySelection(toyHandle, playerId)
     if toyHandle == nil then
         error("Game.TriggerWaveEnemySelection: toyHandle is required", 2)

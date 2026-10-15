@@ -10,13 +10,8 @@ Crabe = Crabe or {}
 Crabe.Sandbox = Crabe.Sandbox or {}
 Crabe.Exports = Crabe.Exports or {}
 
---- Creates a read-only proxy over one shared namespace, blocking writes with security logging.
---- Shallow on purpose: reads return the real nested tables. Lua 5.1 has no __len,
---- and ipairs/pairs/next ignore __index, so a nested proxy is an empty table to
---- `#`, ipairs and pairs -- `#Crabe.Menu.stack` read 0 and every mod saw an empty
---- menu. What stays protected is the namespace itself: a mod cannot replace
---- Crabe.Menu or Game.X, only use them. A nested value that is itself a protected
---- namespace (_G.Crabe, _G.Game) comes back as its proxy, so _G is no way around it.
+-- Creates a read-only proxy over a shared namespace, blocking mutations.
+-- Nested reads return the underlying tables while the namespace remains protected.
 local function makeReadOnlyProxy(realTable, tableName, modName, cache)
     if type(realTable) ~= "table" then return realTable end
     cache = cache or {}
@@ -48,8 +43,7 @@ local function makeReadOnlyProxy(realTable, tableName, modName, cache)
     return proxy
 end
 
---- Creates an isolated sandbox environment table for a mod with protected shared namespaces.
---- Global reads fall back to _G while variable writes remain isolated.
+-- Creates an isolated sandbox environment table for a mod with protected namespaces.
 function Crabe.Sandbox.create(modName)
     local env = {}
     env._ENV = env
@@ -68,10 +62,6 @@ function Crabe.Sandbox.create(modName)
     if debug then env.debug = makeReadOnlyProxy(debug, "debug", modName, proxyCache) end
     env._G = makeReadOnlyProxy(_G, "_G", modName, proxyCache)
 
-    -- The namespaces themselves are still proxies, and Lua 5.1 iteration never
-    -- consults a metatable: pairs(Crabe) or pairs(Game) saw no key at all.
-    -- The mod's pairs/ipairs/next walk the real table instead, handing back a
-    -- protected namespace met on the way as its proxy, as __index does.
     local realOf = {}
     for real, proxy in pairs(proxyCache) do
         realOf[proxy] = real
@@ -108,8 +98,7 @@ function Crabe.Sandbox.create(modName)
     return env
 end
 
---- Executes a function within the specified sandbox environment.
---- Sets the function environment and forwards any arguments.
+-- Executes a function within the specified sandbox environment.
 function Crabe.Sandbox.run(fn, env, ...)
     local target = fn
     if type(target) == "string" then
@@ -132,8 +121,7 @@ function Crabe.Sandbox.run(fn, env, ...)
     return target(...)
 end
 
---- Exports a value or API to the shared Crabe.Exports registry.
---- Facilitates inter-mod communication and public interface exposure.
+-- Exports a value or API to the shared Crabe.Exports registry.
 function Crabe.Sandbox.export(name, value)
     if type(name) ~= "string" or name == "" then
         error("Crabe.Sandbox.export: expected a non-empty string name", 2)

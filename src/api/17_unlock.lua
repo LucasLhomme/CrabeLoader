@@ -6,18 +6,6 @@
 --
 -- Authors: @LucasLhomme
 
--- Content unlocking and the Power Disc currencies.
---
--- Not to be confused with the online session lock (UI_LockGame /
--- UI_UnlockGame), which lives in 22_system.lua. Nothing here touches it.
---
--- Two unrelated lock systems exist and both are exposed:
---   * the catalog, keyed by recipe-card name (Catalog_UnlockCatalogItem)
---   * a generic named-lock table (Lock_IsLocked / Lock_SetAvailable), whose
---     keys look like "IGP_PLAYSET_<world>" in levelselectmenu.lua:236
---
--- Everything raises on failure; the mod menu already pcalls its handlers.
-
 Game = Game or {}
 
 local function requireName(value, caller, what)
@@ -27,28 +15,21 @@ local function requireName(value, caller, what)
     return value
 end
 
--- ---------------------------------------------------------------------------
--- Catalog
--- ---------------------------------------------------------------------------
-
--- Unlocks one Toy Box catalog entry. The name is a recipe-card name, not an
--- inventory name: catalog.lua:649 passes ribbonItem:RecipeCardName().
+-- Unlocks a Toy Box catalog entry by its recipe-card name.
 function Game.UnlockCatalogItem(recipeCardName, playerId)
     requireName(recipeCardName, "Game.UnlockCatalogItem", "recipeCardName")
     Crabe.native("Catalog_UnlockCatalogItem", "Game.UnlockCatalogItem")(recipeCardName, Crabe.hostPlayer(playerId))
     return recipeCardName
 end
 
--- Fires the reward flow for a locked item -- the path the game uses when the
--- player earns something, as opposed to unlocking it outright.
+-- Triggers reward flow for an item lock by recipe-card name.
 function Game.RewardLock(recipeCardName, playerId)
     requireName(recipeCardName, "Game.RewardLock", "recipeCardName")
     Crabe.native("Catalog_RewardLockByName", "Game.RewardLock")(recipeCardName, Crabe.hostPlayer(playerId))
     return recipeCardName
 end
 
--- Grants inventory items outright. catalog.lua:657 passes a tonumber()'d
--- amount, so the native wants a number and not a numeric string.
+-- Grants specified amount of an inventory item to the player.
 function Game.AwardItem(name, amount, playerId)
     requireName(name, "Game.AwardItem", "name")
     amount = tonumber(amount) or 1
@@ -56,34 +37,26 @@ function Game.AwardItem(name, amount, playerId)
     return amount
 end
 
--- ---------------------------------------------------------------------------
--- Named locks
--- ---------------------------------------------------------------------------
-
--- The generic lock table. Known key shapes: "IGP_PLAYSET_<worldFilter>" for
--- Play Sets, and per-zone audio lock names. Others are almost certainly out
--- there; this is a probe as much as a setter.
+-- Checks if a generic named game lock is currently locked.
 function Game.IsLocked(lockName, playerId)
     requireName(lockName, "Game.IsLocked", "lockName")
     return Crabe.native("Lock_IsLocked", "Game.IsLocked")(lockName, Crabe.hostPlayer(playerId)) == true
 end
 
+-- Marks a generic named game lock as available.
 function Game.SetLockAvailable(lockName, playerId)
     requireName(lockName, "Game.SetLockAvailable", "lockName")
     Crabe.native("Lock_SetAvailable", "Game.SetLockAvailable")(lockName, Crabe.hostPlayer(playerId))
     return lockName
 end
 
--- Play Set locks follow one naming rule, confirmed at levelselectmenu.lua:236.
--- Wrapping it keeps the prefix in one place instead of at every call site.
+-- Unlocks Play Set world filter lock for the specified player.
 function Game.UnlockPlayset(worldFilter, playerId)
     requireName(worldFilter, "Game.UnlockPlayset", "worldFilter")
     return Game.SetLockAvailable("IGP_PLAYSET_" .. worldFilter, playerId)
 end
 
--- Reloads progression data with everything marked unlocked. The boolean is
--- passed both ways in toystore.lua (true at :112, false at :167), so this is
--- a mode switch rather than a one-shot.
+-- Toggles force unlock progression data mode.
 function Game.ForceUnlockData(enabled)
     if type(enabled) ~= "boolean" then
         error("Game.ForceUnlockData: expected a boolean", 2)
@@ -92,20 +65,13 @@ function Game.ForceUnlockData(enabled)
     return enabled
 end
 
--- ---------------------------------------------------------------------------
--- Lock state of an inventory item
--- ---------------------------------------------------------------------------
-
--- Names for Inventory.LockState_*, so a menu can say why something is locked
--- instead of printing a bare number.
 local LOCK_STATE_NAMES = {
     [0] = "aucun", [1] = "verrouille", [2] = "achetable (nouveau)",
     [3] = "achetable", [4] = "achete", [5] = "livre",
     [6] = "disponible", [7] = "actif", [8] = "sync requise",
 }
 
--- Returns the numeric state and its label. Inventory.GetItemState is a nested
--- native, so it is reached through the table rather than _G.
+-- Returns numeric lock state and label string for an inventory item.
 function Game.GetItemLockState(itemName, playerId)
     requireName(itemName, "Game.GetItemLockState", "itemName")
 
@@ -117,15 +83,7 @@ function Game.GetItemLockState(itemName, playerId)
     return state, LOCK_STATE_NAMES[state] or ("inconnu (" .. tostring(state) .. ")")
 end
 
--- ---------------------------------------------------------------------------
--- Bulk unlock
--- ---------------------------------------------------------------------------
-
--- Unlocking the whole catalog is thousands of native calls; doing them in one
--- tick freezes the game long enough to look like a crash. This spreads the
--- work across ticks and reports progress, so the menu can show a live count.
---
--- names: array of recipe-card names. perTick: how many to unlock per frame.
+-- Asynchronously unlocks catalog items in batches across game ticks.
 function Game.UnlockAllAsync(names, perTick, playerId)
     if type(names) ~= "table" then
         error("Game.UnlockAllAsync: expected an array of names", 2)
@@ -146,8 +104,6 @@ function Game.UnlockAllAsync(names, perTick, playerId)
 
         local budget = perTick
         while budget > 0 and index <= #names do
-            -- One bad name must not abort the whole run, and this is a
-            -- background job with no caller left to catch a raise.
             if not pcall(unlock, names[index], player) then
                 progress.failed = progress.failed + 1
             end
@@ -162,26 +118,17 @@ function Game.UnlockAllAsync(names, perTick, playerId)
     return progress
 end
 
--- ---------------------------------------------------------------------------
--- Power Disc currencies
--- ---------------------------------------------------------------------------
---
--- Round Coins and Hex Coins are not Sparks. They are the physical Power Disc
--- currencies, and their setters take a count followed by that many slot ids
--- (virtualreader.lua:791 and :805) -- the ids identify which discs occupy the
--- slots, so passing arbitrary numbers is not the same as "give me N coins".
--- The getters are safe; the setters are exposed but deliberately thin.
-
+-- Returns current count of Power Disc round coins.
 function Game.GetRoundCoins(playerId)
     return Crabe.native("Players_GetRoundCoin", "Game.GetRoundCoins")(Crabe.hostPlayer(playerId))
 end
 
+-- Returns current count of Power Disc hex coins.
 function Game.GetHexCoins(playerId)
     return Crabe.native("Players_GetHexCoin", "Game.GetHexCoins")(Crabe.hostPlayer(playerId))
 end
 
--- ids is an array of up to 4 slot ids. Mirrors virtualreader.lua:805, which
--- passes #selected followed by the four ids positionally.
+-- Sets Power Disc round coin slot ids for the player.
 function Game.SetRoundCoins(ids, playerId)
     if type(ids) ~= "table" then
         error("Game.SetRoundCoins: expected an array of slot ids", 2)
@@ -191,7 +138,7 @@ function Game.SetRoundCoins(ids, playerId)
     return #ids
 end
 
--- Same shape as SetRoundCoins but three ids, per virtualreader.lua:791.
+-- Sets Power Disc hex coin slot ids for the player.
 function Game.SetHexCoins(ids, playerId)
     if type(ids) ~= "table" then
         error("Game.SetHexCoins: expected an array of slot ids", 2)
@@ -201,6 +148,7 @@ function Game.SetHexCoins(ids, playerId)
     return #ids
 end
 
+-- Returns maximum allowed Power Disc coins count.
 function Game.GetMaxCoins()
     return Crabe.native("VirtualReaderPC_GetMaxNumCoins", "Game.GetMaxCoins")()
 end

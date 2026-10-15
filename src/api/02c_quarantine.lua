@@ -6,63 +6,22 @@
 --
 -- Authors: @LucasLhomme
 
--- `Crabe.Quarantine` -- per-callback failure counters and escalation.
---
--- Without this, one broken mod callback that errors every tick writes a
--- fresh log line ~60 times a second. This module is what makes a callback
--- fail loudly once and then go quiet, instead of drowning the console:
---
---   * ten *consecutive* failures of one callback disable that callback --
---     "consecutive" is load-bearing: nine failures then a success resets
---     the count to zero, it never reaches ten;
---   * three of a mod's callbacks disabled disables the whole mod, so
---     nothing owned by it (any callback, including ones that have not
---     failed yet) runs again until the next hot reload;
---   * an unbroken run of identical error messages from one callback is
---     logged once immediately, then collapsed into a single "(repeated N
---     times, last: ...)" summary the moment the run ends (a different
---     message, a success, or the callback being disabled), rather than
---     printing the same line every tick.
---
--- Counting lives here, in Lua, rather than in C++, because only this layer
--- has callback-level granularity. src/application/loader.cpp only ever
--- calls the opaque entry points Crabe.Mod.dispatchUpdate()/dispatchDraw()/
--- dispatchInit()/dispatchShutdown() and (via LuaCall::callTick) Game.
--- _runTicks(dt) -- it has no visibility into which mod owns which callback,
--- and reaching into Crabe.Mod._registered from C++ to get it would be
--- gameplay logic in the core (Invariant I1). Every counter update below
--- runs inside a pcall already executing on the single Lua thread that owns
--- this state (Invariant I3) -- the same thread loader.cpp's runTicks and
--- dispatchModDraw call in from -- so nothing here is a new entry point,
--- just bookkeeping around calls that were already happening.
---
--- application::Loader polls Crabe.Quarantine.report() the same way it polls
--- Crabe.flush() (see drainQuarantineReport), and folds it into crabe.toml's
--- [quarantine] section and the ImGui overlay.
-
 local kConsecutiveFailuresToDisableCallback = 10
 local kDisabledCallbacksToDisableMod = 3
-
--- The API's own tick subscriptions (the death-watch pump in
--- src/api/20_hooks.lua, installed at module-injection time under owner
--- "core") are counted the same way a mod's callback is -- a broken one still
--- gets disabled after ten consecutive failures, so it stops spamming too --
--- but "core" itself is never quarantined wholesale. Doing that would let an
--- unrelated fragile bit of the API's own plumbing take out the API for every
--- mod loaded after it, which is a much bigger hammer than one broken
--- callback warrants.
 local kExemptFromModDisable = "core"
 
 Crabe = Crabe or {}
 Crabe.Quarantine = Crabe.Quarantine or {
-    _callbacks = {}, -- "<mod>\0<callback>" -> record
-    _mods = {},      -- mod -> { disabledCallbacks = 0, disabled = false }
+    _callbacks = {},
+    _mods = {},
 }
 
+-- Returns a formatted callback dictionary key combining mod id and callback name.
 local function callbackKey(modId, callbackName)
     return tostring(modId) .. "\0" .. tostring(callbackName)
 end
 
+-- Retrieves or initializes the quarantine record table for a mod id.
 local function modRecord(modId)
     local mods = Crabe.Quarantine._mods
     local record = mods[modId]
@@ -73,23 +32,19 @@ local function modRecord(modId)
     return record
 end
 
---- True when `modId` has had three of its callbacks disabled and is fully
---- quarantined -- guard() then skips everything owned by it, unconditionally.
+-- Returns true when the specified mod has been quarantined and disabled.
 function Crabe.Quarantine.isModDisabled(modId)
     local record = Crabe.Quarantine._mods[modId]
     return record ~= nil and record.disabled
 end
 
---- True when this specific (modId, callbackName) pair tripped the
---- consecutive-failure threshold.
+-- Returns true when this specific callback tripped the consecutive failure threshold.
 function Crabe.Quarantine.isCallbackDisabled(modId, callbackName)
     local record = Crabe.Quarantine._callbacks[callbackKey(modId, callbackName)]
     return record ~= nil and record.disabled
 end
 
--- Flushes a pending "repeated N times" summary for `cb`, if there is one to
--- flush. Called whenever a run of identical failures ends: the message
--- changes, the callback succeeds, or it gets disabled.
+-- Flushes a pending repeated error summary for the callback to the log.
 local function flushPending(cb, prefix)
     if cb.pendingRepeats and cb.pendingRepeats > 0 and Crabe.write then
         Crabe.write(prefix .. " (repeated " .. cb.pendingRepeats .. " times, last: "
@@ -99,10 +54,7 @@ local function flushPending(cb, prefix)
     cb.pendingRepeats = 0
 end
 
---- Runs `fn(...)` under quarantine accounting for `callbackName` owned by
---- `modId`, exactly like the bare `pcall(fn, ...)` every dispatch site used
---- before this existed -- the failure is caught and counted, never
---- propagated. Returns nothing.
+-- Runs a function under quarantine failure tracking without propagating errors.
 function Crabe.Quarantine.guard(modId, callbackName, fn, ...)
     if type(fn) ~= "function" then
         return
@@ -176,21 +128,13 @@ function Crabe.Quarantine.guard(modId, callbackName, fn, ...)
     end
 end
 
---- Clears every counter and disabled flag. Called on hot reload
---- (Crabe.Mod.reload, src/api/03_lifecycle.lua) so a mod fixed on disk gets
---- a clean slate instead of starting pre-quarantined from its previous run.
+-- Clears all quarantine failure counters and disabled states.
 function Crabe.Quarantine.reset()
     Crabe.Quarantine._callbacks = {}
     Crabe.Quarantine._mods = {}
 end
 
---- A flat, tab-separated report for application::Loader to poll (mirrors
---- Crabe.flush(), see 00_core.lua): one "MOD" line naming every fully
---- disabled mod (only emitted if there is at least one), then one "CB" line
---- per callback that has failed at least once. Parsed on the C++ side by
---- crabe::domain::QuarantineSnapshot::parseReport (src/domain/config.hpp),
---- which is what src/domain/config.cpp writes into crabe.toml's
---- [quarantine] section and the ImGui overlay reads.
+-- Generates a tab-separated quarantine status report for the host application.
 function Crabe.Quarantine.report()
     local lines = {}
 

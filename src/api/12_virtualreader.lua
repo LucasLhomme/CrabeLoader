@@ -6,45 +6,6 @@
 --
 -- Authors: @LucasLhomme
 
--- VirtualReader roster -- the character-select grid.
---
--- VirtualReaderPC_Data.AvatarData is a plain global table the engine reads to
--- build the grid. It exists only in the front-end/menu Lua state (the game runs
--- one state per screen context, see docs/modding.md); a world state never has
--- it.
---
--- Call these from characters/*.lua, never from a mod's Game.onTick. A row
--- inserted at mod time draws a correct-looking tile, but the game treats it as
--- unowned and opens an upsell screen instead of selecting it -- a native
--- catalog build has already run by then. characters/*.lua runs early enough,
--- right after Presentation/VirtualReaderPC_Data.lua itself finishes.
---
--- What resolves the 3D model:
---
---   sku_id  ->  this table (pushed native by VirtualReaderPC_SetData)
---           ->  Name
---           ->  Name:lower() in the engine's ActorList
---               (assets/gamedb/core/<zone>_actors.lua, Type = "Avatar")
---           ->  that entry's DNAFile  ->  assets/characters/<x>.dnax
---
--- Name is the key, not sku_id. An invented sku_id works; an unknown Name does
--- not. The one rule that must hold: Name:lower() exists in the ActorList with
--- Type = "Avatar". A row naming no actor is the usual cause of "the tile shows
--- but the character never loads".
---
--- Two operations follow from that, kept apart on purpose:
---   addCharacter    -- a new identity over an existing character's model,
---                      borrowing its sku_id. Cosmetic, always works.
---   exposeCharacter -- surface a character whose actor, .dnax, assets and
---                      skill tree already ship, but which has no catalog row.
---                      Its own model, its own abilities.
--- New 3D geometry is out of scope here -- see characters/README.md.
---
--- Selectability is handled separately: a synthetic row is drawn locked, and the
--- gate is plain Lua inside the grid screen (virtualreaderpc_gridcharacter.lua).
--- installGridUnlock() below patches it at runtime; src/api/21_virtualreader_unlock.lua
--- calls it, so callers here never deal with it.
-
 Crabe.VirtualReader = Crabe.VirtualReader or {}
 
 local defaultFields = {
@@ -62,6 +23,7 @@ local defaultFields = {
 local pendingExposes = {}
 local pendingAdds = {}
 
+-- Flushes pending character exposures and additions into AvatarData.
 function Crabe.VirtualReader._flushPending(targetAvatarData)
     local vrData = rawget(_G, "VirtualReaderPC_Data")
     local avatarData = targetAvatarData or (vrData and vrData.AvatarData)
@@ -128,6 +90,8 @@ function Crabe.VirtualReader._flushPending(targetAvatarData)
 end
 
 local native_SetData = nil
+
+-- Ensures VirtualReaderPC_SetData is hooked to flush pending entries.
 local function ensureSetDataHooked()
     if native_SetData then return end
     local candidate = rawget(_G, "VirtualReaderPC_SetData")
@@ -148,8 +112,7 @@ local function ensureSetDataHooked()
 end
 ensureSetDataHooked()
 
--- Live listing, mostly useful to check whether a sku_id/Name is already
--- taken before adding one. nil in a Lua state without VirtualReaderPC_Data.
+-- Returns live roster AvatarData list, or nil if unavailable.
 function Crabe.VirtualReader.listCharacters()
     Crabe.VirtualReader._flushPending()
     if not (VirtualReaderPC_Data and VirtualReaderPC_Data.AvatarData) then
@@ -158,7 +121,7 @@ function Crabe.VirtualReader.listCharacters()
     return VirtualReaderPC_Data.AvatarData
 end
 
--- Finds an existing row by Name or sku_id (nil if none).
+-- Finds an existing roster row by Name or sku_id, or returns nil.
 function Crabe.VirtualReader.findCharacter(nameOrSkuId)
     local list = Crabe.VirtualReader.listCharacters()
     if not list then return nil end
@@ -170,10 +133,7 @@ function Crabe.VirtualReader.findCharacter(nameOrSkuId)
     return nil
 end
 
--- Adds a row reusing an existing character's model and sku_id, and returns it.
--- Requires entry.Name plus exactly one of entry.baseCharacter (a row's Name,
--- whose sku_id, Icon, ProgressionTree, MetaData and store fields are inherited)
--- or entry.sku_id. Override any inherited field by passing it in `entry`.
+-- Adds a character row borrowing a base character model and SKU.
 function Crabe.VirtualReader.addCharacter(entry)
     if type(entry) ~= "table" or type(entry.Name) ~= "string" or entry.Name == "" then
         error("Crabe.VirtualReader.addCharacter: expected a table with at least Name (string)", 2)
@@ -198,8 +158,6 @@ function Crabe.VirtualReader.addCharacter(entry)
         row.Icon = base.Icon
         row.ProgressionTree = base.ProgressionTree
         row.MetaData = base.MetaData
-        -- Ownership is checked against the store fields, not sku_id alone, so
-        -- inherit the base character's rather than the empty defaults.
         row.SteamDLCAppId = base.SteamDLCAppId
         row.PCSKU = base.PCSKU
         row.WINRTSKU = base.WINRTSKU
@@ -219,13 +177,7 @@ function Crabe.VirtualReader.addCharacter(entry)
     return row
 end
 
--- sku_id the loader allocated for a character name, or nil.
---
--- The loader derives the id in C++ (Gateway::allocateSku) when it builds the
--- registry slot, and writes the resulting Name -> sku_id table into this state
--- just before characters/*.lua runs. Reading it back -- rather than computing
--- the same hash a second time here -- is what guarantees a row and its slot
--- can never disagree.
+-- Returns the SKU id allocated for the specified character name.
 function Crabe.VirtualReader.skuForName(name)
     local skus = Crabe.VirtualReader._skus
     if skus then
@@ -239,7 +191,6 @@ function Crabe.VirtualReader.skuForName(name)
             end
         end
     end
-    -- Fallback: allocate deterministically on-the-fly!
     if type(name) == "string" and name ~= "" then
         local sku = nil
         if type(Crabe._allocateSku) == "function" then
@@ -259,7 +210,7 @@ function Crabe.VirtualReader.skuForName(name)
     return nil
 end
 
--- Returns a list of all custom/modded characters found in the roster.
+-- Returns list of custom and modded characters found in the roster.
 function Crabe.VirtualReader.getModdedCharacters()
     local list = Crabe.VirtualReader.listCharacters()
     local custom = {}
@@ -273,7 +224,6 @@ function Crabe.VirtualReader.getModdedCharacters()
             end
         end
     end
-    -- Fallback from pendingAdds or known mod characters if this Lua state lacks VirtualReaderPC_Data
     if pendingAdds then
         for _, entry in ipairs(pendingAdds) do
             if entry.Name and not seen[entry.Name] then
@@ -301,26 +251,12 @@ function Crabe.VirtualReader.getModdedCharacters()
     return custom
 end
 
--- Surfaces a character the game ships in full -- actor row, .dnax, 3D assets
--- and skill tree -- but never gave a catalog row. Unlike addCharacter this is
--- no re-skin: the model, animations, voice and abilities are its own. Returns
--- the row inserted.
---
--- entry.Name             required; must match an ActorList entry with
---                        Type = "Avatar", compared lowercased. It cannot be
---                        checked from here -- the ActorList lives in the gamedb
---                        state -- so verify it against *_actors.lua by hand.
--- entry.sku_id           optional; derived from Name when omitted.
--- entry.ProgressionTree  a real assets/gamedb/core/<x>.lua, lowercased.
--- entry.Icon             optional; the grid falls back to the default icon.
+-- Exposes an unlisted engine character in the character select grid.
 function Crabe.VirtualReader.exposeCharacter(entry)
     if type(entry) ~= "table" or type(entry.Name) ~= "string" or entry.Name == "" then
         error("Crabe.VirtualReader.exposeCharacter: expected a table with at least Name (string), " ..
             "matching an ActorList actor with Type = \"Avatar\"", 2)
     end
-    -- Omitted is the normal case: the row and the loader's registry slot then
-    -- derive the same id. An explicit one must stay written in the file, since
-    -- that is where the loader reads it from.
     if entry.sku_id == nil then
         entry.sku_id = Crabe.VirtualReader.skuForName(entry.Name)
         if entry.sku_id == nil then
@@ -353,16 +289,13 @@ function Crabe.VirtualReader.exposeCharacter(entry)
 
     local row = {}
     for k, v in pairs(defaultFields) do row[k] = v end
-    -- defaultFields points Icon at HUD_PlayerIcons_Default already, which is
-    -- exactly the fallback we want when the character has no icon art.
     for k, v in pairs(entry) do row[k] = v end
 
     table.insert(VirtualReaderPC_Data.AvatarData, row)
     return row
 end
 
--- Mutates an existing row in place -- re-tag, re-icon or relabel a shipped
--- character. sku_id is left untouched, so selection keeps working.
+-- Mutates an existing character roster row in place.
 function Crabe.VirtualReader.editCharacter(nameOrSkuId, patch)
     if type(patch) ~= "table" then
         error("Crabe.VirtualReader.editCharacter: patch must be a table", 2)
@@ -375,16 +308,9 @@ function Crabe.VirtualReader.editCharacter(nameOrSkuId, patch)
     return row
 end
 
--- Disables the grid's lock check so every tile is selectable, real or
--- synthetic. See this file's header for where the gate lives.
--- VirtualReaderPC_GridCharacter only exists once the character-select
--- screen has been opened at least once, hence the poll; re-checks the
--- identity in case the screen's class table gets reassigned on reload.
--- Bodies are copied verbatim from Breeze's patched file, not reinvented, to
--- match a change already proven across its userbase rather than improvise
--- a new one.
 local gridUnlockPatchedClass = nil
 
+-- Patches grid character selection to unlock all character tiles.
 local function patchGridCharacter()
     ensureSetDataHooked()
     Crabe.VirtualReader._flushPending()
@@ -437,19 +363,7 @@ local function patchGridCharacter()
     return true
 end
 
--- No "already patched, skip" outer check on the caller's side: the sibling
--- (much more RE'd) DI3 mod project notes VirtualReaderPC_Loadout gets
--- reassigned to a fresh table on screen reload, and the same is plausible
--- here, so every tick re-checks identity via patchGridCharacter()'s own
--- `gridUnlockPatchedClass == cls` comparison -- that's what keeps repeated
--- calls cheap once nothing has changed, not a call-once guard.
---
--- NOT called here: this module (12_virtualreader.lua) loads before
--- 20_hooks.lua (src/api/*.lua loads in filename-numeric order, confirmed in
--- lua_runtime.cpp), which is where Game.onTick is defined -- calling it here
--- would fail with "attempt to call a nil value" every single load, silently
--- (the loader logs and moves on to the next module). Call this from a module
--- that loads after 20_hooks.lua instead (see src/api/21_virtualreader_unlock.lua).
+-- Installs tick hook to continuously patch grid character unlock.
 function Crabe.VirtualReader.installGridUnlock()
     Game.onTick(patchGridCharacter)
     patchGridCharacter()

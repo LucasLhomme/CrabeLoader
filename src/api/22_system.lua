@@ -6,23 +6,9 @@
 --
 -- Authors: @LucasLhomme
 
--- System: display, video settings, pause, saves, multiplayer, and the debug
--- tooling the studio shipped in the retail build.
---
--- Video setters are pending until committed: settingsvideo.lua sets its flags
--- and then calls Settings_ApplyVideoSettings() once (:243, :305). So every
--- Set* here changes intent only, and Game.ApplyVideoSettings() is what the
--- player sees. Game.SaveSettings() persists across sessions.
-
 Game = Game or {}
 
--- ---------------------------------------------------------------------------
--- HUD and display
--- ---------------------------------------------------------------------------
-
--- challengeadvertisement.lua:79 and :127 bracket a screen with true then
--- false, so this is a suppression flag rather than a toggle: pass false to
--- bring the HUD back. Argument order is bool first, player second.
+-- Toggles HUD suppression for the specified player.
 function Game.SuppressHud(suppressed, playerId)
     if type(suppressed) ~= "boolean" then
         error("Game.SuppressHud: expected a boolean", 2)
@@ -31,8 +17,7 @@ function Game.SuppressHud(suppressed, playerId)
     return suppressed
 end
 
--- Rebuilds the HUD after something has left it in a bad state. System is a
--- table of nested natives, so it is reached through the table, not _G.
+-- Rebuilds and reloads the HUD for the player.
 function Game.ReloadHud(playerId)
     if type(System) ~= "table" or type(System.ReloadHUD) ~= "function" then
         error("Game.ReloadHud: System.ReloadHUD is not available in this Lua state", 2)
@@ -40,18 +25,12 @@ function Game.ReloadHud(playerId)
     System.ReloadHUD(Crabe.hostPlayer(playerId))
 end
 
+-- Returns screen width and height in pixels.
 function Game.ScreenSize()
     return Crabe.native("UI_ScreenWidth", "Game.ScreenSize")(),
            Crabe.native("UI_ScreenHeight", "Game.ScreenSize")()
 end
 
--- ---------------------------------------------------------------------------
--- Video settings
--- ---------------------------------------------------------------------------
-
--- The toggles share one shape, so they are generated rather than written out
--- nine times. Each name is the Settings_ suffix; the natives are resolved at
--- call time because this file loads before they exist.
 local VIDEO_TOGGLES = {
     Bloom = "Bloom", SSAO = "SSAO", FXAA = "FXAA",
     MotionBlur = "MotionBlur", DepthOfField = "DepthOfField",
@@ -75,16 +54,12 @@ for label, suffix in pairs(VIDEO_TOGGLES) do
     }
 end
 
--- Commits every pending video setting. Nothing above takes visible effect
--- until this runs.
+-- Commits pending video settings changes to the engine.
 function Game.ApplyVideoSettings()
     Crabe.native("Settings_ApplyVideoSettings", "Game.ApplyVideoSettings")()
 end
 
--- The resolution the running game renders at, as width, height. The engine's
--- UI_GetCurrentResolution reports the window size instead, which is the
--- monitor's when rendering 4K on a 1440p screen, so the back buffer size
--- CrabeLoader reads wins whenever it is known.
+-- Returns active render resolution width and height.
 function Game.GetResolution()
     if type(Crabe._getRenderResolutionNative) == "function" then
         local width, height = Crabe._getRenderResolutionNative()
@@ -95,11 +70,7 @@ function Game.GetResolution()
     return Crabe.native("UI_GetCurrentResolution", "Game.GetResolution")()
 end
 
--- Records the resolution the game starts with next time. The engine never resizes
--- its swap chain or render targets while running, so nothing changes on screen
--- until the game is restarted; Game.GetResolution() keeps reporting the running mode.
--- CrabeLoader's EngineResolution keeps the saved mode through that restart instead
--- of clamping it to 2560x1440.
+-- Sets saved startup resolution width and height.
 function Game.SetResolution(width, height)
     width = tonumber(width)
     height = tonumber(height)
@@ -110,14 +81,17 @@ function Game.SetResolution(width, height)
     return width, height
 end
 
+-- Saves current engine settings to disk.
 function Game.SaveSettings()
     Crabe.native("Settings_Save", "Game.SaveSettings")()
 end
 
+-- Returns current gamma setting value.
 function Game.GetGamma()
     return Crabe.native("Settings_GetGamma", "Game.GetGamma")()
 end
 
+-- Sets engine gamma value.
 function Game.SetGamma(value)
     value = tonumber(value)
     if not value then error("Game.SetGamma: expected a number", 2) end
@@ -125,12 +99,12 @@ function Game.SetGamma(value)
     return value
 end
 
--- settings.lua:129 passes difficultyIndex - 1, so the native is 0-based while
--- the screen above it counts from 1. This wrapper speaks the native's index.
+-- Returns current 0-based difficulty setting index.
 function Game.GetDifficulty()
     return Crabe.native("Settings_GetDifficulty", "Game.GetDifficulty")()
 end
 
+-- Sets engine difficulty setting index.
 function Game.SetDifficulty(index)
     index = tonumber(index)
     if not index then error("Game.SetDifficulty: expected a numeric index", 2) end
@@ -138,38 +112,32 @@ function Game.SetDifficulty(index)
     return index
 end
 
--- ---------------------------------------------------------------------------
--- Pause and exit
--- ---------------------------------------------------------------------------
-
--- pausemenu.lua:16 passes (playerNum, false, false); what the two booleans
--- select is not explained by any call site, and every site passes false.
+-- Pauses the game for the player.
 function Game.PauseGame(playerId)
     Crabe.native("Pause_PauseGame", "Game.PauseGame")(Crabe.hostPlayer(playerId), false, false)
 end
 
+-- Unpauses the game if currently paused.
 function Game.UnpauseGame()
     Crabe.native("Pause_UnPauseFromPausedScreenIfPaused", "Game.UnpauseGame")()
 end
 
+-- Quits the game application.
 function Game.QuitGame()
     Crabe.native("UI_QuitGame", "Game.QuitGame")()
 end
 
--- ---------------------------------------------------------------------------
--- Saves
--- ---------------------------------------------------------------------------
-
+-- Returns true if game engine allows saving right now.
 function Game.CanSave()
     return Crabe.native("SaveLoad_CanSave", "Game.CanSave")() == true
 end
 
+-- Returns true if a save operation is currently in progress.
 function Game.IsSaving()
     return Crabe.native("SaveLoad_IsSaving", "Game.IsSaving")() == true
 end
 
--- Refuses to start a save the engine says it cannot take, and refuses to
--- overlap with one already running -- both would be silently dropped.
+-- Triggers autosave of current world state.
 function Game.SaveWorld()
     if not Game.CanSave() then
         error("Game.SaveWorld: the game reports it cannot save right now", 2)
@@ -180,26 +148,22 @@ function Game.SaveWorld()
     Crabe.native("SaveLoad_AutoSaveWorld", "Game.SaveWorld")()
 end
 
+-- Saves current player profile state.
 function Game.SaveProfile()
     Crabe.native("SaveLoad_SaveProfile", "Game.SaveProfile")()
 end
 
+-- Returns list of saved game files.
 function Game.ListSaves()
     return Crabe.native("SaveLoad_GetSavedGamesList", "Game.ListSaves")()
 end
 
--- ---------------------------------------------------------------------------
--- Multiplayer
--- ---------------------------------------------------------------------------
---
--- This is the real meaning of UI_LockGame / UI_UnlockGame: the host locking
--- the online session so nobody else can join. It unlocks no content -- see
--- 17_unlock.lua for that.
-
+-- Returns true if online multiplayer session is locked.
 function Game.IsSessionLocked()
     return Crabe.native("UI_GameIsLocked", "Game.IsSessionLocked")() == true
 end
 
+-- Sets online multiplayer session lock state.
 function Game.SetSessionLocked(locked)
     if type(locked) ~= "boolean" then
         error("Game.SetSessionLocked: expected a boolean", 2)
@@ -213,6 +177,7 @@ function Game.SetSessionLocked(locked)
     return locked
 end
 
+-- Kicks player by number from multiplayer session.
 function Game.KickPlayer(playerNumber)
     if not tonumber(playerNumber) then
         error("Game.KickPlayer: expected a player number", 2)
@@ -220,6 +185,7 @@ function Game.KickPlayer(playerNumber)
     Crabe.native("UI_KickPlayer", "Game.KickPlayer")(tonumber(playerNumber))
 end
 
+-- Returns table with total, local, and maximum player counts.
 function Game.PlayerCounts()
     return {
         total = Crabe.native("Players_NumPlayers", "Game.PlayerCounts")(),
@@ -228,27 +194,22 @@ function Game.PlayerCounts()
     }
 end
 
--- ---------------------------------------------------------------------------
--- Debug tooling left in the retail build
--- ---------------------------------------------------------------------------
-
--- UI_AllowTestUI only decides whether the pause menu draws the button
--- (pausemenu.lua:772); it does not gate the native. So this reports what the
--- build claims while OpenTestUI ignores it.
+-- Returns true if retail test UI is allowed.
 function Game.TestUIAllowed()
     return Crabe.native("UI_AllowTestUI", "Game.TestUIAllowed")() == true
 end
 
+-- Triggers engine test UI for the player.
 function Game.OpenTestUI(playerId)
     Crabe.native("UI_TriggerTestUI", "Game.OpenTestUI")(Crabe.hostPlayer(playerId))
 end
 
+-- Triggers engine toy tree interface.
 function Game.OpenToyTree(playerId)
     Crabe.native("UI_TriggerToyTree", "Game.OpenToyTree")(Crabe.hostPlayer(playerId), false)
 end
 
--- Persistent globals survive across sessions, which makes them the natural
--- store for the menu's own settings as well as a window into the game's.
+-- Reads persistent global value by string key.
 function Game.GetGlobal(key)
     if type(key) ~= "string" or key == "" then
         error("Game.GetGlobal: key must be a non-empty string", 2)
@@ -256,6 +217,7 @@ function Game.GetGlobal(key)
     return Crabe.native("PersistentData_GetGlobal", "Game.GetGlobal")(key)
 end
 
+-- Writes persistent global value by string key.
 function Game.SetGlobal(key, value)
     if type(key) ~= "string" or key == "" then
         error("Game.SetGlobal: key must be a non-empty string", 2)
@@ -264,6 +226,7 @@ function Game.SetGlobal(key, value)
     return value
 end
 
+-- Returns true if persistent global is defined.
 function Game.IsGlobalSet(name)
     if type(name) ~= "string" or name == "" then
         error("Game.IsGlobalSet: name must be a non-empty string", 2)
@@ -271,13 +234,7 @@ function Game.IsGlobalSet(name)
     return Crabe.native("UI_IsGlobalSet", "Game.IsGlobalSet")(name) == true
 end
 
--- ---------------------------------------------------------------------------
--- Synthetic input
--- ---------------------------------------------------------------------------
-
--- Feeds the game an input action as though the pad or keyboard had produced
--- it. Valid names are the numeric keys of the KeyMap table -- "DEFAULT_A",
--- "KEY_SPACEBAR", "RBN_TB_PLACE" and 249 others.
+-- Sends synthetic button press event by key name.
 function Game.PressButton(buttonName)
     if type(buttonName) ~= "string" or buttonName == "" then
         error("Game.PressButton: buttonName must be a non-empty string", 2)
@@ -286,6 +243,7 @@ function Game.PressButton(buttonName)
     return buttonName
 end
 
+-- Sends synthetic button release event by key name.
 function Game.ReleaseButton(buttonName)
     if type(buttonName) ~= "string" or buttonName == "" then
         error("Game.ReleaseButton: buttonName must be a non-empty string", 2)
@@ -294,8 +252,7 @@ function Game.ReleaseButton(buttonName)
     return buttonName
 end
 
--- The names the engine will accept, read from KeyMap rather than hardcoded so
--- this cannot drift from the build.
+-- Returns sorted list of supported button key names.
 function Game.ListButtons()
     if type(KeyMap) ~= "table" then
         error("Game.ListButtons: KeyMap is not available in this Lua state", 2)
