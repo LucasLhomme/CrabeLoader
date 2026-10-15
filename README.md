@@ -1,2 +1,308 @@
-# DisneyCreator
-Appli afin de créer des perso standalon avec rigging et modele custom. 
+# Disney Infinity Creator
+
+Transforme n'importe quel modèle 3D en **personnage jouable** pour **Disney Infinity 3.0 Gold Edition (PC)**.
+
+Tu importes un modèle (Sketchfab, Models Resource, ton propre travail Blender…), tu choisis une figure du jeu comme
+base, et Creator ajuste un squelette, calcule le skinning, te laisse prévisualiser le résultat en mouvement puis
+l'installe sous forme de mod. Le personnage apparaît dans le jeu comme une **nouvelle figure à part entière** : il
+reprend les animations, les attaques et les capacités de la figure de base, et aucun personnage d'origine n'est
+remplacé.
+
+> Outil de fan, sans lien avec Disney, Avalanche Software ni aucun ayant droit. Il faut posséder sa propre copie du jeu.
+
+---
+
+## Sommaire
+
+- [Fonctionnalités](#fonctionnalités)
+- [Prérequis](#prérequis)
+- [Installation et lancement](#installation-et-lancement)
+- [Créer un personnage pas à pas](#créer-un-personnage-pas-à-pas)
+- [Comprendre le score de déformation](#comprendre-le-score-de-déformation)
+- [Outils en ligne de commande](#outils-en-ligne-de-commande)
+- [Jouer avec son personnage](#jouer-avec-son-personnage)
+- [Conseils pour un bon résultat](#conseils-pour-un-bon-résultat)
+- [Fonctionnement](#fonctionnement)
+- [Limites connues](#limites-connues)
+- [Dépannage](#dépannage)
+- [Pour les développeurs](#pour-les-développeurs)
+- [Crédits](#crédits)
+
+---
+
+## Fonctionnalités
+
+- **99 figures de base** : tous les personnages jouables de Disney Infinity 3.0 (Marvel, Star Wars, Disney, Pixar,
+  y compris ceux des versions 1.0 et 2.0), avec recherche et aperçu 3D texturé.
+- **Rien n'est écrasé** : chaque création est une nouvelle figure avec sa propre tuile dans la grille. Luke, Thor ou
+  Elsa restent intacts, et tu peux installer autant de personnages que tu veux.
+- **Nettoyage intégré** : à l'import, Blender (en arrière-plan) fusionne les morceaux, corrige l'échelle et
+  l'orientation, retrouve les textures perdues (fichier `.mtl` absent, images à côté du modèle) et fige un éventuel
+  squelette. Le résultat est un fichier temporaire supprimé à la fermeture : aucun fichier parasite chez toi. Les
+  `.fbx` et `.dae` passent toujours par ce nettoyage.
+- **Placement manuel** : décale et tourne le modèle (curseurs, boutons de 1 cm, rotation fine, « Recentre ») quand
+  l'ajustement automatique se trompe.
+- **Vue 3 plans** (face, profil, dessus) pour juger l'alignement du squelette d'un coup d'œil.
+- **Rigging automatique** : épaules, coudes, poignets, cou, hanches, genoux et chevilles sont détectés, avec un
+  curseur par articulation pour affiner.
+- **Poids de skinning de qualité** via Blender s'il est installé. S'il échoue (maillages ouverts, nombreux morceaux)
+  ou s'il est absent, Creator bascule seul sur une méthode par distance aux os, avec des règles par zone.
+- **Aperçu en mouvement** : pose en jeu, bras levés, marche, avec un curseur d'amplitude (« Pose amount »).
+- **Score de déformation** sur 100, avec surlignage en rouge des arêtes trop étirées, et détection d'un modèle
+  « effondré » quand les poids sont cassés.
+- **Suggestion de bases** : classe les figures de base selon leur compatibilité avec ton modèle.
+- **Verrouillage de pièces** : Ctrl+clic sur une pièce (cheveux, cape, arme…), « Grow » pour prendre les petites
+  pièces voisines, « Lock » pour la forcer à suivre un seul os.
+- **Aperçu de l'atlas de textures** avec contrôles (image trop sombre, non carrée…), et avertissements à l'import
+  (matériau sans texture, texture répétée).
+- **Journal d'erreurs** (`build/creator.log`) pour comprendre un plantage.
+- **Installation vérifiée** : chaque installation est contrôlée (tampons, poids, liens de fichiers) et l'ancienne
+  version du mod est sauvegardée dans `backups/`.
+
+## Prérequis
+
+| Quoi | Remarques |
+| :--- | :--- |
+| Windows 10 ou 11 | |
+| Disney Infinity 3.0 Gold Edition (PC) | Ta propre copie installée |
+| [CrabeLoader](https://github.com/LucasLhomme/CrabeLoader) et [CrabeMenu](https://github.com/LucasLhomme/CrabeMenu) | Le chargeur de mods qui charge ton personnage. CrabeMenu (menu `F5` en jeu) est conseillé pour passer sur ton personnage |
+| Python 3.12 ou plus récent | Cocher « Add python.exe to PATH » à l'installation |
+| Blender 4.x ou plus récent | Recommandé : nettoyage des modèles (obligatoire pour `.fbx` et `.dae`) et meilleurs poids. Creator le lance en arrière-plan, tu n'as jamais à l'ouvrir |
+
+## Installation et lancement
+
+1. Télécharge ou clone ce dépôt.
+2. Lance `run.ps1` (PowerShell) : le premier démarrage crée l'environnement virtuel `.venv` et installe les
+   dépendances (`customtkinter`, `moderngl`, `numpy`, `Pillow`, `trimesh`, `scipy`).
+3. Ensuite, un double-clic sur **`Lancer_Creator.bat`** suffit. Si l'appli s'arrête, la fenêtre reste ouverte et
+   renvoie vers `build\creator.log`.
+
+> Si PowerShell refuse le script : `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (une seule fois).
+
+Le chemin de Blender et celui du jeu se règlent dans l'onglet **Rig & Export** ; ils sont mémorisés.
+
+## Créer un personnage pas à pas
+
+Le panneau de gauche a cinq onglets ; on les parcourt dans l'ordre.
+
+### 0. Base : choisir la figure
+
+Choisis la figure dont le squelette, les animations et le moveset serviront à ton personnage.
+
+| Marque | Sens |
+| :---: | :--- |
+| ● | Squelette standard : toutes les articulations nécessaires existent |
+| ◐ | Squelette adapté : quelques os en remplacent d'autres (ex. la base du pied pour la cheville). Fonctionne, avec de petites approximations |
+| ✕ | Non humanoïde (Olaf, Randall…) : ne peut pas recevoir un maillage humanoïde |
+
+**Choisis une base de gabarit proche.** Un héros mince va mieux sur Spider-Man que sur Hulk, une longue robe mieux
+sur Elsa que sur Captain America. Le bouton **« Suggest the best bases for my model »** (onglet Modèle) classe les
+figures pour toi.
+
+### 1. Modèle : importer
+
+Clique sur **Import a 3D model** et choisis un `.obj`, `.glb`, `.gltf`, `.fbx` (ou `.dae`, `.ply`, `.stl`, `.off`),
+ou un `.zip` qui le contient avec ses textures.
+
+- La case **« Clean with Blender while importing »** est cochée par défaut. Elle lance le nettoyage décrit plus haut.
+  Sans chemin Blender valide, les formats `.glb`/`.obj`/`.zip` s'importent tels quels ; `.fbx` et `.dae` demandent
+  Blender.
+- Le modèle doit être en **T-pose** (bras écartés) ; une A-pose passe aussi.
+- Creator détecte l'orientation. Sinon : **↻ 90°**, **↻ 180°**, **Stand up**.
+- **Model height** est préréglée à la taille de la base. Coche **Show … alongside** pour comparer côte à côte.
+- **Position** : curseurs gauche/droite, arrière/avant, bas/haut, rotation fine ; boutons ◄ 1 cm ►, ▼ back, ▲ forward ;
+  **Recentre** revient au centrage automatique.
+- **Pièces** : Ctrl+clic sur une pièce de la vue pour la sélectionner, **Grow** pour élargir aux petites pièces
+  voisines, choisis l'os et **Lock** : la pièce suivra cet os de façon rigide (ex. des mèches de cheveux sur la tête).
+- **Preview the texture atlas** montre la texture que le jeu recevra, avec des alertes.
+- Les avertissements d'import (matériau sans texture, texture répétée…) s'affichent en jaune sous le nom du modèle.
+
+### 2. Skeleton : vérifier les articulations
+
+Points jaunes = articulations, lignes vertes = os. Creator les place seul ; le texte au-dessus des curseurs indique ce
+qui est **détecté** et ce qui n'est qu'**estimé** (à vérifier en premier). Ajuste avec les curseurs (hauteur des bras,
+largeur d'épaules, poignets, cou, tête, hanches, écart des jambes, genoux, chevilles). **Auto-Fit** repart du
+placement automatique. Active **« 3 views »** (barre sous le viewport) pour voir face, profil et dessus.
+
+### 3. Abilities & Moveset
+
+Réglages des capacités et de l'ensemble de mouvements du personnage (hérités de la base).
+
+### 4. Rig & Export : construire et installer
+
+1. **Character name** : nom affiché dans les menus (ex. `Mario`) ; il nomme aussi le dossier du mod.
+2. **Internal actor name** : nom interne du moteur (ex. `MAR_Mari`), 3 à 32 caractères, lettres/chiffres/`_`, commence
+   par une lettre ; prérempli.
+3. **Game folder** : ton dossier Disney Infinity 3.0.
+4. **Blender** : chemin de `blender.exe` (facultatif mais conseillé).
+5. **1. Build the rig**, puis contrôle **In-game pose**, **Arms up**, **Walk** et le **score de déformation**. Si
+   quelque chose cloche, retourne en onglet 1 ou 2, ajuste, reconstruis.
+6. **2. Install into the game** : le journal liste les contrôles, tous doivent afficher `OK`.
+
+Le mod est écrit dans `<jeu>/mods/<nom du personnage>/`. Réinstaller sous le même nom remplace le mod et déplace
+l'ancienne version dans `backups/`.
+
+## Comprendre le score de déformation
+
+Après « Build the rig », Creator mesure combien le maillage s'étire ou s'écrase dans les poses de test (bras levés à
+70°, marche à 35° ; le curseur « Pose amount » change l'amplitude).
+
+Le score (0 à 100) mélange trois mesures : l'étirement moyen de toutes les arêtes (50 %), la part des arêtes
+déformées de plus de 2 fois (30 %) et la part des arêtes déchirées à plus de 3 fois (20 %).
+
+| Score | Niveau |
+| :---: | :--- |
+| 75 et plus | Bon |
+| 50 à 74 | Acceptable |
+| moins de 50 | Forte déformation |
+
+- Les arêtes étirées de plus de 3 fois sont dessinées en **rouge** (case « Show stretched edges in red »).
+- Si le modèle est **écrasé ou aplati** (poids cassés), le score affiche « FAILED - the model is collapsed ».
+- Ce score mesure la géométrie, **pas l'apparence** : un modèle peut être « bon » et mal rigué (cheveux qui suivent les
+  bras). Contrôle toujours visuellement, et verrouille les pièces gênantes sur le bon os.
+
+## Outils en ligne de commande
+
+Sans ouvrir l'interface (à lancer avec `.\.venv\Scripts\python.exe`) :
+
+| Commande | Rôle |
+| :--- | :--- |
+| `tools\batch_check.py dossier [--base ACTOR \| --suggest] [--blender chemin]` | Place et rigge tous les modèles d'un dossier, affiche le score ; avec `--suggest`, essaie toutes les figures et donne les meilleures |
+| `tools\capture.py modele.glb [--base ACTOR] [--amount 1.0] [--out dossier]` | Construit le rig d'un modèle et enregistre des images en 3 vues (repos, bras levés, marche, avec les arêtes étirées en rouge) et `report.txt` dans `build\captures\` |
+| `Capturer_Modele.bat` | Même chose en glissant un modèle sur le fichier |
+
+## Jouer avec son personnage
+
+1. **Redémarre le jeu** : les nouveaux personnages ne sont chargés qu'au démarrage.
+2. Dans le jeu, soit **F5** (CrabeMenu) → **Heroes › ★ Modded Characters**, soit la grille **My collection › Characters**
+   où ton personnage a sa propre tuile.
+
+## Conseils pour un bon résultat
+
+- **Nombre de sommets** : moins d'environ 65 000 (limite du moteur, indices 16 bits). Le nettoyage décime si besoin.
+- **Un maillage propre** : les petites pièces (yeux, boutons, accessoires) sont rattachées à la partie la plus
+  proche, mais un modèle découpé en dizaines de morceaux se rigge moins bien.
+- **Vraie T-pose** : bras droits et horizontaux, jambes légèrement écartées, de face.
+- **Installer Blender** : plis plus doux aux épaules, coudes et genoux quand le calcul de chaleur réussit.
+- **Proportions proches de la base** : les membres sont étirés pour coller aux longueurs d'os de la base (dans des
+  limites). Des proportions très différentes donnent un personnage étiré en jeu.
+- **Textures** : importe un `.zip` avec les images à côté du modèle, ou un `.glb` avec textures intégrées.
+
+## Fonctionnement
+
+Chaque figure jouable est un **acteur** : un squelette, un maillage skinné, des matériaux et textures, et les
+animations et capacités qui le pilotent. Creator crée un **acteur cloné** : une copie de la figure de base dont le
+maillage est remplacé par le tien, sous un nouveau nom.
+
+1. **Ajustement du squelette** : des coupes horizontales du modèle donnent la ligne des bras, le cou, l'entrejambe,
+   les genoux et les chevilles ; les articulations standard sont placées dessus. Le centrage ignore cheveux et ailes
+   pour que le squelette ne soit pas décalé.
+2. **Correspondance des os** : chaque articulation est reliée à l'os le plus proche que la base possède vraiment ;
+   une position manquante est reconstruite d'après les proportions d'une figure de référence.
+3. **Skinning** : poids de chaleur (« bone heat ») de Blender, ou à défaut distance aux os. Blender échoue sur les
+   maillages ouverts ou en très nombreux morceaux : si moins de 70 % des sommets reçoivent un poids, Creator utilise la
+   méthode par distance. Ensuite : tête rigide (les yeux ne glissent pas), pièces sous les genoux liées à une
+   cheville, pièces reliant bras et jambes suivant la colonne, lissage des panneaux entre les jambes (jupes, robes),
+   puis les pièces verrouillées à la main.
+4. **Cuisson dans la pose de repos** : le maillage n'est pas rigué sur un nouveau squelette. Chaque partie du corps
+   est tournée et étirée de l'articulation de ton modèle vers l'articulation correspondante de la base, si bien que
+   le maillage épouse exactement la pose de repos de la base. Le squelette et les matrices de la base ne changent pas :
+   **toutes les animations du jeu s'appliquent telles quelles**.
+5. **Écriture des fichiers** : Creator lit et écrit directement les formats du jeu : scènes Octane (`.oct`, `.bent`),
+   Lua compilé (`.dnax`) et paquets de matériaux (`.mtb`), sans perte (réécrire un fichier intact redonne les mêmes
+   octets).
+
+### Contenu d'un mod de personnage
+
+| Fichier | Rôle |
+| :--- | :--- |
+| `characters/<acteur>/<acteur>.oct`, `_0.vbuf`, `_0.ibuf` | Le maillage : sommets, poids, triangles, limites |
+| `characters/<acteur>/<acteur>.mtb` | Les matériaux, avec textures |
+| `characters/<acteur>/<acteur>.dnax`, `.bent`, `.animtreeoverrides` | La définition de l'acteur, pointant vers le nouveau maillage |
+| `textures/<xx>.zip` | L'archive de textures du personnage |
+| `skilltrees/ActorList.patch`, `skilltrees/DataMap.patch` | Enregistrent l'acteur dans les bases de données du jeu |
+| `characters/<Acteur>.lua` | Ajoute la figure à la grille de personnages |
+| `<nom>.lua`, `mod.json` | Point d'entrée CrabeLoader et entrée CrabeMenu |
+
+## Limites connues
+
+- **Moveset** : le personnage reprend les mouvements, la voix, les capacités et l'arbre de compétences de sa base ;
+  pas d'animations personnalisées.
+- **Textures** : seule la couleur de base du modèle est utilisée, la carte de normales est plate. Un modèle dont les
+  textures sont **noires en jeu** reste un point à investiguer (il faut `loader.log` et une capture du jeu).
+- **Figures non humanoïdes** (Olaf, Randall, Maleficent, Elastigirl) : inutilisables comme base.
+- **Squelettes adaptés** (◐) : quelques articulations reconstruites à peu près.
+- **Capes, jupes, cheveux** : sans « bone heat » réussi, le skinning par distance est plus approximatif ; le score ne
+  voit pas tout, contrôle les poses et verrouille les pièces si besoin.
+- **Icône** : la grille affiche une icône générique pour ton personnage.
+- **Maturité** : les personnages basés sur Luke ont été joués en jeu ; les autres bases utilisent la même chaîne mais
+  ont été moins testées. L'interface n'a été validée que sur des tests automatiques sans écran.
+
+## Dépannage
+
+| Problème | À essayer |
+| :--- | :--- |
+| L'appli se ferme au lancement | Lance `Lancer_Creator.bat` (la fenêtre reste ouverte) et consulte `build\creator.log` |
+| Le personnage n'apparaît pas en jeu | Redémarre le jeu ; vérifie CrabeLoader ; consulte `loader.log` dans le dossier du jeu |
+| « model too detailed » | Réduis sous ~65 000 sommets (le nettoyage le fait) |
+| Modèle couché ou de dos | Onglet 1 : **Stand up**, **↻ 90°** / **↻ 180°** |
+| Squelette décalé par rapport au corps | Onglet 1 : curseurs de position ou **Recentre** ; vue « 3 views » pour vérifier |
+| Le modèle devient une aiguille / « collapsed » | Les poids Blender ont échoué ; Creator bascule normalement sur la distance. Reconstruis le rig et lis le journal |
+| Modèle gris à l'import | Lis l'avertissement jaune : texture non liée. Mets les images à côté du modèle (dans le même `.zip`) |
+| Coudes ou genoux qui plient mal | Onglet 2 : bouge le curseur concerné puis reconstruis |
+| Cheveux ou cape qui suivent les bras | Ctrl+clic sur la pièce, Grow, choisis l'os (ex. Head), Lock, puis reconstruis |
+| Pliages raides ou en blocs | Renseigne le chemin de Blender (onglet Rig & Export) |
+| Le personnage glisse sans bouger les jambes | Animations de la base absentes de l'installation : réinstalle ou vérifie les fichiers via Steam |
+| « already a figure of the game » | Choisis un autre nom d'acteur interne |
+
+## Pour les développeurs
+
+```
+src/
+  core/       logique pure, sans interface
+    octane_scene.py, luac.py, material_bundle.py        lecture/écriture sans perte .oct/.bent, .dnax, .mtb
+    base_character.py, base_pack.py, roster.py          figures de base
+    skeleton_map.py                                      articulations Creator -> os de chaque figure
+    model.py, skeleton.py, rig.py, rigging.py            modèle importé, articulations, skinning
+    quality.py, ranking.py                               score de déformation, classement des bases
+    cleaner.py, errorlog.py                              nettoyage Blender intégré, journal d'erreurs
+    octane.py, exporter.py, mod_writer.py, textures.py   sortie du mod
+  render/     viewport OpenGL hors écran (aussi utilisé par tools/capture.py)
+  ui/         interface customtkinter
+  scripts/    étapes Blender en arrière-plan (nettoyage, poids bone heat, figer un .glb rigué)
+  assets/     bases/ (pack des figures), roster.json, shader_layouts.json, templates/
+  tools/      QuickBMS et le ré-encrypteur d'archives
+tools/        batch_check.py, capture.py, scripts qui régénèrent src/assets depuis une installation du jeu
+tests/        tests unitaires (pytest)
+```
+
+Tests : `.\.venv\Scripts\python.exe -m pytest tests`.
+
+### Ressources du jeu
+
+`src/assets/` et `src/tools/` (extraits du jeu, binaires tiers) ne sont **pas** versionnés ici. Ils sont régénérés
+depuis une installation du jeu :
+
+| Script | Produit |
+| :--- | :--- |
+| `tools/build_roster.py <virtualreaderpc_data.lua> <toybox_actors.lua>` | `roster.json` : chaque figure jouable |
+| `tools/build_shader_table.py <racine décryptée du jeu>` | `shader_layouts.json` : emplacement des textures par shader |
+| `tools/build_base_pack.py <dossier du jeu>` | `bases/` : modèle, `.dnax`, animations et textures d'aperçu de chaque figure |
+
+QuickBMS (avec le script BMS Disney Infinity) et `offsetting.exe` vont dans `src/tools/`.
+
+### Conventions
+
+- Branche principale : `main`. Une modification = un commit avec un message clair.
+- Le dossier `build/`, `backups/`, `.venv/` et `src/config/settings.json` (chemins personnels) ne sont pas suivis.
+
+## Crédits
+
+- **QuickBMS** de Luigi Auriemma et le script BMS Disney Infinity de la communauté.
+- La communauté de modding Disney Infinity (ré-encrypteur d'archives, recherches sur les formats).
+- [trimesh](https://trimesh.org), [ModernGL](https://github.com/moderngl/moderngl),
+  [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter), NumPy, SciPy, Pillow et
+  [Blender](https://www.blender.org).
+
+Disney Infinity et tous les personnages associés sont des marques de leurs propriétaires respectifs. Ce projet est
+destiné aux possesseurs du jeu.
