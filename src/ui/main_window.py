@@ -808,8 +808,8 @@ class MainWindow(ctk.CTk):
                                             text_color="#09090b", hover_color="#f59e0b",
                                             font=ctk.CTkFont(weight="bold"), command=self.on_install)
         self.install_button.grid(row=15, column=0, sticky="ew", pady=(4, 8))
-        self.zip_var = ctk.BooleanVar(value=bool(self.settings.get("legacy_zip", False)))
-        ctk.CTkCheckBox(tab, text="Also ship the texture archive (.zip) - try this if the textures are black in game",
+        self.zip_var = ctk.BooleanVar(value=bool(self.settings.get("legacy_zip", True)))
+        ctk.CTkCheckBox(tab, text="Ship the texture archive (.zip) - required for the textures to show in game",
                         variable=self.zip_var, font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(legacy_zip=bool(self.zip_var.get()))
                         ).grid(row=14, column=0, sticky="w", pady=(4, 0))
