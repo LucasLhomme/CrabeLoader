@@ -10,6 +10,7 @@ import numpy as np
 from src.core.base_character import BaseCharacter
 from src.core.base_pack import has_pack, preview_texture, status
 from src.core import errorlog
+from src.core.config import normalize_blender_path
 from src.core.cleaner import NEEDS_BLENDER, clean_model
 from src.core.config import load_settings, save_settings
 from src.core.exporter import install
@@ -853,7 +854,7 @@ class MainWindow(ctk.CTk):
             self.actor_entry.insert(0, default_actor(self.name_entry.get()))
 
     def _save_settings(self):
-        self.settings.update(game_path=self.game_entry.get().strip(), blender_path=self.blender_entry.get().strip(),
+        self.settings.update(game_path=self.game_entry.get().strip(), blender_path=normalize_blender_path(self.blender_entry.get()),
                              mod_name=self.name_entry.get().strip())
         if self.base:
             self.settings["base_actor"] = self.base.actor
@@ -1105,7 +1106,7 @@ class MainWindow(ctk.CTk):
             return
         for child in self.suggest_frame.winfo_children():
             child.destroy()
-        source, blender = self.model.source, self.blender_entry.get().strip() if hasattr(self, "blender_entry") else ""
+        source, blender = self.model.source, normalize_blender_path(self.blender_entry.get()) if hasattr(self, "blender_entry") else ""
         self.suggest_button.configure(state="disabled", text="Testing the figures… (about a minute)")
 
         def job():
@@ -1137,7 +1138,7 @@ class MainWindow(ctk.CTk):
             filetypes=[("3D models and ZIP", "*.zip *.obj *.glb *.gltf *.fbx *.dae *.ply *.stl *.off"), ("All", "*.*")])
         if not path:
             return
-        blender = self.blender_entry.get().strip() if hasattr(self, "blender_entry") else ""
+        blender = normalize_blender_path(self.blender_entry.get()) if hasattr(self, "blender_entry") else ""
         if Path(path).suffix.lower() in NEEDS_BLENDER or self.clean_var.get():
             if not blender or not Path(blender).is_file():
                 if Path(path).suffix.lower() in NEEDS_BLENDER:
@@ -1471,7 +1472,7 @@ class MainWindow(ctk.CTk):
             self._show_quality()
             if then:
                 then()
-        blender = self.blender_entry.get().strip()
+        blender = normalize_blender_path(self.blender_entry.get())
         model, anchors, base = self.model, self.anchors, self.base
         overrides = list(self.piece_overrides)
         self._run(lambda: build_rig(model, anchors, base, Path(blender) if blender else None,
