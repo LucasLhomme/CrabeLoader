@@ -19,7 +19,7 @@ from src.core.model import CharacterModel, auto_placement, load_source
 from src.core.paths import WORK_DIR
 from src.core.quality import deformation_report, stretched_segments
 from src.core.ranking import rank_bases
-from src.core.rig import build_rig
+from src.core.rig import base_tpose, build_rig
 from src.core.roster import find_entry, load_roster
 from src.core.skeleton import (
     apply_apose_to_proportions,
@@ -304,9 +304,14 @@ class MainWindow(ctk.CTk):
                           font=ctk.CTkFont(size=11), command=cmd).grid(row=0, column=i, padx=1, sticky="ew")
 
         self.ghost_var = ctk.BooleanVar(value=True)
-        self.ghost_box = ctk.CTkCheckBox(tab, text="Show the base figure alongside (comparison)",
+        ghost_row = ctk.CTkFrame(tab, fg_color="transparent")
+        ghost_row.grid(row=10 + 2 * len(PLACEMENT_SLIDERS), column=0, sticky="w", pady=4)
+        self.ghost_box = ctk.CTkCheckBox(ghost_row, text="Show the base figure alongside (comparison)",
                                          variable=self.ghost_var, command=self.on_ghost)
-        self.ghost_box.grid(row=10 + 2 * len(PLACEMENT_SLIDERS), column=0, sticky="w", pady=4)
+        self.ghost_box.grid(row=0, column=0, sticky="w")
+        self.ghost_tpose_var = ctk.BooleanVar(value=bool(self.settings.get("ghost_tpose", True)))
+        ctk.CTkCheckBox(ghost_row, text="in T-pose", variable=self.ghost_tpose_var, width=60,
+                        command=self.on_ghost_tpose).grid(row=0, column=1, padx=(8, 0))
 
         r0 = 11 + 2 * len(PLACEMENT_SLIDERS)
         ctk.CTkLabel(tab, text="Pieces: Ctrl+click a part in the view (hair, cape, weapon…), \"Grow\" to take the "
@@ -954,7 +959,7 @@ class MainWindow(ctk.CTk):
             self._highlight_base()
             self.renderer.set_ghost(parts)
             self.renderer.show_ghost = self.ghost_var.get()
-            self.renderer.set_base_skeleton(base_skeleton_segments(base.joints), base_joint_points(base.joints))
+            self._show_base_rest(self.pose == "tpose")
             game_dir = Path(self.game_entry.get().strip()) if hasattr(self, "game_entry") and self.game_entry.get() else None
             self._refresh_moveset_clips()
             self._update_abilities_summary()
@@ -1125,11 +1130,14 @@ class MainWindow(ctk.CTk):
         for child in self.suggest_frame.winfo_children():
             child.destroy()
         source, blender = self.model.source, normalize_blender_path(self.blender_entry.get()) if hasattr(self, "blender_entry") else ""
-        self.suggest_button.configure(state="disabled", text="Testing the figures… (about a minute)")
+        self.suggest_button.configure(state="disabled", text="Testing the figures… (1 to 2 minutes)")
+
+        transfer = self._weight_transfer()
 
         def job():
             return rank_bases(source, load_roster(), WORK_DIR / "rank", lambda text: self._events.put(
-                lambda: self.suggest_button.configure(text=text)))
+                lambda: self.suggest_button.configure(text=text)),
+                blender=Path(blender) if blender else None, weight_transfer=transfer)
 
         def done(result, error):
             self._set_busy(False)
@@ -1140,10 +1148,11 @@ class MainWindow(ctk.CTk):
             for i, c in enumerate(result[:6]):
                 colour = {"good": GREEN, "warn": YELLOW, "bad": RED}[c.level]
                 ctk.CTkButton(self.suggest_frame, anchor="w", height=26, fg_color="#18181b", hover_color="#27272a",
-                              text=f"{i + 1}. {c.display_name} — {c.score}/100", text_color=colour,
+                              text=f"{i + 1}. {c.display_name} — {c.score}/100  ({c.note})", text_color=colour,
                               command=lambda a=c.actor: self.on_pick_base(a)).grid(row=i, column=0, sticky="ew", pady=1)
-            ctk.CTkLabel(self.suggest_frame, text="Score = how little the mesh stretches in test poses (it cannot judge "
-                                                  "looks: check the comparison view).", text_color=GREY,
+            ctk.CTkLabel(self.suggest_frame, text="Score = body shape match (silhouette), little stretching in the test poses, "
+                                                  "and little distortion when baking your T-pose into the figure's "
+                                                  "pose. It cannot judge looks: check the comparison view.", text_color=GREY,
                          wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(row=7, column=0, sticky="w")
         self._run(job, done)
 
@@ -1273,9 +1282,8 @@ class MainWindow(ctk.CTk):
         self.rig = None
         if hasattr(self, "timeline"):
             self.timeline.set_rig_ready(False)
-        if hasattr(self, "base_parts") and self.base_parts:
-            self.renderer.reset_ghost_vertices(self.base_parts)
         self.pose = "tpose"
+        self._show_base_rest(True)
         self.pose_buttons.set("T-pose")
         self.pose_buttons.configure(state="disabled")
         self.renderer.set_heat_lines(None)
@@ -1286,8 +1294,7 @@ class MainWindow(ctk.CTk):
         else:
             self.renderer.update_model_vertices(self.model.vertices())
         self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
-        if self.base:
-            self.renderer.set_base_skeleton(base_skeleton_segments(self.base.joints), base_joint_points(self.base.joints))
+        self._show_base_rest(True)
         self.renderer.request_render()
 
     def _sync_placement_controls(self):
@@ -1358,6 +1365,25 @@ class MainWindow(ctk.CTk):
         self._sync_sliders()
         self._geometry_changed()
 
+    def _show_base_rest(self, tpose: bool):
+        """Comparison figure and its skeleton: raised to T-pose when the model is shown in T-pose (and the option is
+        on), in the native bind pose otherwise."""
+        if not (self.base and getattr(self, "base_parts", None)):
+            return
+        if tpose and self.ghost_tpose_var.get():
+            world, joints = base_tpose(self.base)
+            self.renderer.update_ghost_vertices(self.base.deform_preview_parts(world))
+        else:
+            joints = self.base.joints
+            self.renderer.reset_ghost_vertices(self.base_parts)
+        if tpose:
+            self.renderer.set_base_skeleton(base_skeleton_segments(joints), base_joint_points(joints))
+
+    def on_ghost_tpose(self):
+        self.settings.update(ghost_tpose=bool(self.ghost_tpose_var.get()))
+        self._show_base_rest(self.pose == "tpose")
+        self.renderer.request_render()
+
     def on_ghost(self):
         self.renderer.show_ghost = self.ghost_var.get()
         self.renderer.request_render()
@@ -1415,12 +1441,9 @@ class MainWindow(ctk.CTk):
         self.pose = POSES[choice]
         amount = float(self.pose_amount.get())
         self.renderer.update_model_vertices(self.rig.posed(self.pose, amount))
-        if hasattr(self, "base_parts") and self.base_parts:
-            self.renderer.reset_ghost_vertices(self.base_parts)
+        self._show_base_rest(self.pose == "tpose")
         if self.pose == "tpose":
             self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
-            if self.base:
-                self.renderer.set_base_skeleton(base_skeleton_segments(self.base.joints), base_joint_points(self.base.joints))
         else:
             self.renderer.set_skeleton(None, None)
             self.renderer.set_base_skeleton(None, None)

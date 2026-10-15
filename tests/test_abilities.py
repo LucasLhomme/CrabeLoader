@@ -149,10 +149,10 @@ class TestAbilities(unittest.TestCase):
 
             # Check Lua registration
             lua_code = (mod_dir / f"{ident.slug}.lua").read_text(encoding="utf-8")
-            self.assertIn('combatSource = "AVG_IronMan"', lua_code)
-            self.assertIn('canFly = true', lua_code)
-            self.assertIn('superJump = true', lua_code)
-            self.assertIn('speedMultiplier = 1.30', lua_code)
+            # The abilities live in mod.json and ActorList.patch (checked here); the entry script only logs (the
+            # sandbox forbids writing to the Crabe table).
+            self.assertIn("AVG_IronMan", lua_code)
+            self.assertIn("Flight: true", lua_code)
 
             # Check ActorList.patch
             patch_code = (mod_dir / "skilltrees" / "ActorList.patch").read_text(encoding="utf-8")

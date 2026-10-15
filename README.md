@@ -97,7 +97,12 @@ Choisis la figure dont le squelette, les animations et le moveset serviront à t
 
 **Choisis une base de gabarit proche.** Un héros mince va mieux sur Spider-Man que sur Hulk, une longue robe mieux
 sur Elsa que sur Captain America. Le bouton **« Suggest the best bases for my model »** (onglet Modèle) classe les
-figures pour toi.
+figures pour toi : il compare la silhouette de ton modèle à celle de chaque figure (mise en T-pose), garde des types de
+corps différents (pas cinq clones), puis construit le vrai rig des meilleures et mesure l'étirement dans les poses de
+test et la déformation au moment de caler ton T-pose sur la pose du jeu. Chaque ligne affiche ces trois mesures.
+
+La case **« in T-pose »** (sous « Show the base figure alongside ») remet la figure de comparaison et son squelette cyan
+en T-pose, pour les aligner avec ton modèle.
 
 ### 1. Modèle : importer
 

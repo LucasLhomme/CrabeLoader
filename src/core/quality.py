@@ -32,6 +32,9 @@ class DeformationReport:
     """True when the baked mesh is flattened or crushed (bad weights): shown as a failure whatever the stretch says."""
     broken: float = 0.0
     """Fraction of edges stretched/squashed more than 2x in the worst pose."""
+    bake: float = 0.0
+    """Share of triangles whose area changed more than 2x when the T-pose was baked into the game's bind pose (the
+    shoulders and neck of a model whose arms are far from the figure's hanging arms). Shown, not scored."""
 
     def summary(self) -> str:
         label = {"good": "Good", "warn": "Acceptable", "bad": "Heavy deformation"}[self.level]
@@ -41,6 +44,8 @@ class DeformationReport:
         for pose, title in QUALITY_POSES:
             count, worst = self.per_pose.get(pose, (0, 0.0))
             lines.append(f"  {title}: {count} stretched edge(s), worst ×{worst:.1f}")
+        lines.append(f"  Baking into the game pose: {100 * self.bake:.1f}% of triangles distorted more than 2x "
+                     "(shoulders, neck)")
         return "\n".join(lines)
 
 
@@ -66,6 +71,21 @@ def edge_ratios(rest: np.ndarray, posed: np.ndarray, edges: np.ndarray) -> np.nd
     return l1[usable] / l0[usable]
 
 
+def bake_distortion(rig) -> float:
+    """Share of triangles whose area changed by more than 2x (or less than 1/2) between the T-pose and the bind pose."""
+    f = rig.faces
+
+    def area(v):
+        return 0.5 * np.linalg.norm(np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]]), axis=1)
+
+    before, after = area(rig.tpose), area(rig.baked)
+    usable = before > 1e-5
+    if not usable.any():
+        return 0.0
+    ratio = after[usable] / before[usable]
+    return float(((ratio > 2.0) | (ratio < 0.5)).mean())
+
+
 def deformation_report(rig, amount: float = 1.0) -> DeformationReport:
     """Score 0-100 mixing three things: average squash/stretch of all edges, share of edges changed more than 2x,
     and share of torn edges (more than 3x). The old score only counted the last one, so it sat at 100 for most rigs."""
@@ -89,7 +109,8 @@ def deformation_report(rig, amount: float = 1.0) -> DeformationReport:
                + 0.2 * min(1.0, max(torns) / TORN_LIMIT))
     score = int(round(100 * (1.0 - penalty)))
     level = "good" if score >= GOOD_SCORE else "warn" if score >= WARN_SCORE else "bad"
-    return DeformationReport(score, level, per_pose, len(edges), float(np.mean(means)), broken=max(brokens))
+    return DeformationReport(score, level, per_pose, len(edges), float(np.mean(means)), broken=max(brokens),
+                             bake=bake_distortion(rig))
 
 
 def stretched_segments(rig, pose: str, amount: float = 1.0) -> np.ndarray:

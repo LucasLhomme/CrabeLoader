@@ -249,3 +249,27 @@ def _walk(base, world, amount=1.0):
 
 
 POSES = {"arms": _arms_up, "walk": _walk}
+
+
+def base_tpose(base: BaseCharacter) -> tuple[np.ndarray, dict]:
+    """The base figure with its arms raised to horizontal: (posed bone matrices, canonical joints).
+
+    Only for comparing it with a T-posed model: the real rig always bakes into the native bind pose."""
+    world = base.bind_world
+    posed = world.copy()
+    joints = {k: v.copy() for k, v in base.joints.items()}
+    for side, sx in SIDES:
+        shoulder = base.joints[f"Shoulder_{side}"]
+        d = base.joints[f"Hand_{side}"] - shoulder
+        angle = -np.arctan2(d[1], d[0] * sx) * sx
+        r = np.array([[np.cos(angle), np.sin(angle), 0], [-np.sin(angle), np.cos(angle), 0], [0, 0, 1]])
+        rot = np.eye(4)
+        rot[:3, :3] = r
+        rot[3, :3] = shoulder - shoulder @ r
+        for i, name in enumerate(base.bone_names):
+            if name.endswith(side) and name.startswith(("Shoulder", "Elbow", "Forearm", "Hand", "Thumb", "Index", "Middle")):
+                posed[i] = world[i] @ rot
+        for joint in (f"Elbow_{side}", f"Hand_{side}", f"Middle1_{side}", f"HandTip_{side}"):
+            if joint in joints:
+                joints[joint] = (joints[joint] - shoulder) @ r + shoulder
+    return posed, joints
