@@ -114,4 +114,47 @@ suite.cases[#suite.cases + 1] = {
     end,
 }
 
+suite.cases[#suite.cases + 1] = {
+    "captureDirectInput forwards a strict boolean and is a no-op without the native",
+    function(state)
+        local seen = {}
+        state.Crabe._setDirectInputCaptured = function(on) seen[#seen + 1] = on end
+
+        state.Crabe.Input.captureDirectInput(true)
+        state.Crabe.Input.captureDirectInput(false)
+        state.Crabe.Input.captureDirectInput(1)
+        state.Crabe.Input.captureDirectInput(nil)
+        assertEquals(#seen, 4)
+        assertEquals(seen[1], true)
+        assertEquals(seen[2], false)
+        assertEquals(seen[3], false, "only true captures")
+        assertEquals(seen[4], false)
+
+        state.Crabe._setDirectInputCaptured = nil
+        state.Crabe.Input.captureDirectInput(true)
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "captureAll captures both pad and direct input",
+    function(state)
+        local padSeen = {}
+        local dinputSeen = {}
+        state.Crabe._setPadCaptured = function(on) padSeen[#padSeen + 1] = on end
+        state.Crabe._setDirectInputCaptured = function(on) dinputSeen[#dinputSeen + 1] = on end
+
+        state.Crabe.Input.captureAll(true)
+        assertEquals(#padSeen, 1)
+        assertEquals(padSeen[1], true)
+        assertEquals(#dinputSeen, 1)
+        assertEquals(dinputSeen[1], true)
+
+        state.Crabe.Input.captureAll(false)
+        assertEquals(#padSeen, 2)
+        assertEquals(padSeen[2], false)
+        assertEquals(#dinputSeen, 2)
+        assertEquals(dinputSeen[2], false)
+    end,
+}
+
 return suite

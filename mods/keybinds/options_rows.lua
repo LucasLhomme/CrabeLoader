@@ -2,12 +2,23 @@ local ControlsPage = require("mods.keybinds.controls_page")
 
 local OptionsRows = {}
 
-OptionsRows.SCREEN = "InGameSettingsMenu"
+OptionsRows.SCREEN = "SettingsMenu"
 
 OptionsRows.ROWS = {
     { id = "Crabe_KeyboardBindings", label = "Keyboard and mouse bindings", page = "keyboard" },
     { id = "Crabe_PadBindings", label = "Controller bindings", page = "pad" },
 }
+
+-- Checks whether the current context is the frontend main menu.
+local function isFrontend(menu)
+    if UI_CurrentWorldName and UI_CurrentWorldName() ~= "frontend" then
+        return false
+    end
+    if menu and menu.ClassName and menu.ClassName == "InGameSettingsMenu" then
+        return false
+    end
+    return true
+end
 
 -- Builds one Options row; plain text, since the game looks "@" labels up in string tables these lack.
 local function newRow(spec)
@@ -46,8 +57,8 @@ local function answerRows(menu)
 end
 
 --- Runs after the game built its Options list: puts the two entries right under Controls, or at the end without it.
---- The main menu and the pause menu share this list class, so both get them.
 function OptionsRows.addRows(menu)
+    if not isFrontend(menu) then return end
     local list = menu.listData
     if type(list) ~= "table" then return end
     for _, entry in ipairs(list) do

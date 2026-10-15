@@ -177,16 +177,23 @@ long DirectInputHook::afterState(unsigned long size, void* data, long result)
 {
     if (FAILED(result) || !data) return result;
 
+    if (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2)) {
+        LONG wheel = 0;
+        std::memcpy(&wheel, static_cast<const uint8_t*>(data) + 2 * sizeof(LONG), sizeof(wheel));
+        _wheel.add(static_cast<int32_t>(wheel));
+    }
+
+    if (_captured.load(std::memory_order_relaxed)) {
+        std::memset(data, 0, size);
+        return result;
+    }
+
     InputRemap& remap = InputRemap::get();
     if (size == kKeyboardStateSize) {
         _keyboardStates.fetch_add(1, std::memory_order_relaxed);
         remap.remapKeyboardState(static_cast<uint8_t*>(data), size);
     } else if (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2)) {
         _mouseStates.fetch_add(1, std::memory_order_relaxed);
-
-        LONG wheel = 0;
-        std::memcpy(&wheel, static_cast<const uint8_t*>(data) + 2 * sizeof(LONG), sizeof(wheel));
-        _wheel.add(static_cast<int32_t>(wheel));
         size_t buttons = (size - kMouseButtonsOffset);
         remap.remapMouseButtons(static_cast<uint8_t*>(data) + kMouseButtonsOffset, buttons);
     } else {
@@ -200,6 +207,11 @@ long DirectInputHook::afterData(IDirectInputDevice8A* self, unsigned long object
                                 unsigned long* count, long result)
 {
     if (FAILED(result) || !events || !count || *count == 0 || objectSize < sizeof(DWORD)) return result;
+
+    if (_captured.load(std::memory_order_relaxed)) {
+        *count = 0;
+        return result;
+    }
 
     DIDEVCAPS caps = {};
     caps.dwSize = sizeof(caps);

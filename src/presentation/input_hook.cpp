@@ -13,6 +13,7 @@
 #include <windows.h>
 #include <Xinput.h>
 
+#include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
 #include "presentation/input_remap.hpp"
 #include "infrastructure/lua_call.hpp"
@@ -154,6 +155,14 @@ int __cdecl crabe::input_natives::setPadCaptured(void* L)
 {
     bool captured = crabe::infrastructure::LuaCall::get().argToBoolean(L, 1, false);
     crabe::presentation::InputHook::get().setCaptured(captured);
+    return 0;
+}
+
+// Lua binding for Crabe._setDirectInputCaptured; suppresses DirectInput keyboard and mouse passed to the game.
+int __cdecl crabe::input_natives::setDirectInputCaptured(void* L)
+{
+    bool captured = crabe::infrastructure::LuaCall::get().argToBoolean(L, 1, false);
+    crabe::presentation::DirectInputHook::get().setCaptured(captured);
     return 0;
 }
 

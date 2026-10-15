@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vendored Third-Party Source Trees:** Purged 53,236 lines of vendored code (`include/imgui`, `include/minhook`, `src/minhook`) from the repository in favor of CMake `FetchContent`.
 
 ### Fixed
+- **DirectInput Gameplay Locking & Input Capture:** Implemented `DirectInputHook::setCaptured` and `Crabe.Input.captureDirectInput` (`Crabe._setDirectInputCaptured`), blanking `IDirectInputDevice8` keyboard state, mouse state, and buffered events when gameplay controls are captured. Fixes player character and camera continuing to move while navigating menus like CrabeMenu.
+- **In-Game Keybinds Menu Container Isolation:** Restricted native keybinding rows (`Keyboard and mouse bindings`, `Controller bindings`) to `SettingsMenu` in the frontend main menu, preventing unparented and broken `SettingsExtras` screens from mounting inside the in-game pause menu (`InGameSettingsMenu`).
 - **Alt-Tab Freeze During Level Loads:** Hooked `ShowWindow` to refuse minimize requests non-blockingly using `ShowWindowAsync` and query visibility without synchronous cross-thread Win32 calls, eliminating the deadlock between the main Scaleform thread and the DirectX render thread.
 - **Settings Screen Injector Reliability:** Replaced short-lived timer polling with a permanent background poller ensuring video settings options ("Borderless Window", "Frame Rate Limit") reliably mount in the game's menus across all sessions.
 - **True Unlimited Frame Rate:** Present calls with interval 0 when uncapped or exceeding refresh rate, preventing vsync locks at high refresh rates.

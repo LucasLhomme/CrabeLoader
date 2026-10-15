@@ -69,6 +69,9 @@ namespace crabe::input_natives {
 
     // Lua binding to capture or release gamepad input from the game.
     int __cdecl setPadCaptured(void* L);
+
+    // Lua binding to capture or release DirectInput keyboard and mouse from the game.
+    int __cdecl setDirectInputCaptured(void* L);
 }
 
 #endif /* !INPUT_HOOK_HPP_ */

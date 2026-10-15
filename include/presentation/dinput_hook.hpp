@@ -36,6 +36,12 @@ class DirectInputHook {
         // Returns accumulated mouse wheel notches since the previous call.
         int takeWheelNotches();
 
+        // Sets whether DirectInput state is captured, blanking keyboard and mouse inputs.
+        void setCaptured(bool captured) noexcept { _captured.store(captured, std::memory_order_relaxed); }
+
+        // Returns whether DirectInput state is currently captured.
+        [[nodiscard]] bool isCaptured() const noexcept { return _captured.load(std::memory_order_relaxed); }
+
         // Generates a diagnostic summary of intercepted DirectInput calls.
         std::string report() const;
 
@@ -72,6 +78,7 @@ class DirectInputHook {
         std::atomic<uint32_t> _mouseStates{ 0 };
         std::atomic<uint32_t> _mouseEvents{ 0 };
         std::atomic<uint32_t> _otherStates{ 0 };
+        std::atomic<bool> _captured{ false };
         WheelCounter _wheel;
 };
 

@@ -273,6 +273,14 @@ end
 --- The screen's script is loaded first, so the wrappers are in place before its first build.
 function ControlsPage.open(menu, page)
     if not Bindings.supported() then return end
+    if UI_CurrentWorldName and UI_CurrentWorldName() ~= "frontend" then
+        trace("ControlsPage is only available in frontend SettingsMenu")
+        return
+    end
+    if menu and menu.ClassName and menu.ClassName == "InGameSettingsMenu" then
+        trace("ControlsPage is only available in frontend SettingsMenu")
+        return
+    end
     if not ControlsPage.PAGES[page] then page = DEFAULT_PAGE end
     run("screen load", require, ControlsPage.SCREEN)
     local cls = _G[ControlsPage.SCREEN]
