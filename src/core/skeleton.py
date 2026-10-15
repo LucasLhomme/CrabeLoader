@@ -14,6 +14,7 @@ from scipy.spatial import ConvexHull
 from src.core.base_character import BaseCharacter
 
 SIDES = (("Left", 1.0), ("Right", -1.0))
+CROTCH_MIN = 0.38  # below this the 'crotch' found is probably the hem of a coat or skirt
 NECK_WINDOW = 0.10  # how far above the arm line the neck may be (fraction of the height)
 
 
@@ -216,9 +217,16 @@ def measure(vertices: np.ndarray, faces: np.ndarray, base: BaseCharacter) -> tup
             misses += 1
             if misses >= 3:
                 break
+    # Where the base figure's legs start, as a fraction of its height: the fallback when the cross-sections lie
+    # (a long coat or skirt joins across the midline down to its hem, so "the last joined section" is the hem).
+    thigh = base.joints.get("Thigh_Left")
+    prior = float(np.clip(thigh[1] / base.height, 0.40, 0.56)) * h if thigh is not None else 0.47 * h
     if crotch_y is None or crotch_y < 0.15 * h or crotch_y > arm_y - 0.12 * h:
-        crotch_y = 0.45 * h
+        crotch_y = prior
         estimated.append("hips")
+    elif crotch_y < CROTCH_MIN * h and crotch_y < prior - 0.08 * h:
+        crotch_y = prior
+        estimated.append("hips (long coat or skirt?)")
     else:
         detected.append("hips")
 
