@@ -22,6 +22,7 @@ from src.core.ranking import rank_bases
 from src.core.rig import base_tpose, build_rig
 from src.core.roster import find_entry, load_roster
 from src.core.skeleton import (
+    fit_advice,
     apply_apose_to_proportions,
     apply_tpose_to_proportions,
     base_joint_points,
@@ -48,7 +49,7 @@ from src.ui.timeline import TimelineWidget
 
 GREEN, RED, YELLOW, GREY = "#4ade80", "#f87171", "#fbbf24", "#a1a1aa"
 POSES = {"T-pose": "tpose", "In-game pose": "bind", "Arms up": "arms", "Walk": "walk", "Overhead": "overhead",
-         "Forward": "reach", "Elbows": "elbow", "Twist": "twist"}
+         "Forward": "reach", "Elbows": "elbow", "Twist": "twist", "Fist": "fist"}
 DEFAULT_BASE = "EMP_Luke"
 GROW_MAX_PIECE = 3000
 """"Grow" only absorbs loose pieces this small (in vertices): never the body or the head."""
@@ -82,6 +83,23 @@ SKELETON_SLIDERS = (
     ("knee", "Knees", 0.2, 0.8, False),
     ("ankle_y", "Ankles", 0.01, 0.25, True),
 )
+SKELETON_SLIDERS = SKELETON_SLIDERS[:3] + (("elbow", "Elbow position", 0.3, 0.7, False),) + SKELETON_SLIDERS[3:]
+
+# What each slider should line up with (the green dots in the viewport), and which auto-fit estimate it belongs to.
+SLIDER_HINTS = {
+    "arm_y": "Height of the arm line: the shoulder dots go on the middle of the arms in the T-pose.",
+    "shoulder_x": "Distance from the body centre to the shoulder joint: the dot goes where the arm leaves the torso.",
+    "wrist": "Along the arm: the hand dot goes on the wrist, where the hand starts (not the fingertips).",
+    "elbow": "Along the arm: the elbow dot goes on the elbow crease. 0.5 = halfway between shoulder and wrist.",
+    "neck_y": "Height of the neck base. Too low and the chin stretches, too high and the shoulders pull the neck.",
+    "head_y": "Pivot of the head: the middle of the skull base, roughly the jaw line.",
+    "crotch_y": "Where the legs start. For a long coat or skirt, set it to the real crotch height.",
+    "leg_x": "Distance between the hip joints and the body centre.",
+    "knee": "Knee position between ankle and hip (0.5 = halfway).",
+    "ankle_y": "Height of the ankle joint, just above the foot.",
+}
+ESTIMATE_SLIDERS = {"shoulders": ("arm_y", "shoulder_x"), "wrists": ("wrist", "elbow"), "neck": ("neck_y", "head_y"),
+                    "hips": ("crotch_y",), "legs": ("leg_x", "knee"), "ankles": ("ankle_y",)}
 
 
 class MainWindow(ctk.CTk):
@@ -253,6 +271,11 @@ class MainWindow(ctk.CTk):
                         font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(robust_transfer=bool(self.transfer_var.get()))
                         ).grid(row=3, column=0, sticky="w", pady=(4, 0))
+        self.fingers_var = ctk.BooleanVar(value=bool(self.settings.get("finger_weights", True)))
+        ctk.CTkCheckBox(import_box, text="Finger weights: hands follow the base's finger bones (closing fists, grips)",
+                        variable=self.fingers_var, font=ctk.CTkFont(size=11),
+                        command=lambda: self.settings.update(finger_weights=bool(self.fingers_var.get()))
+                        ).grid(row=4, column=0, sticky="w", pady=(4, 0))
         ctk.CTkButton(tab, text="Import Blender Rig & Tracks (.glb .gltf .json)", fg_color="#27272a",
                       hover_color="#3f3f46", text_color="#e4e4e7",
                       command=self.on_import_rig).grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -280,6 +303,7 @@ class MainWindow(ctk.CTk):
         self.height_slider = ctk.CTkSlider(tab, from_=0.5, to=3.5, command=self.on_height)
         self.height_slider.set(2.0)
         self.height_slider.grid(row=7, column=0, sticky="ew", pady=(0, 10))
+        self._value_entry(tab, 6, self.height_slider, self.on_height)
         self._update_height_label()
 
         ctk.CTkLabel(tab, text="Position (move the model if the skeleton is not centred in the body):",
@@ -293,6 +317,7 @@ class MainWindow(ctk.CTk):
             slider.set(0)
             slider.grid(row=r + 1, column=0, sticky="ew", pady=(0, 4))
             self.place_sliders[key] = (slider, label, text, span)
+            self._value_entry(tab, r, slider, lambda v, k=key: self.on_place_slider(k, v))
         nudge = ctk.CTkFrame(tab, fg_color="transparent")
         nudge.grid(row=9 + 2 * len(PLACEMENT_SLIDERS), column=0, sticky="ew", pady=(2, 8))
         for i, (text, cmd) in enumerate((("◀ 1 cm", lambda: self.on_nudge("offset_x", -0.01)),
@@ -375,11 +400,14 @@ class MainWindow(ctk.CTk):
         scroll.grid_columnconfigure(0, weight=1)
         for i, (name, text, lo, hi, rel) in enumerate(SKELETON_SLIDERS):
             label = ctk.CTkLabel(scroll, text=text, font=ctk.CTkFont(size=12))
-            label.grid(row=2 * i, column=0, sticky="w")
+            label.grid(row=3 * i, column=0, sticky="w")
             slider = ctk.CTkSlider(scroll, from_=lo, to=hi, command=lambda v, n=name: self.on_slider(n, v))
-            slider.grid(row=2 * i + 1, column=0, sticky="ew", pady=(0, 6))
+            slider.grid(row=3 * i + 1, column=0, sticky="ew")
             slider.configure(state="disabled")
+            ctk.CTkLabel(scroll, text=SLIDER_HINTS.get(name, ""), font=ctk.CTkFont(size=10), text_color=GREY,
+                         wraplength=300, justify="left").grid(row=3 * i + 2, column=0, sticky="w", pady=(0, 6))
             self.sliders[name] = (slider, label, text, rel)
+            self._value_entry(scroll, 3 * i, slider, lambda v, n=name: self.on_slider(n, v))
         legend = ("• Green skeleton: Fitted to your 3D model (arms, legs, head).\n"
                   "• Cyan skeleton: Base character reference (on the ghost figure).\n"
                   "• Note: The builder automatically retargets your model to the game's bind pose.")
@@ -774,6 +802,7 @@ class MainWindow(ctk.CTk):
         self.pose_amount = ctk.CTkSlider(pose_box, from_=0.2, to=1.5, command=self.on_pose_amount)
         self.pose_amount.set(1.0)
         self.pose_amount.grid(row=2, column=0, sticky="ew")
+        self._value_entry(pose_box, 1, self.pose_amount, self.on_pose_amount, "{:.2f}")
         self.quality_label = ctk.CTkLabel(pose_box, text="Deformation: build the rig to measure it.",
                                           font=ctk.CTkFont(size=11), text_color=GREY, justify="left", anchor="w")
         self.quality_label.grid(row=3, column=0, sticky="w", pady=(4, 0))
@@ -908,6 +937,35 @@ class MainWindow(ctk.CTk):
     def _update_height_label(self):
         ref = f" ({self.base.display_name} = {self.base.fit_height:.2f})" if self.base else ""
         self.height_label.configure(text=f"Model height: {self.height_slider.get():.2f}{ref}")
+        self._sync_entry(self.height_slider)
+
+    def _value_entry(self, parent, row, slider, apply, fmt="{:.3f}"):
+        """A box next to a slider to type the exact value (Enter or leaving the box applies it)."""
+        if not hasattr(self, "_entries"):
+            self._entries = {}
+        var = ctk.StringVar(value=fmt.format(slider.get()))
+        entry = ctk.CTkEntry(parent, width=64, height=22, textvariable=var, justify="right", font=ctk.CTkFont(size=11))
+        entry.grid(row=row, column=1, sticky="e", padx=(6, 0))
+
+        def commit(_event=None):
+            try:
+                value = float(var.get().replace(",", "."))
+            except ValueError:
+                var.set(fmt.format(slider.get()))
+                return
+            low, high = sorted((slider._from_, slider._to))
+            value = min(max(value, low), high)
+            slider.set(value)
+            var.set(fmt.format(value))
+            apply(value)
+        entry.bind("<Return>", commit)
+        entry.bind("<FocusOut>", commit)
+        self._entries[slider] = (var, fmt, commit)
+
+    def _sync_entry(self, slider):
+        var, fmt, _ = getattr(self, "_entries", {}).get(slider, (None, None, None))
+        if var is not None:
+            var.set(fmt.format(slider.get()))
 
     # ---------------------------------------------------------------- bases
     def _base_label(self, entry) -> str:
@@ -1133,11 +1191,13 @@ class MainWindow(ctk.CTk):
         previous = {c.actor: c for c in getattr(self, "_candidates", []) if c.tested} if more else {}
         self.suggest_button.configure(state="disabled", text="Testing the figures… (1 to 2 minutes)")
         transfer = self._weight_transfer()
+        fingers = bool(self.fingers_var.get())
 
         def job():
             return rank_bases(source, load_roster(), WORK_DIR / "rank", lambda text: self._events.put(
                 lambda: self.suggest_button.configure(text=text)),
-                blender=Path(blender) if blender else None, weight_transfer=transfer, skip=set(previous))
+                blender=Path(blender) if blender else None, weight_transfer=transfer, skip=set(previous),
+                fingers=fingers)
 
         def done(result, error):
             self._set_busy(False)
@@ -1290,16 +1350,24 @@ class MainWindow(ctk.CTk):
     def _refit(self):
         self.auto_props, self.fit_report = measure(self.model.vertices(), self.model.faces, self.base)
         self.props = self.auto_props
+        self._checked = set()
         summary = self.fit_report.summary()
         if self.base:
-            m_leg = self.props.crotch_y / max(self.props.height, 0.1)
-            b_leg = self.base.joints["Hips"][1] / max(self.base.height, 0.1)
-            if abs(m_leg - b_leg) > 0.20:
-                summary += f"\n⚠️ Morphological Mismatch: {self.base.display_name} has {int(b_leg*100)}% legs vs {int(m_leg*100)}% for your model. For a cartoon character, prefer Donald Duck, Stitch, or Syndrome."
+            for line in fit_advice(self.props, self.base):
+                summary += f"\n⚠️ {line}"
         self.fit_label.configure(text=summary,
                                  text_color=YELLOW if (self.fit_report.estimated or "⚠️" in summary) else GREEN)
         self._sync_sliders()
         self._geometry_changed()
+
+    def _flagged_sliders(self) -> set:
+        """Sliders whose value the auto-fit only guessed, until the user has touched them."""
+        flagged = set()
+        for item in (self.fit_report.estimated if self.fit_report else []):
+            for key, names in ESTIMATE_SLIDERS.items():
+                if item.startswith(key):
+                    flagged.update(names)
+        return flagged - getattr(self, "_checked", set())
 
     def _sync_sliders(self):
         h = self.props.height
@@ -1311,7 +1379,10 @@ class MainWindow(ctk.CTk):
                 slider.configure(from_=lo, to=hi, state="normal")
             value = getattr(self.props, name)
             slider.set(value)
-            label.configure(text=f"{text}: {value:.2f}")
+            flagged = name in self._flagged_sliders()
+            label.configure(text=f"{text}: {value:.2f}" + ("  ⚠ check" if flagged else ""),
+                            text_color=YELLOW if flagged else "#e4e4e7")
+            self._sync_entry(slider)
 
     def _geometry_changed(self):
         """Placement, joints or base changed: the rig is stale, redraw the T-pose model and its skeleton."""
@@ -1342,6 +1413,7 @@ class MainWindow(ctk.CTk):
             value = float(getattr(self.model.placement, key))
             slider.set(max(-span, min(span, value)))
             label.configure(text=f"{text}: {value:+.2f}")
+            self._sync_entry(slider)
 
     def on_place_slider(self, key, value):
         """Slider moved: apply it at once, but re-measure only once the hand stops (measuring is the slow part)."""
@@ -1350,6 +1422,7 @@ class MainWindow(ctk.CTk):
         setattr(self.model.placement, key, float(value))
         slider, label, text, _ = self.place_sliders[key]
         label.configure(text=f"{text}: {float(value):+.2f}")
+        self._sync_entry(slider)
         self.renderer.update_model_vertices(self.model.vertices())
         self.renderer.request_render()
         if getattr(self, "_place_job", None):
@@ -1398,7 +1471,7 @@ class MainWindow(ctk.CTk):
         self.model.placement.height = value
 
         def scale(props):
-            return props.adjusted(**{k: (v if k in ("wrist", "knee") else v * ratio) for k, v in vars(props).items()})
+            return props.adjusted(**{k: (v if k in ("wrist", "knee", "elbow") else v * ratio) for k, v in vars(props).items()})
         self.props, self.auto_props = scale(self.props), scale(self.auto_props)
         self._sync_sliders()
         self._geometry_changed()
@@ -1469,7 +1542,9 @@ class MainWindow(ctk.CTk):
             changes["tip_y"] = self.props.tip_y + (value - self.props.arm_y)
         self.props = self.props.adjusted(**changes)
         slider, label, text, _ = self.sliders[name]
-        label.configure(text=f"{text}: {value:.2f}")
+        self._checked = getattr(self, "_checked", set()) | {name}
+        label.configure(text=f"{text}: {value:.2f}", text_color="#e4e4e7")
+        self._sync_entry(slider)
         self._geometry_changed()
 
     # --------------------------------------------------------- rig & export
@@ -1490,7 +1565,8 @@ class MainWindow(ctk.CTk):
 
     def on_pose_amount(self, value):
         self.pose_amount_label.configure(text=f"Pose amount: {int(round(float(value) * 100))}%")
-        if not self.rig or self.pose not in ("arms", "walk"):
+        self._sync_entry(self.pose_amount)
+        if not self.rig or self.pose in ("tpose", "bind"):
             return
         if getattr(self, "_amount_job", None):
             self.after_cancel(self._amount_job)
@@ -1571,8 +1647,9 @@ class MainWindow(ctk.CTk):
         model, anchors, base = self.model, self.anchors, self.base
         overrides = list(self.piece_overrides)
         transfer = self._weight_transfer()
+        fingers = bool(self.fingers_var.get())
         self._run(lambda: build_rig(model, anchors, base, Path(blender) if blender else None,
-                                    WORK_DIR / "rig", self.log, overrides, transfer), done)
+                                    WORK_DIR / "rig", self.log, overrides, transfer, fingers), done)
 
     def on_install(self):
         if not self._ready_to_rig():

@@ -105,6 +105,16 @@ Comme le moveset vient avec la figure, **toute la liste (~90 figures) reste affi
 d'office, les autres sont classées par silhouette (« not tested »). Le bouton **« Test the next 12 figures »** teste
 le lot suivant, et le champ de filtre cherche par nom ou par licence (Avengers, Star Wars…).
 
+**Doigts.** Les figures de base ont des os de doigts (Thumb1-3, Index1-2, Middle1-2). Avec la case **« Finger weights »**
+(cochée par défaut), la main de ton modèle suit ces os : chaque sommet au-delà des articulations des doigts est partagé
+entre le poignet et la chaîne de doigts la plus proche. En jeu, les doigts se ferment (poing, prise, tir) au lieu de
+rester plats. La pose **Fist** du sélecteur montre le résultat.
+
+**Onglet Skeleton.** Chaque curseur a une petite note (sur quoi aligner le point vert) et une **case de saisie** à droite
+pour taper la valeur exacte (Entrée valide). Les curseurs en jaune « ⚠ check » sont ceux que l'auto-fit n'a fait
+qu'estimer. Le curseur **Elbow position** place le coude. Sous le résumé, des avertissements ⚠ indiquent où tes
+proportions s'écartent de la base de 20 % ou plus (bras, épaules, jambes) et quel curseur vérifier.
+
 Les poses de test comptent six poses : bras levés, marche, **bras au-dessus de la tête, bras devant, coudes pliés et
 torsion du buste** (40 % de la pénalité d'étirement). Elles sont aussi disponibles dans le sélecteur de pose pour
 voir où les épaules cassent.

@@ -172,7 +172,7 @@ def rank_by_shape(model_profile: np.ndarray, figures: dict) -> list[tuple[float,
 
 
 def rank_bases(source, entries, work: Path, progress=lambda text: None, shortlist: int = SHORTLIST,
-               blender: Path | None = None, weight_transfer: bool = False, skip=()) -> list[Candidate]:
+               blender: Path | None = None, weight_transfer: bool = False, skip=(), fingers: bool = False) -> list[Candidate]:
     """Every distinct figure, ranked: the `shortlist` best not in `skip` get the full rig test (best first), the
     others follow in silhouette order, marked untested. `entries` are roster entries."""
     reference = CharacterModel(source, auto_placement(source, 2.0))
@@ -192,7 +192,7 @@ def rank_bases(source, entries, work: Path, progress=lambda text: None, shortlis
             model = CharacterModel(source, auto_placement(source, base.fit_height))
             props, _ = measure(model.vertices(), model.faces, base)
             rig = build_rig(model, build_anchors(props, base), base, blender, work, lambda text: None, None,
-                            weight_transfer)
+                            weight_transfer, fingers)
             report = deformation_report(rig)
         except Exception as exc:
             progress(f"  {name}: skipped ({exc})")

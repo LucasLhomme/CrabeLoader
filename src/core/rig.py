@@ -127,19 +127,19 @@ def vertex_tangents(verts, uvs, normals, faces):
 
 
 def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False) -> RigResult:
+              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = True) -> RigResult:
     """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone.
 
     `weight_transfer`: when True, the rig is built both ways (bone heat and weights copied from the base body) and
     the one that deforms less is kept."""
-    standard = _build_rig(model, anchors, base, blender, work, log, piece_overrides, None)
+    standard = _build_rig(model, anchors, base, blender, work, log, piece_overrides, None, fingers)
     if not weight_transfer:
         return standard
     from src.core.quality import deformation_report
 
     robust_lines = lambda text: log(text) if text.strip().startswith(("Robust", "too few", "inpainting")) else None  # noqa: E731
     try:
-        robust = _build_rig(model, anchors, base, blender, work, robust_lines, piece_overrides, weight_transfer)
+        robust = _build_rig(model, anchors, base, blender, work, robust_lines, piece_overrides, weight_transfer, fingers)
     except Exception as exc:  # noqa: BLE001 - optional feature
         log(f"  Robust transfer unavailable ({exc}) -> standard weights")
         return standard
@@ -153,7 +153,7 @@ def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender
 
 
 def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-               log: Callable[[str], None], piece_overrides, weight_transfer: bool) -> RigResult:
+               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = True) -> RigResult:
     positions = model.vertices()
     faces = model.faces
     uvs = model.uvs
@@ -203,6 +203,9 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     merged = np.zeros((len(w), len(palette_cols)))
     for j, col in enumerate(column):
         merged[:, col] += w[:, j]
+    if finger_weights:
+        from src.core.fingers import add_fingers
+        merged, palette_cols = add_fingers(baked, merged, palette_cols, base)
     idx, wq = quantize_weights(merged, palette_cols)
     log(f"  {len(baked)} vertices, {len(vfaces)} triangles, weights: {method}")
     if len(vfaces) > HEAVY_TRIANGLES:
@@ -292,7 +295,57 @@ def _twist(base, world, amount=1.0):
     return posed
 
 
-POSES = {"arms": _arms_up, "walk": _walk, "overhead": _overhead, "reach": _reach, "elbow": _elbow, "twist": _twist}
+def _fist(base, world, amount=1.0):
+    """Fingers curled into a fist (grab, punch, blaster grip): shows how the hands bend."""
+    from src.core.fingers import CHAINS
+
+    posed = world.copy()
+    for side, _ in SIDES:
+        tips = {}
+        for _, names in CHAINS:
+            try:
+                tips[names[0]] = [base.bone_index(f"{n}_{side}") for n in names]
+            except ValueError:
+                pass
+        if "Index1" not in tips or "Thumb1" not in tips:
+            continue
+        palm = world[base.bone_index(f"Hand_{side}")][3, :3]
+        d = world[tips["Index1"][0]][3, :3] - palm
+        lateral = world[tips["Thumb1"][0]][3, :3] - world[tips["Index1"][0]][3, :3]
+        axis = np.cross(d, lateral)
+        axis /= max(np.linalg.norm(axis), 1e-9)
+        # The curl direction that brings the thumb and index tips together is the closing one.
+        for sign in (1.0, -1.0):
+            probe = world.copy()
+            for names in tips.values():
+                for k, bone in enumerate(names):
+                    probe = _curl(probe, names[k:], probe[bone][3, :3], axis * sign, 50 * amount)
+            if (np.linalg.norm(probe[tips["Index1"][-1]][3, :3] - probe[tips["Thumb1"][-1]][3, :3])
+                    < np.linalg.norm(world[tips["Index1"][-1]][3, :3] - world[tips["Thumb1"][-1]][3, :3])):
+                break
+        for names in tips.values():
+            for k, bone in enumerate(names):
+                posed = _curl(posed, names[k:], posed[bone][3, :3], axis * sign, 50 * amount)
+    return posed
+
+
+def _curl(posed, bones, pivot, axis, degrees):
+    a = np.radians(degrees)
+    c, s = np.cos(a), np.sin(a)
+    x, y, z = axis
+    r = np.array([[c + x * x * (1 - c), x * y * (1 - c) + z * s, x * z * (1 - c) - y * s],
+                  [x * y * (1 - c) - z * s, c + y * y * (1 - c), y * z * (1 - c) + x * s],
+                  [x * z * (1 - c) + y * s, y * z * (1 - c) - x * s, c + z * z * (1 - c)]])
+    rot = np.eye(4)
+    rot[:3, :3] = r
+    rot[3, :3] = pivot - pivot @ r
+    out = posed.copy()
+    for bone in bones:
+        out[bone] = posed[bone] @ rot
+    return out
+
+
+POSES = {"arms": _arms_up, "walk": _walk, "overhead": _overhead, "reach": _reach, "elbow": _elbow, "twist": _twist, "fist": _fist}
 
 
 def base_tpose(base: BaseCharacter) -> tuple[np.ndarray, dict]:

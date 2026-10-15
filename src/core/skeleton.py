@@ -40,6 +40,8 @@ class Proportions:
     ankle_y: float
     ankle_z: float
     toe_z: float
+    elbow: float = 0.5
+    """Elbow position along shoulder -> hand, 0..1."""
 
     def adjusted(self, **changes) -> "Proportions":
         return replace(self, **changes)
@@ -315,7 +317,7 @@ def build_anchors(p: Proportions, base: BaseCharacter) -> dict[str, np.ndarray]:
         hand = shoulder + p.wrist * (tip - shoulder)
         a[f"Shoulder_{side}"] = shoulder
         a[f"Hand_{side}"] = hand
-        a[f"Elbow_{side}"] = (shoulder + hand) / 2
+        a[f"Elbow_{side}"] = shoulder + p.elbow * (hand - shoulder)
         a[f"HandTip_{side}"] = tip
         a[f"Clavicle_{side}"] = along_torso(f"Clavicle_{side}", sx * 0.017 * h, p.torso_z - 0.015 * h)
         a[f"ClavicleHeat_{side}"] = np.array([sx * 0.017 * h, p.arm_y - 0.02 * h, p.torso_z - 0.015 * h])
@@ -408,3 +410,31 @@ def apply_tpose_to_proportions(p: Proportions) -> Proportions:
 
 PROPORTION_FIELDS = tuple(f.name for f in fields(Proportions))
 
+
+
+def fit_advice(p: Proportions, base: BaseCharacter) -> list[str]:
+    """Where the model's proportions differ from the base figure's by 20 % or more, and what to do about it."""
+    out = []
+    j, bh = base.joints, max(base.height, 0.1)
+    h = max(p.height, 0.1)
+    name = base.display_name
+    try:
+        middle = base.bind_world[base.bone_names.index("Middle2_Left"), 3, :3]
+        base_arm = float(np.linalg.norm(middle - j["Shoulder_Left"])) / bh
+    except (ValueError, KeyError):
+        base_arm = None
+    arm = (max(p.tip_x, p.shoulder_x) - p.shoulder_x) / h
+    if base_arm and abs(arm / base_arm - 1) > 0.2:
+        out.append(f"Arms are {abs(arm / base_arm - 1):.0%} {'longer' if arm > base_arm else 'shorter'} than "
+                   f"{name}'s: hands and elbows get stretched or squeezed when baked. Check 'Wrist position' (the dot "
+                   "must sit on the wrist) or pick a base with similar arms.")
+    base_sh = abs(float(j["Shoulder_Left"][0])) / bh
+    if base_sh > 0.02 and abs(p.shoulder_x / h / base_sh - 1) > 0.25:
+        out.append(f"Shoulders are {abs(p.shoulder_x / h / base_sh - 1):.0%} "
+                   f"{'wider' if p.shoulder_x / h > base_sh else 'narrower'} than {name}'s: shoulders deform most "
+                   "here. Check 'Shoulder width' (the dot must sit on the arm joint, not the torso edge).")
+    base_hips = float(j["Hips"][1]) / bh
+    if abs(p.crotch_y / h - base_hips) > 0.12:
+        out.append(f"Legs: {name} has {base_hips:.0%} of its height below the hips, your model {p.crotch_y / h:.0%}. "
+                   "Check 'Hips (crotch)'; for a cartoon body, pick a short-legged base.")
+    return out
