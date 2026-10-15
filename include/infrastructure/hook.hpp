@@ -18,48 +18,31 @@
 
 namespace crabe::infrastructure {
 
-// A single inline detour hook, scoped to the object that holds it.
-//
-// No longer a MinHook wrapper: every install() goes through coreRegistry()
-// under the "core" owner, so the loader's own hooks are in the same inventory a
-// mod's are -- they collide with each other rather than corrupting each other,
-// they are named in a crash report, and they can be removed by owner. The
-// patching itself is MinHookBackend's job; see infrastructure/hook_registry.hpp
-// for why the two are separate.
-//
-// The RAII shape is unchanged, and so is every call site: remove() in a
-// destructor still takes exactly this hook out, by handle.
 class Hook {
     public:
         Hook() = default;
+
+        // Destructor that removes the installed hook via RAII.
         ~Hook();
 
         Hook(const Hook&) = delete;
         Hook& operator=(const Hook&) = delete;
 
-        // Redirects `src` to `dst`; getOriginal() then returns the trampoline
-        // for calling through to the real function.
-        //
-        // `name` is what the registry, the log and a crash report will call
-        // this hook. It is optional only because a handful of call sites
-        // predate the registry; pass one. Without it the hook is recorded as
-        // "hook@0x<address>", which attributes a fault to the right bytes but
-        // tells the reader nothing about what they were.
+        // Redirects source to destination and stores the original trampoline.
+        // Registers the hook under an optional descriptive name.
         bool install(void* src, void* dst, const char* name = nullptr);
 
-        // install() at a resolved address, with the outcome logged as
-        // "<owner>: <name> ...". An address of 0 means "not found" and is
-        // skipped rather than patched: a wrong address overwrites live code
-        // and crashes the host process on the next execution.
-        //
-        // `owner` here is the loader component doing the hooking ("RenderHook"),
-        // not a registry owner -- the registry owner is always "core" for these.
-        // It becomes the first half of the registry name, "<owner>::<name>".
+        // Installs a detour at a resolved address and logs the operation result.
+        // Returns false and skips patching if the resolved address is zero.
         bool installLogged(uintptr_t addr, void* detour, const char* owner, const char* name);
 
+        // Removes the installed detour hook and releases its handle.
         void remove();
 
+        // Checks whether the detour hook is currently installed.
         bool isInstalled() const;
+
+        // Returns the trampoline pointer to call the original function.
         void* getOriginal() const;
 
     private:

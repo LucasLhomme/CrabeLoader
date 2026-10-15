@@ -19,16 +19,12 @@
 
 #include "infrastructure/hook.hpp"
 
-// Resolved addresses of the Lua C API. loadfile/loadbuffer/pcall are hooked
-// (to observe the game); everything else is only ever called. Some fields
-// are unused so far but resolved anyway -- cheap now, expensive to redo.
 struct LuaApiAddresses {
     uintptr_t loadfile = 0;
     uintptr_t loadbuffer = 0;
     uintptr_t pcall = 0;
     uintptr_t call = 0;
 
-    // Stack inspection.
     uintptr_t gettop = 0;
     uintptr_t settop = 0;
     uintptr_t pushvalue = 0;
@@ -39,7 +35,6 @@ struct LuaApiAddresses {
     uintptr_t touserdata = 0;
     uintptr_t isnumber = 0;
 
-    // Pushing values onto the stack.
     uintptr_t pushnil = 0;
     uintptr_t pushnumber = 0;
     uintptr_t pushlstring = 0;
@@ -52,7 +47,6 @@ struct LuaApiAddresses {
     uintptr_t rawequal = 0;
     uintptr_t getmetatable = 0;
 
-    // Argument-checking helpers (luaL_*).
     uintptr_t checkany = 0;
     uintptr_t checktype = 0;
     uintptr_t checklstring = 0;
@@ -60,64 +54,73 @@ struct LuaApiAddresses {
 
 class LuaCall {
     public:
+        // Returns the singleton instance of LuaCall.
         static LuaCall& get();
 
+        // Initializes LuaCall hooks and resolved API addresses.
         bool initialize(const LuaApiAddresses& addresses);
+
+        // Uninitializes LuaCall and removes installed hooks.
         void uninitialize();
 
-        // Loads `path` with the real (unhooked) luaL_loadfile and runs it with
-        // the real lua_pcall, in the given state. This is how mod scripts get
-        // executed outside of the game's own loading path.
+        // Loads and executes a Lua file from disk in the given Lua state.
         bool runFile(void* L, const char* path) const;
+
+        // Compiles and runs a Lua code buffer in the given Lua state.
         bool runBuffer(void* L, const char* buff, size_t size, const char* name = nullptr) const;
 
+        // Calls a global Lua function by name if it exists.
         bool runGlobalIfExists(void* L, const std::string& functionName) const;
 
-        // Compiles and runs `patchSource` against whatever chunk hkPcall just
-        // executed. Failure is logged and swallowed, never propagated.
+        // Compiles and executes a patch string against the active Lua state.
         bool runPatch(void* L, const std::string& patchSource, const std::string& label) const;
 
-        // Compiles and runs `code`, writing its first return value or the
-        // error message into `out`. False if lua_tolstring never resolved.
+        // Compiles and executes Lua code, writing the result or error to out.
         bool runSnippet(void* L, const std::string& code, std::string& out) const;
+
+        // Compiles and executes a Lua code snippet.
         bool runSnippet(void* L, const std::string& code) const;
+
+        // Invokes the registered tick callback with delta time dt.
         bool callTick(void* L, double dt) const;
 
-        // Calls Crabe.Mod.dispatchDraw() natively. Script thread only: the Lua
-        // VM is single-threaded (Architecture Blueprint, Rule 3).
+        // Calls Crabe.Mod.dispatchDraw on the script thread.
         bool dispatchModDraw(void* L) const;
 
         typedef int(__cdecl* t_lua_cfunction)(void* L);
 
-        // Registers `cFunction` as `<tableName>.<fieldName>`, e.g. Crabe.SetWindowMode.
-        // `tableName` must already exist as a global table. False if missing
-        // or a required address failed to resolve.
+        // Registers a C function into a global table as tableName.fieldName.
         bool registerNativeFunction(void* L, const char* tableName, const char* fieldName,
                                      t_lua_cfunction cFunction) const;
 
-        // Reads argument `idx` as a string/number from inside a registered
-        // t_lua_cfunction; does not touch the stack height.
+        // Reads an argument at index as a string without modifying the stack.
         const char* argToString(void* L, int idx) const;
 
-        // `fallback` is returned on unresolved address or non-number, since
-        // lua_tonumber can't distinguish a real 0 from a failure.
+        // Reads an argument at index as a number, returning fallback on failure.
         double argToNumber(void* L, int idx, double fallback = 0.0) const;
 
-        // Reads argument `idx` as a truth value.
-        //
-        // This exists because argToNumber cannot do it: lua_tonumber returns 0
-        // for a boolean, so reading a Lua `true` as a number yields false. Any
-        // native taking an on/off flag must use this, or it is permanently off.
+        // Reads an argument at index as a boolean, returning fallback on failure.
         bool argToBoolean(void* L, int idx, bool fallback = false) const;
 
-        // Pushes a return value; the caller must then return the pushed
-        // count. Check hasReturnSupport() first or the count goes wrong.
+        // Pushes a string onto the Lua stack.
         void pushString(void* L, const std::string& value) const;
+
+        // Pushes a number onto the Lua stack.
         void pushNumber(void* L, double value) const;
+
+        // Pushes a boolean onto the Lua stack.
         void pushBoolean(void* L, bool value) const;
+
+        // Pushes nil onto the Lua stack.
         void pushNil(void* L) const;
+
+        // Returns the index of the top element on the stack.
         int getTop(void* L) const;
+
+        // Checks whether the value at index is a number.
         bool isNumber(void* L, int idx) const;
+
+        // Checks whether native return value helpers are supported.
         bool hasReturnSupport() const;
 
     protected:
@@ -144,14 +147,18 @@ class LuaCall {
         typedef void(__cdecl* t_lua_pushcclosure)(void* L, t_lua_cfunction fn, int n);
         typedef void(__cdecl* t_lua_rawset)(void* L, int idx);
 
+        // Detour for luaL_loadfile.
         static int __cdecl hkLoadfile(void* L, const char* filename);
+
+        // Detour for luaL_loadbuffer.
         static int __cdecl hkLoadbuffer(void* L, const char* buff, size_t size, const char* name);
+
+        // Detour for lua_pcall.
         static int __cdecl hkPcall(void* L, int nargs, int nresults, int errfunc);
 
+        // Returns original luaL_loadfile function pointer.
         t_luaL_loadfile originalLoadfile() const;
-        // Outcome of loading and calling one chunk. `text` is the first
-        // result on success, or the error message -- the same stack slot in
-        // both cases.
+
         struct ChunkResult {
             enum class Stage { Ok, LoadFailed, CallFailed };
 
@@ -162,21 +169,22 @@ class LuaCall {
             explicit operator bool() const { return stage == Stage::Ok; }
         };
 
-        // The one place a chunk is loaded, called, and the stack put back.
-        // `load` does the load and returns its Lua status; every caller
-        // differs only in that and in what it logs. Stack balance lives here
-        // alone -- it is what silently corrupts the game when it drifts.
+        // Loads and executes a chunk using the load callback, balancing the stack.
         ChunkResult runChunk(void* L, int nresults, const std::function<int()>& load) const;
 
+        // Returns original luaL_loadbuffer function pointer.
         t_luaL_loadbuffer originalLoadbuffer() const;
+
+        // Returns original lua_pcall function pointer.
         t_lua_pcall originalPcall() const;
+
+        // Pops a string from the Lua stack at index.
         std::string popString(void* L, int index) const;
 
         Hook _hookLoadfile;
         Hook _hookLoadbuffer;
         Hook _hookPcall;
 
-        // Every resolved address, including the ones nothing calls yet.
         t_lua_getfield _getfield = nullptr;
         t_lua_tolstring _tolstring = nullptr;
         t_lua_settop _settop = nullptr;

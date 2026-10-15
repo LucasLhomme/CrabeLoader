@@ -45,32 +45,24 @@ public:
 
     static EngineGateway& get();
 
-    /// Resolves the entry points from the game profile and checks each one by its bytes.
-    /// Then hooks the six UID-keyed Gateway::Write* wrappers the game saves a figure through.
-    /// Leaves the bridge absent, with a warning, when anything does not match.
+    // Resolves entry points and hooks figure write wrappers.
     void initialize();
     void uninitialize();
 
-    /// Adds a tag to the registry the way a reader would, then sets its progression when given.
-    /// A tag this bridge added earlier on the same antenna is removed first, because the engine holds one avatar per antenna.
-    /// The engine announces the change to the game before this returns, so call it on the game thread.
+    // Adds a tag to the figure registry with optional progression and watch status.
     [[nodiscard]] bool addTag(std::uint64_t uid, std::uint32_t characterId, std::uint8_t antenna,
                               const TagData& data, bool watch);
 
-    /// Removes a tag by UID and stops watching it.
-    /// The engine announces the removal before this returns, so call it on the game thread.
-    /// False when the bridge is absent or the call faulted.
+    // Removes a tag by UID and stops watching it.
     [[nodiscard]] bool removeTag(std::uint64_t uid);
 
-    /// Character id of the virtual reader's current avatar tag, whose UID is that same id.
-    /// Zero when the virtual reader holds no avatar (the engine stores 0xFFFFFFFF then), std::nullopt when the bridge is absent.
+    // Returns the character ID of the virtual reader's current avatar tag, if present.
     [[nodiscard]] std::optional<std::uint32_t> virtualAvatarTag() const;
 
-    /// Takes the oldest write the game made to a watched tag.
-    /// Writes are queued in the order the game made them, at most 256 at a time.
+    // Retrieves and removes the oldest queued tag write event.
     [[nodiscard]] std::optional<TagWrite> pollWrite();
 
-    /// Name of a field as Lua sees it: experience, level, lastPlayed, action, owner or progression.
+    // Returns the string name corresponding to a tag data field.
     [[nodiscard]] static const char* fieldName(Field field);
 
 private:
@@ -79,9 +71,7 @@ private:
     void resolveOnce();
     void record(std::uint64_t uid, Field field, std::uint32_t value, const std::uint8_t* progression);
 
-    /// Detour of one Gateway::Write* wrapper: the engine writes first, then a watched UID is recorded.
-    /// The wrappers are __thiscall(uid, value, flush) and return whether the tag took the value.
-    /// Writes made by addTag itself are not recorded.
+    // Detour for Gateway write wrappers that records modifications on watched UIDs.
     template <Field F>
     static bool __fastcall hkWrite(void* gateway, void* edx, std::uint32_t uidLo, std::uint32_t uidHi,
                                    std::uint32_t value, std::uint32_t flush);

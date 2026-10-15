@@ -22,16 +22,16 @@
 
 namespace crabe::infrastructure {
 
-// Hooks WinHttpConnect (server name and port swapped), WinHttpOpenRequest (TLS flag
-// dropped for a plain-HTTP target) and WinHttpCloseHandle (forgets the connection).
-// Request paths, headers and bodies are untouched.
 class HttpRedirect {
     public:
+        // Returns the singleton instance of HttpRedirect.
         static HttpRedirect& get();
 
-        // Installs the three hooks when `rules` holds at least one rule.
-        // False, with nothing left hooked, when WinHTTP cannot be found or hooked.
+        // Installs WinHTTP hooks when rules holds at least one redirection entry.
+        // Returns false with nothing hooked if WinHTTP cannot be hooked.
         bool initialize(HttpRedirectRules rules);
+
+        // Uninstalls all WinHTTP hooks and resets state.
         void uninitialize();
 
     private:
@@ -44,9 +44,14 @@ class HttpRedirect {
         using t_OpenRequest = HINTERNET(WINAPI*)(HINTERNET, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR*, DWORD);
         using t_CloseHandle = BOOL(WINAPI*)(HINTERNET);
 
+        // Hook detour for WinHttpConnect.
         static HINTERNET WINAPI hkConnect(HINTERNET session, LPCWSTR serverName, INTERNET_PORT port, DWORD reserved);
+
+        // Hook detour for WinHttpOpenRequest.
         static HINTERNET WINAPI hkOpenRequest(HINTERNET connection, LPCWSTR verb, LPCWSTR objectName,
                                               LPCWSTR version, LPCWSTR referrer, LPCWSTR* acceptTypes, DWORD flags);
+
+        // Hook detour for WinHttpCloseHandle.
         static BOOL WINAPI hkCloseHandle(HINTERNET handle);
 
         Hook _connect;

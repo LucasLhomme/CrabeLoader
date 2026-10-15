@@ -69,12 +69,15 @@ void traceTexture(const char* scope, std::string_view requested, bool redirected
 }
 
 struct ReentrancyScope final {
+    // Acquires the thread-local reentrancy lock.
     ReentrancyScope() noexcept { t_reentrancyGuard = true; }
+    // Releases the thread-local reentrancy lock.
     ~ReentrancyScope() noexcept { t_reentrancyGuard = false; }
     ReentrancyScope(const ReentrancyScope&) = delete;
     ReentrancyScope& operator=(const ReentrancyScope&) = delete;
 };
 
+// Converts a wide character string to a UTF-8 string.
 std::string wideToUtf8(LPCWSTR wideStr)
 {
     if (!wideStr || wideStr[0] == L'\0')
@@ -143,12 +146,14 @@ Result redirectWide(LPCWSTR path, Result failure, const Call& call, const char* 
 
 } // namespace
 
+// Returns the singleton instance of VfsHook.
 VfsHook& VfsHook::get() noexcept
 {
     static VfsHook instance;
     return instance;
 }
 
+// Installs the Win32 filesystem API hooks.
 bool VfsHook::initialize()
 {
     if (_initialized)
@@ -198,6 +203,7 @@ bool VfsHook::initialize()
     return true;
 }
 
+// Uninstalls all active Win32 filesystem hooks.
 void VfsHook::uninitialize()
 {
     if (!_initialized)
@@ -214,16 +220,19 @@ void VfsHook::uninitialize()
     crabe::shared::Logger::getInstance().info("VfsHook: Win32 file detours uninstalled.");
 }
 
+// Checks whether the filesystem hooks are currently installed.
 bool VfsHook::isHooked() const noexcept
 {
     return _initialized;
 }
 
+// Enables or disables diagnostic texture file tracing.
 void VfsHook::setTraceTextures(bool enabled) noexcept
 {
     g_traceTextures.store(enabled, std::memory_order_relaxed);
 }
 
+// Intercepts CreateFileA to redirect paths to active mod overrides.
 HANDLE WINAPI VfsHook::hkCreateFileA(
     LPCSTR lpFileName,
     DWORD dwDesiredAccess,
@@ -243,6 +252,7 @@ HANDLE WINAPI VfsHook::hkCreateFileA(
     }, "VfsHook::hkCreateFileA");
 }
 
+// Intercepts CreateFileW to redirect paths to active mod overrides.
 HANDLE WINAPI VfsHook::hkCreateFileW(
     LPCWSTR lpFileName,
     DWORD dwDesiredAccess,
@@ -262,6 +272,7 @@ HANDLE WINAPI VfsHook::hkCreateFileW(
     }, "VfsHook::hkCreateFileW");
 }
 
+// Intercepts GetFileAttributesA to resolve attributes from mod overrides.
 DWORD WINAPI VfsHook::hkGetFileAttributesA(LPCSTR lpFileName)
 {
     auto orig = reinterpret_cast<GetFileAttributesAFn>(get()._hookGetFileAttributesA.getOriginal());
@@ -273,6 +284,7 @@ DWORD WINAPI VfsHook::hkGetFileAttributesA(LPCSTR lpFileName)
     }, "VfsHook::hkGetFileAttributesA");
 }
 
+// Intercepts GetFileAttributesExA to resolve extended attributes from mod overrides.
 BOOL WINAPI VfsHook::hkGetFileAttributesExA(
     LPCSTR lpFileName,
     GET_FILEEX_INFO_LEVELS fInfoLevelId,
@@ -287,6 +299,7 @@ BOOL WINAPI VfsHook::hkGetFileAttributesExA(
     }, "VfsHook::hkGetFileAttributesExA");
 }
 
+// Intercepts FindFirstFileA to redirect searches to mod overrides.
 HANDLE WINAPI VfsHook::hkFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 {
     auto orig = reinterpret_cast<FindFirstFileAFn>(get()._hookFindFirstFileA.getOriginal());
@@ -298,6 +311,7 @@ HANDLE WINAPI VfsHook::hkFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lp
     }, "VfsHook::hkFindFirstFileA");
 }
 
+// Intercepts FindFirstFileExA to redirect searches to mod overrides.
 HANDLE WINAPI VfsHook::hkFindFirstFileExA(
     LPCSTR lpFileName,
     FINDEX_INFO_LEVELS fInfoLevelId,
@@ -315,6 +329,7 @@ HANDLE WINAPI VfsHook::hkFindFirstFileExA(
     }, "VfsHook::hkFindFirstFileExA");
 }
 
+// Intercepts FindFirstFileExW to redirect searches to mod overrides.
 HANDLE WINAPI VfsHook::hkFindFirstFileExW(
     LPCWSTR lpFileName,
     FINDEX_INFO_LEVELS fInfoLevelId,

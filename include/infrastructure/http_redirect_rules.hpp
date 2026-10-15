@@ -21,8 +21,6 @@
 
 namespace crabe::infrastructure {
 
-// Where a redirected connection goes. secure = false is plain HTTP: the request
-// loses its TLS flag, so a local server needs no certificate.
 struct HttpRedirectTarget {
     std::wstring host;
     std::uint16_t port{80};
@@ -31,21 +29,26 @@ struct HttpRedirectTarget {
     [[nodiscard]] bool operator==(const HttpRedirectTarget&) const = default;
 };
 
-// "http://host[:port]" or "https://host[:port]", an optional trailing "/" and nothing after it.
-// Host names are ASCII letters, digits, '.' and '-'.
+// Parses a target URL string into an HttpRedirectTarget.
+// Returns an error string if the target URL is malformed.
 [[nodiscard]] std::expected<HttpRedirectTarget, std::string> parseHttpRedirectTarget(std::string_view url);
 
-// ASCII-only narrowing for log lines; anything else becomes '?'.
+// Narrows a wide string to ASCII for logging, replacing non-ASCII characters with '?'.
 [[nodiscard]] std::string narrowForLog(std::wstring_view text);
 
-// Exact, case-insensitive server name -> target table.
 class HttpRedirectRules {
     public:
-        // Adds nothing and returns why when the host or the target is invalid.
+        // Adds a redirect rule mapping a host to a target URL.
+        // Returns an error string if host or target URL is invalid.
         std::expected<void, std::string> add(std::string_view host, std::string_view url);
 
+        // Finds a redirect target matching the given host case-insensitively.
         [[nodiscard]] std::optional<HttpRedirectTarget> find(std::wstring_view host) const;
+
+        // Checks whether the rule table is empty.
         [[nodiscard]] bool empty() const noexcept { return _rules.empty(); }
+
+        // Returns the number of redirection rules.
         [[nodiscard]] std::size_t size() const noexcept { return _rules.size(); }
 
     private:

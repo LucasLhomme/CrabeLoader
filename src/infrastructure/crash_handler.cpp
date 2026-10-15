@@ -23,7 +23,7 @@ struct ExceptionDetails {
     void* address = nullptr;
 };
 
-/// Safely extracts exception code and instruction address from exception pointers.
+// Safely extracts exception code and instruction address from exception pointers.
 int exceptionFilter(struct _EXCEPTION_POINTERS* ep, ExceptionDetails* details)
 {
     if (ep && ep->ExceptionRecord && details) {
@@ -33,7 +33,7 @@ int exceptionFilter(struct _EXCEPTION_POINTERS* ep, ExceptionDetails* details)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-/// Invokes the callable inside an MSVC SEH block, trapping hardware exceptions.
+// Invokes the callable inside an MSVC SEH block, trapping hardware exceptions.
 bool executeGuardedSeh(void (*callable)(void*), void* context, ExceptionDetails* details)
 {
     __try {
@@ -47,14 +47,7 @@ bool executeGuardedSeh(void (*callable)(void*), void* context, ExceptionDetails*
 
 }
 
-/// Traps hardware faults and logs exception details on failure.
-///
-/// The context label is not logged twice: it is also what the crash reporter
-/// prints as "Active hook", fed from here rather than from each call site, so
-/// a guarded region is named exactly once -- at the point that already had to
-/// name it. The ScopedHook lives in this function and not in
-/// executeGuardedSeh() because MSVC refuses (C2712) to unwind a C++ object out
-/// of a function containing __try/__except.
+// Traps hardware faults and logs exception details on failure.
 bool CrashHandler::runGuarded(const std::function<void()>& action, const char* contextLabel)
 {
     if (!action) {

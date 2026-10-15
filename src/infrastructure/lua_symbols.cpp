@@ -22,25 +22,13 @@
 
 namespace {
 
-    // The game exports no Lua symbol; each stdlib name is bound to a small
-    // wrapper that delegates to the real C API function, so the real address
-    // is the n-th `call` inside that wrapper.
-    //
-    // What used to sit here as well -- the RVA each symbol must land on -- now
-    // lives in the GameProfile for the build being run, because an RVA is a
-    // measurement of one executable while everything below is a fact about how
-    // Lua 5.1 registers its stdlib, true of any build.
     struct LuaSymbol {
-        const char* name;        // what we are resolving; also the profile's key
-        const char* stdlibName;  // Lua stdlib entry holding the wrapper
-        int callIndex;           // 1-based `call` inside the wrapper
-        size_t scanBytes = 256;  // how far into the wrapper to look
+        const char* name;
+        const char* stdlibName;
+        int callIndex;
+        size_t scanBytes = 256;
     };
 
-    // Which LuaApiAddresses field each symbol fills, stated once so the pairing
-    // cannot drift. Index is a hint, RVA is the contract: a mismatch refuses
-    // rather than hooking a wrong address. "type" resolves to io.type (found
-    // before luaB_type); "wrap" is coroutine.wrap.
     struct Binding {
         uintptr_t crabe::infrastructure::LuaApiAddresses::* field;
         LuaSymbol symbol;
@@ -81,6 +69,7 @@ namespace {
         { &crabe::infrastructure::LuaApiAddresses::pushboolean,  { "lua_pushboolean",   "rawequal",   4 } },
     };
 
+    // Returns hex representation of the first count bytes at addr for diagnostics.
     std::string firstBytes(uintptr_t addr, size_t count)
     {
         if (!crabe::memory::isReadable(addr, count)) return "<unreadable>";
@@ -95,16 +84,8 @@ namespace {
         return out;
     }
 
-    // Tries every stdlib binding of symbol.stdlibName and keeps the one whose
-    // call #callIndex lands on expectedRva; a mismatch refuses rather than
-    // hooking a wrong address.
-    //
-    // expectedRva is 0 only in degraded mode -- no profile matched, so there is
-    // nothing to confirm against and the first candidate is taken and logged as
-    // unverified. Under a matched profile the refusal is absolute (invariant
-    // I8), including when the profile itself states no RVA for the symbol:
-    // "the profile does not mention it" is not permission to hook whatever the
-    // scan happened to find.
+    // Resolves a single Lua function by inspecting wrapper calls and checking expected RVA.
+    // Falls back to first candidate in unverified mode if expectedRva is zero.
     uintptr_t resolveLuaFunction(const LuaSymbol& symbol, uintptr_t base,
                                 const std::vector<uintptr_t>& wrappers,
                                 uintptr_t expectedRva)
@@ -169,6 +150,7 @@ namespace {
 
 namespace crabe::lua_symbols {
 
+// Resolves all required Lua C API symbols against base and optional game profile.
 Resolution resolveAll(uintptr_t base, const crabe::domain::GameProfile* profile)
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
@@ -178,9 +160,6 @@ Resolution resolveAll(uintptr_t base, const crabe::domain::GameProfile* profile)
                        "scan unverified. Addresses are not being checked against a measured RVA.");
     }
 
-    // Twenty-five symbols share eleven stdlib names ("print" alone carries
-    // six). Each lookup walks the whole image, so they are cached here and
-    // every symbol on the same name reuses one walk.
     std::unordered_map<std::string_view, std::vector<uintptr_t>> wrappers;
     Resolution result;
 
@@ -193,9 +172,6 @@ Resolution resolveAll(uintptr_t base, const crabe::domain::GameProfile* profile)
         if (profile) {
             expectedRva = profile->luaSymbolRva(binding.symbol.name);
             if (!expectedRva) {
-                // Refuse rather than fall through to the unverified path: in a
-                // matched profile a missing symbol is a hole in the profile,
-                // and hooking on a hole is exactly what I8 forbids.
                 logger.error("LuaSymbols: {}: profile '{}' states no RVA for this symbol; "
                              "refusing to resolve it by scan alone.",
                              binding.symbol.name, profile->id);
@@ -216,4 +192,4 @@ Resolution resolveAll(uintptr_t base, const crabe::domain::GameProfile* profile)
     return result;
 }
 
-}
+} // namespace crabe::lua_symbols

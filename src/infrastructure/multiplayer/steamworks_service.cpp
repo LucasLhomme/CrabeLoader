@@ -15,10 +15,6 @@
 #include <windows.h>
 
 namespace {
-    // Windows SEH-isolated invocation helpers.
-    // Pure C-style (no C++ non-trivial unwinding in scope) to comply with MSVC C2712.
-    // Guarantees zero crashes even if Steam state, pipe, or vtable is in an unexpected state.
-
     static const char* sehGetPersonaName(void* pFriends, void* fnPtr) {
         __try {
             using Fn = const char* (__thiscall*)(void*);
@@ -95,7 +91,6 @@ namespace {
     static uint64_t sehGetFriendByIndex(void* pFriends, void* fnPtr, int index, int flags) {
         __try {
             uint64_t friendId = 0;
-            // On Win32 x86 MSVC, CSteamID struct return requires hidden return pointer
             using Fn = void (__thiscall*)(void*, uint64_t*, int, int);
             reinterpret_cast<Fn>(fnPtr)(pFriends, &friendId, index, flags);
             return friendId;
@@ -143,7 +138,6 @@ namespace crabe::multiplayer {
             return true;
         }
 
-        // The game binary already delay-loads steam_api.dll or it is in the game root directory
         _steamApiModule = GetModuleHandleW(L"steam_api.dll");
         if (!_steamApiModule) {
             _steamApiModule = LoadLibraryW(L"steam_api.dll");
@@ -176,7 +170,6 @@ namespace crabe::multiplayer {
             return false;
         }
 
-        // SteamAPI_Init might have already been called by the game engine. Calling it again is safe and returns true.
         bool initOk = false;
         if (_fnSteamAPI_Init) {
             initOk = _fnSteamAPI_Init();
@@ -268,9 +261,6 @@ namespace crabe::multiplayer {
             return false;
         }
 
-        // ISteamMatchmaking009 vtable:
-        // index 12: virtual SteamAPICall_t CreateLobby( ELobbyType eLobbyType, int cMaxMembers ) = 0;
-        // eLobbyType: 0 = Private, 1 = FriendsOnly, 2 = Public, 3 = Invisible
         int lobbyType = friendsOnly ? 1 : 2;
         void** vtable = *reinterpret_cast<void***>(_pSteamMatchmaking);
         if (!vtable || !vtable[12]) {
@@ -299,8 +289,6 @@ namespace crabe::multiplayer {
             return;
         }
 
-        // ISteamMatchmaking009 vtable:
-        // index 14: virtual void LeaveLobby( CSteamID steamIDLobby ) = 0;
         if (_lobbyStatus.lobbyId != 0) {
             void** vtable = *reinterpret_cast<void***>(_pSteamMatchmaking);
             if (vtable && vtable[14]) {
@@ -318,8 +306,6 @@ namespace crabe::multiplayer {
             return false;
         }
 
-        // ISteamMatchmaking009 vtable:
-        // index 13: virtual SteamAPICall_t JoinLobby( CSteamID steamIDLobby ) = 0;
         void** vtable = *reinterpret_cast<void***>(_pSteamMatchmaking);
         if (!vtable || !vtable[13]) {
             return false;
@@ -344,8 +330,6 @@ namespace crabe::multiplayer {
             return false;
         }
 
-        // ISteamMatchmaking009 vtable:
-        // index 18: virtual bool SetLobbyData( CSteamID steamIDLobby, const char *pchKey, const char *pchValue ) = 0;
         void** vtable = *reinterpret_cast<void***>(_pSteamMatchmaking);
         if (!vtable || !vtable[18]) {
             return false;
@@ -361,8 +345,6 @@ namespace crabe::multiplayer {
             return "";
         }
 
-        // ISteamMatchmaking009 vtable:
-        // index 17: virtual const char *GetLobbyData( CSteamID steamIDLobby, const char *pchKey ) = 0;
         void** vtable = *reinterpret_cast<void***>(_pSteamMatchmaking);
         if (!vtable || !vtable[17]) {
             return "";
@@ -378,9 +360,6 @@ namespace crabe::multiplayer {
             return false;
         }
 
-        // ISteamFriends014 vtable:
-        // index 27: virtual void ActivateGameOverlayInviteDialog( CSteamID steamIDLobby ) = 0;
-        // index 22: virtual void ActivateGameOverlay( const char *pchDialog ) = 0;
         void** vtable = *reinterpret_cast<void***>(_pSteamFriends);
         if (!vtable) {
             return false;
@@ -392,7 +371,6 @@ namespace crabe::multiplayer {
             return true;
         }
 
-        // Fallback: open general friends overlay
         if (vtable[22]) {
             sehGeneralOverlay(_pSteamFriends, vtable[22], "friends");
             crabe::shared::Logger::getInstance().info("SteamworksService: activated Steam friends overlay.");
@@ -421,10 +399,6 @@ namespace crabe::multiplayer {
             return friendsList;
         }
 
-        // ISteamFriends014 vtable:
-        // index 3: virtual int GetFriendCount( int iFriendFlags ) = 0; (0x04 = k_EFriendFlagImmediate)
-        // index 4: virtual CSteamID GetFriendByIndex( int iFriend, int iFriendFlags ) = 0;
-        // index 7: virtual const char *GetFriendPersonaName( CSteamID steamIDFriend ) = 0;
         void** vtable = *reinterpret_cast<void***>(_pSteamFriends);
         if (!vtable || !vtable[3] || !vtable[4] || !vtable[7]) {
             return friendsList;
@@ -432,7 +406,7 @@ namespace crabe::multiplayer {
 
         int count = sehGetFriendCount(_pSteamFriends, vtable[3], 0x04);
         if (count < 0) count = 0;
-        if (count > 50) count = 50; // safety clamp
+        if (count > 50) count = 50;
 
         for (int i = 0; i < count; ++i) {
             uint64_t friendId = sehGetFriendByIndex(_pSteamFriends, vtable[4], i, 0x04);

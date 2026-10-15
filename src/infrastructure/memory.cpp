@@ -22,6 +22,7 @@ namespace {
         size_t size = 0;
     };
 
+    // Returns base address and image size of the main executable module.
     ModuleRange mainModule()
     {
         auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
@@ -33,6 +34,7 @@ namespace {
         return { base, nt->OptionalHeader.SizeOfImage };
     }
 
+    // Checks whether the memory region described by mbi is committed and readable.
     bool isReadableRegion(const MEMORY_BASIC_INFORMATION& mbi)
     {
         constexpr DWORD kReadable = PAGE_READONLY | PAGE_READWRITE
@@ -43,9 +45,7 @@ namespace {
             && (mbi.Protect & kReadable) != 0;
     }
 
-    // Calls `visit(regionStart, regionEnd)` on every committed readable region of
-    // the module, stopping as soon as it returns true. Skipping the other regions
-    // is what keeps the scans below from faulting.
+    // Iterates over all committed readable regions in the module, calling visit.
     template <typename Visit>
     void forEachReadableRegion(const ModuleRange& mod, Visit&& visit)
     {
@@ -63,9 +63,9 @@ namespace {
         }
     }
 
-    // Size of the ModRM byte plus its optional SIB and displacement.
 } // namespace
 
+// Parses an IDA-style pattern string into a vector of PatternByte tokens.
 std::vector<crabe::memory::PatternByte> crabe::memory::parsePattern(const char* pattern)
 {
     std::vector<PatternByte> bytes;
@@ -88,6 +88,7 @@ std::vector<crabe::memory::PatternByte> crabe::memory::parsePattern(const char* 
     return bytes;
 }
 
+// Finds the first occurrence of needle in haystack, returning offset or kNoMatch.
 size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, std::span<const PatternByte> needle)
 {
     if (needle.empty() || haystack.size() < needle.size()) return kNoMatch;
@@ -108,11 +109,13 @@ size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, std::span<c
     return kNoMatch;
 }
 
+// Parses pattern and finds its first occurrence in haystack.
 size_t crabe::memory::findPattern(std::span<const uint8_t> haystack, const char* pattern)
 {
     return findPattern(haystack, parsePattern(pattern));
 }
 
+// Scans committed readable module memory for the given IDA pattern.
 uintptr_t crabe::memory::patternScan(const char* pattern, HMODULE module, uintptr_t after)
 {
     ModuleRange mod = mainModule();
@@ -125,8 +128,6 @@ uintptr_t crabe::memory::patternScan(const char* pattern, HMODULE module, uintpt
     uintptr_t found = 0;
 
     forEachReadableRegion(mod, [&](uintptr_t start, uintptr_t end) {
-        // Same skip rule as findString: entirely behind the cursor means
-        // nothing to do here, partly behind means resume just past it.
         if (after >= end) return false;
         if (after >= start) start = after + 1;
         if (end - start < needle.size()) return false;
@@ -141,6 +142,7 @@ uintptr_t crabe::memory::patternScan(const char* pattern, HMODULE module, uintpt
     return found;
 }
 
+// Checks whether a memory range is readable.
 bool crabe::memory::isReadable(uintptr_t addr, size_t size)
 {
     MEMORY_BASIC_INFORMATION mbi;
@@ -152,6 +154,7 @@ bool crabe::memory::isReadable(uintptr_t addr, size_t size)
     return addr + size <= end;
 }
 
+// Searches readable private memory regions for pointers holding the specified value.
 std::vector<uintptr_t> crabe::memory::findPointers(uintptr_t value, size_t limit)
 {
     std::vector<uintptr_t> found;
@@ -185,6 +188,7 @@ std::vector<uintptr_t> crabe::memory::findPointers(uintptr_t value, size_t limit
     return found;
 }
 
+// Searches readable module memory for a null-terminated string.
 uintptr_t crabe::memory::findString(const char* text, uintptr_t after)
 {
     ModuleRange mod = mainModule();
@@ -210,9 +214,7 @@ uintptr_t crabe::memory::findString(const char* text, uintptr_t after)
     return found;
 }
 
-// A short name can be registered by more than one library ("type" by both
-// base and io); collects every binding, since which comes first is not
-// stable between runs.
+// Finds all registered function addresses matching the given name in readable memory.
 std::vector<uintptr_t> crabe::memory::findRegisteredFunctions(const char* funcName)
 {
     std::vector<uintptr_t> found;
@@ -240,12 +242,14 @@ std::vector<uintptr_t> crabe::memory::findRegisteredFunctions(const char* funcNa
     return found;
 }
 
+// Finds the first registered function address matching the given name.
 uintptr_t crabe::memory::findRegisteredFunction(const char* funcName)
 {
     std::vector<uintptr_t> candidates = findRegisteredFunctions(funcName);
     return candidates.empty() ? 0 : candidates.front();
 }
 
+// Decodes a direct relative near call (0xE8) at the given address to find the target.
 uintptr_t crabe::memory::resolveCall(uintptr_t addr)
 {
     if (!isReadable(addr, 5)) return 0;
@@ -255,6 +259,7 @@ uintptr_t crabe::memory::resolveCall(uintptr_t addr)
     return addr + 5 + static_cast<uintptr_t>(rel);
 }
 
+// Finds all call instructions in the module that target the specified function address.
 std::vector<uintptr_t> crabe::memory::findCallSites(uintptr_t target, size_t limit)
 {
     std::vector<uintptr_t> sites;
@@ -285,9 +290,7 @@ std::vector<uintptr_t> crabe::memory::findCallSites(uintptr_t target, size_t lim
     return sites;
 }
 
-// Plain byte walk, not a full decoder: an E8 byte also occurs inside other
-// instructions, so a candidate only counts when its target lands inside the
-// image -- merely readable isn't enough, that shifts every later index.
+// Scans a function memory range for direct relative call instructions (0xE8).
 std::vector<uintptr_t> crabe::memory::findCalls(uintptr_t functionStart, size_t maxScan)
 {
     std::vector<uintptr_t> targets;
@@ -316,3 +319,4 @@ std::vector<uintptr_t> crabe::memory::findCalls(uintptr_t functionStart, size_t 
     }
     return targets;
 }
+

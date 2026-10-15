@@ -30,9 +30,6 @@ enum class LogLevel {
     ERR
 };
 
-// A crash logs through error() with a
-// "CRASH: " prefix rather than as its own level -- there is no LogLevel for
-// it, filtering on ERR already covers it.
 struct LogEntry {
     LogLevel level;
     std::string text;

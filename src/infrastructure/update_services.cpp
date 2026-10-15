@@ -39,6 +39,7 @@ namespace crabe::infrastructure {
         constexpr std::string_view kHttpsPrefix = "https://";
 
         struct WinHttpHandleCloser {
+            // Releases an active WinHTTP handle.
             void operator()(HINTERNET handle) const noexcept
             {
                 if (handle)
@@ -50,11 +51,13 @@ namespace crabe::infrastructure {
 
         class ComApartment final {
         public:
+            // Initializes COM in apartment-threaded mode.
             ComApartment() noexcept
                 : _initialized(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)))
             {
             }
 
+            // Uninitializes COM if previously initialized.
             ~ComApartment()
             {
                 if (_initialized)
@@ -70,6 +73,7 @@ namespace crabe::infrastructure {
             bool _initialized;
         };
 
+        // Converts a UTF-8 string to a wide character string.
         [[nodiscard]] std::wstring widen(std::string_view text)
         {
             if (text.empty())
@@ -82,16 +86,19 @@ namespace crabe::infrastructure {
             return wide;
         }
 
+        // Formats an error string with the step description and GetLastError code.
         [[nodiscard]] std::string failure(std::string_view step)
         {
             return std::format("{} failed (error {})", step, GetLastError());
         }
 
+        // Checks if the user's default UI language is French.
         [[nodiscard]] bool uiLanguageIsFrench() noexcept
         {
             return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_FRENCH;
         }
 
+        // Opens a WinHTTP session with automatic proxy fallback.
         [[nodiscard]] WinHttpHandle openSession(const std::wstring& agent)
         {
             WinHttpHandle session(WinHttpOpen(agent.c_str(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
@@ -102,6 +109,7 @@ namespace crabe::infrastructure {
             return session;
         }
 
+        // Configures the WinHTTP session to allow only modern TLS versions.
         void restrictToModernTls(HINTERNET session) noexcept
         {
             DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
@@ -111,6 +119,7 @@ namespace crabe::infrastructure {
             WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
         }
 
+        // Reads the complete response body from an active WinHTTP request.
         [[nodiscard]] std::expected<std::string, std::string> readBody(HINTERNET request)
         {
             std::string body;
@@ -134,6 +143,7 @@ namespace crabe::infrastructure {
 
     } // namespace
 
+    // Fetches the latest release metadata from the GitHub API using WinHTTP.
     std::expected<std::string, std::string> WinHttpReleaseSource::fetchLatestRelease()
     {
         const std::wstring agent = widen(std::format("CrabeLoader/{}", crabe::version::String));
@@ -175,6 +185,7 @@ namespace crabe::infrastructure {
         return readBody(request.get());
     }
 
+    // Displays a localized message box prompting the user to update.
     bool MessageBoxUpdatePrompt::askToUpdate(std::string_view currentVersion, std::string_view latestVersion)
     {
         const std::wstring current = widen(currentVersion);
@@ -200,6 +211,7 @@ namespace crabe::infrastructure {
         return MessageBoxW(nullptr, text.c_str(), title.c_str(), kFlags) == IDYES;
     }
 
+    // Opens an HTTPS URL in the default browser using ShellExecuteExW.
     bool ShellUrlOpener::open(std::string_view url)
     {
         if (!url.starts_with(kHttpsPrefix))
