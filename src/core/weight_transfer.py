@@ -1,19 +1,15 @@
-"""Optional skin-weight transfer from the base figure's own body (Robust Weight Transfer).
+"""Skin-weight transfer from the base figure's own body (robust weight inpainting).
 
 The base figure's body mesh already carries game-quality weights. Instead of guessing weights with bone heat, the
 body is brought into the model's T-pose space (inverse of the bake) and its weights are copied onto the model
-where the surfaces agree, then inpainted elsewhere ("Robust Skin Weights Transfer via Weight Inpainting",
-Abdrashitov et al., SIGGRAPH Asia 2023).
+where the surfaces agree (close, similar normal), then smoothly inpainted everywhere else.
 
-The algorithm comes from the *Robust Weight Transfer* Blender add-on (GPL, https://github.com/sentfromspacevr/
-robust-weight-transfer). Its code is NOT bundled here: the user points Creator at the add-on folder and its
-`weighttransfer.py` is loaded at run time. It also needs `libigl`, `robust-laplacian` and `scipy` in the Python
-that runs Creator (pip install libigl robust-laplacian scipy).
+Method: "Robust Skin Weights Transfer via Weight Inpainting" (Abdrashitov, Raichstat, Monsen, Hill, SIGGRAPH Asia
+2023; reference code MIT, https://github.com/rin-23/RobustSkinWeightsTransferCode). This is a NumPy/SciPy
+re-implementation with no compiled dependency (no libigl, no robust-laplacian, no Blender add-on): the inpainting
+minimises a bi-Laplacian energy on a nearest-neighbour graph of the vertices, which also bridges loose parts.
 """
-import importlib.util
 import math
-import os
-from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -26,80 +22,14 @@ MAX_NORMAL_ANGLE = 30.0  # degrees
 MIN_MATCHED = 0.05  # below this share of matched vertices the transfer is not trusted
 
 
-def default_addon_dirs() -> list[Path]:
-    """Places where the add-on usually lives (Blender add-ons folders, Downloads)."""
-    roots = []
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        blender = Path(appdata) / "Blender Foundation" / "Blender"
-        if blender.is_dir():
-            for version in sorted(blender.iterdir(), reverse=True):
-                roots += [version / "scripts" / "addons", version / "extensions" / "user_default"]
-    roots.append(Path.home() / "Downloads")
-    found = []
-    for root in roots:
-        if root.is_dir():
-            for sub in root.glob("*"):
-                if sub.is_dir() and (sub / "weighttransfer.py").is_file():
-                    found.append(sub)
-    return found
-
-
-def find_addon(configured: str = "") -> Path | None:
-    for candidate in ([Path(configured)] if configured else []) + default_addon_dirs():
-        if (candidate / "weighttransfer.py").is_file():
-            return candidate
-    return None
-
-
-def _barycentric_coordinates_tri(p, a, b, c):
-    """Barycentric coordinates of points p in triangles (a, b, c) (rows), like igl.barycentric_coordinates_tri."""
-    v0, v1, v2 = b - a, c - a, p - a
-    d00, d01, d11 = (v0 * v0).sum(1), (v0 * v1).sum(1), (v1 * v1).sum(1)
-    d20, d21 = (v2 * v0).sum(1), (v2 * v1).sum(1)
-    den = d00 * d11 - d01 * d01
-    den = np.where(np.abs(den) < 1e-20, 1e-20, den)
-    v = (d11 * d20 - d01 * d21) / den
-    w = (d00 * d21 - d01 * d20) / den
-    return np.stack([1.0 - v - w, v, w], axis=1)
-
-
-def load_module(addon_dir: Path):
-    """Import the add-on's pure-numpy `weighttransfer.py` (no Blender needed). Raises ImportError if deps are missing."""
-    import igl
-
-    # The add-on pins libigl 2.5.1; newer builds renamed/changed two calls it uses. Adapt them so any libigl works.
-    if not hasattr(igl, "barycentric_coordinates_tri"):
-        igl.barycentric_coordinates_tri = _barycentric_coordinates_tri
-    if not getattr(igl.min_quad_with_fixed, "_creator_wrapped", False):
-        original = igl.min_quad_with_fixed
-
-        def min_quad_with_fixed(A, B, known, Y, Aeq, Beq, pd):
-            try:
-                return original(A, B, known, Y, Aeq, Beq, pd)
-            except TypeError:  # libigl >= 2.6: returns the solution only, Beq is a matrix
-                return True, original(A, B, known, Y, Aeq, np.zeros((0, 0)), pd)
-
-        min_quad_with_fixed._creator_wrapped = True
-        igl.min_quad_with_fixed = min_quad_with_fixed
-    spec = importlib.util.spec_from_file_location("rwt_weighttransfer", Path(addon_dir) / "weighttransfer.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def availability(configured: str = "") -> tuple[bool, str]:
     """(usable, short message) for the settings panel."""
-    addon = find_addon(configured)
-    if addon is None:
-        return False, "add-on folder not found (it must contain weighttransfer.py)"
     try:
-        load_module(addon)
-    except ImportError as exc:
-        return False, f"missing Python package ({exc.name}): pip install libigl robust-laplacian scipy"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"add-on could not be loaded ({exc})"
-    return True, f"ready ({addon.name})"
+        import scipy.sparse.linalg  # noqa: F401
+        import scipy.spatial  # noqa: F401
+    except ImportError:
+        return False, "SciPy is missing: pip install scipy"
+    return True, "ready"
 
 
 def _canonical_columns(base: BaseCharacter, names: list[str]) -> np.ndarray:
@@ -161,28 +91,87 @@ def donor_mesh(base: BaseCharacter, anchors: dict, names: list[str]):
     return back, np.asarray(tris), vertex_normals(back, np.asarray(tris)), weights
 
 
-def transfer(wverts, wfaces, base: BaseCharacter, anchors: dict, names: list[str], addon_dir: Path,
-             log: Log) -> np.ndarray | None:
+K_NEIGHBOURS = 10
+
+
+def _graph_laplacian(points: np.ndarray, known: np.ndarray, k: int = K_NEIGHBOURS):
+    """Gaussian-weighted k-nearest-neighbour graph Laplacian (symmetric, PSD) of a point set."""
+    from scipy.sparse import coo_matrix, diags
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial import cKDTree
+
+    k = min(k + 1, len(points))
+    dist, idx = cKDTree(points).query(points, k=k)
+    sigma = max(float(np.median(dist[:, 1:])), 1e-9)
+    rows = np.repeat(np.arange(len(points)), k - 1)
+    cols = idx[:, 1:].reshape(-1)
+    w = np.exp(-(dist[:, 1:].reshape(-1) / sigma) ** 2)
+    adjacency = coo_matrix((w, (rows, cols)), shape=(len(points),) * 2).tocsr()
+    adjacency = adjacency.maximum(adjacency.T).tolil()
+    # A loose piece far from the body forms its own island: link it to the closest known vertex, otherwise it
+    # would get no weights at all.
+    count, label = connected_components(adjacency, directed=False)
+    if known.any():
+        known_points, known_index = points[known], np.flatnonzero(known)
+        tree = cKDTree(known_points)
+        for c in range(count):
+            members = np.flatnonzero(label == c)
+            if known[members].any():
+                continue
+            d, j = tree.query(points[members])
+            best = int(np.argmin(d))
+            adjacency[members[best], known_index[j[best]]] = 1.0
+            adjacency[known_index[j[best]], members[best]] = 1.0
+    adjacency = adjacency.tocsr()
+    return diags(np.asarray(adjacency.sum(1)).ravel()) - adjacency
+
+
+def inpaint(points: np.ndarray, weights: np.ndarray, known: np.ndarray) -> np.ndarray | None:
+    """Fill the rows of `weights` where `known` is False by minimising a bi-Laplacian energy (known rows fixed)."""
+    from scipy.sparse import csc_matrix, diags
+    from scipy.sparse.linalg import splu
+
+    laplacian = _graph_laplacian(points, known)
+    inv_mass = diags(1.0 / np.maximum(laplacian.diagonal(), 1e-9))
+    energy = csc_matrix(laplacian + laplacian @ inv_mass @ laplacian)
+    free = ~known
+    if not free.any():
+        return weights
+    q_ff = energy[free][:, free]
+    q_fk = energy[free][:, known]
+    try:
+        solved = splu(csc_matrix(q_ff + 1e-9 * diags(np.ones(q_ff.shape[0])))).solve(-(q_fk @ weights[known]))
+    except RuntimeError:
+        return None
+    out = weights.copy()
+    out[free] = solved
+    return out
+
+
+def transfer(wverts, wfaces, base: BaseCharacter, anchors: dict, names: list[str], log: Log) -> np.ndarray | None:
     """Weights (len(wverts), len(names)) copied from the base body, or None if the transfer is not trustworthy."""
+    from scipy.spatial import cKDTree
+
     from src.core.rig import vertex_normals
 
-    rwt = load_module(addon_dir)
     dv, dt, dn, dw = donor_mesh(base, anchors, names)
     height = float(wverts[:, 1].max() - wverts[:, 1].min())
     normals = vertex_normals(wverts, wfaces)
-    matched, copied = rwt.find_matches_closest_surface(
-        dv.astype(np.float32), dt.astype(np.int64), dn.astype(np.float32), wverts.astype(np.float32),
-        normals.astype(np.float32), dw.astype(np.float32), (MAX_DISTANCE * height) ** 2, MAX_NORMAL_ANGLE, True)
+    distance, nearest = cKDTree(dv).query(wverts)
+    cosine = np.einsum("ij,ij->i", normals, dn[nearest])
+    # A normal pointing the opposite way still matches: thin or double-sided garments are common.
+    matched = (distance <= MAX_DISTANCE * height) & (np.abs(cosine) >= math.cos(math.radians(MAX_NORMAL_ANGLE)))
     share = float(matched.mean())
     log(f"  Robust transfer: {100 * share:.0f}% of the vertices match the base body")
     if share < MIN_MATCHED:
         log("  too few matches -> not used")
         return None
-    ok, weights = rwt.inpaint(wverts.astype(np.float64), wfaces.astype(np.int64), copied, matched, True)
-    if not ok:
-        log("  inpainting failed (loose parts without any match?) -> not used")
+    copied = dw[nearest]
+    weights = inpaint(wverts, copied, matched)
+    if weights is None:
+        log("  inpainting failed -> not used")
         return None
-    weights = np.clip(np.asarray(weights, float), 0, None)
+    weights = np.clip(weights, 0, None)
     total = weights.sum(1, keepdims=True)
     bad = total[:, 0] < 1e-6
     if bad.any():

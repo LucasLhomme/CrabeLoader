@@ -300,13 +300,12 @@ QuickBMS (avec le script BMS Disney Infinity) et `offsetting.exe` vont dans `src
 
 Case « Robust weight transfer » dans l'onglet d'import. Creator construit le rig deux fois (poids Blender, puis poids
 copiés depuis le corps de la figure de base) et garde celui qui déforme le moins. Utile surtout pour les jupes, capes
-et manteaux longs.
+et manteaux longs. Aucun module à installer en plus (NumPy et SciPy suffisent).
 
-- Nécessite l'add-on gratuit [Robust Weight Transfer](https://github.com/sentfromspacevr/robust-weight-transfer)
-  (GPL) : télécharge-le, puis indique son dossier (celui qui contient `weighttransfer.py`) ou laisse la détection
-  automatique. Son code n'est pas inclus dans ce projet, il est chargé depuis ton dossier.
-- Nécessite aussi des paquets Python : `pip install libigl robust-laplacian scipy`.
-- Basé sur « Robust Skin Weights Transfer via Weight Inpainting » (Abdrashitov et al., SIGGRAPH Asia 2023).
+- Méthode : « Robust Skin Weights Transfer via Weight Inpainting » (Abdrashitov, Raichstat, Monsen, Hill, SIGGRAPH
+  Asia 2023), réimplémentée sans dépendance compilée. Inspiré de l'add-on Blender gratuit
+  [Robust Weight Transfer](https://github.com/sentfromspacevr/robust-weight-transfer) de SentFromSpaceVR et du code
+  de référence [RobustSkinWeightsTransferCode](https://github.com/rin-23/RobustSkinWeightsTransferCode) (MIT).
 
 ## Crédits
 
