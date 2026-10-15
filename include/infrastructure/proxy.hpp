@@ -1,6 +1,16 @@
-// =============================================================
-// EXPORTS BINKW32 (PROXY DIRECT LINKER FORWARDING)
-// =============================================================
+/*
+** CrabeLoader
+** File description:
+** Bink2w32 proxy linker export forwarders.
+** Forwards all original Bink2 video exports directly to bink2w32_orig.dll.
+** Ensures the game executable loads CrabeLoader seamlessly at startup.
+**
+** Authors: @LucasLhomme
+*/
+
+#ifndef CRABELOADER_INFRASTRUCTURE_PROXY_HPP_
+#define CRABELOADER_INFRASTRUCTURE_PROXY_HPP_
+
 #pragma comment(linker, "/export:_BinkAllocateFrameBuffers@12=bink2w32_orig._BinkAllocateFrameBuffers@12")
 #pragma comment(linker, "/export:_BinkClose@4=bink2w32_orig._BinkClose@4")
 #pragma comment(linker, "/export:_BinkCloseTrack@4=bink2w32_orig._BinkCloseTrack@4")
@@ -78,3 +88,6 @@
 #pragma comment(linker, "/export:_BinkWaitStopAsyncThread@4=bink2w32_orig._BinkWaitStopAsyncThread@4")
 #pragma comment(linker, "/export:_BinkWaitStopAsyncThreadsMulti@8=bink2w32_orig._BinkWaitStopAsyncThreadsMulti@8")
 #pragma comment(linker, "/export:_RADTimerRead@0=bink2w32_orig._RADTimerRead@0")
+
+#endif /* !CRABELOADER_INFRASTRUCTURE_PROXY_HPP_ */
+

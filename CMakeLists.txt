@@ -88,7 +88,76 @@ FetchContent_Declare(
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
-FetchContent_MakeAvailable(nlohmann_json tomlplusplus)
+FetchContent_Declare(
+    minhook
+    URL https://github.com/TsudaKageyu/minhook/archive/refs/tags/v1.3.3.tar.gz
+    URL_HASH SHA256=5bec16358ec9086d4593124bf558635e89135abea2c76e5761ecaf09f4546b19
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR crabe-does-not-configure-minhook
+)
+
+FetchContent_Declare(
+    imgui
+    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.90.9.tar.gz
+    URL_HASH SHA256=04943919721e874ac75a2f45e6eb6c0224395034667bf508923388afda5a50bf
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR crabe-does-not-configure-imgui
+)
+
+FetchContent_MakeAvailable(nlohmann_json tomlplusplus minhook imgui)
+
+# Compatibility include shims for "imgui/imgui.h" and "minhook/MinHook.h"
+set(CRABE_INCLUDE_SHIM_DIR "${CMAKE_CURRENT_BINARY_DIR}/include_shims")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui.h" "#pragma once\n#include <imgui.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui_internal.h" "#pragma once\n#include <imgui_internal.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui_impl_win32.h" "#pragma once\n#include <imgui_impl_win32.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui_impl_dx11.h" "#pragma once\n#include <imgui_impl_dx11.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/minhook/MinHook.h" "#pragma once\n#include <MinHook.h>\n")
+file(MAKE_DIRECTORY "${CRABE_INCLUDE_SHIM_DIR}/minhook/hde")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/minhook/hde/hde32.h" "#pragma once\n#include \"${minhook_SOURCE_DIR}/src/hde/hde32.h\"\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/minhook/hde/hde64.h" "#pragma once\n#include \"${minhook_SOURCE_DIR}/src/hde/hde64.h\"\n")
+
+add_library(minhook STATIC
+    "${minhook_SOURCE_DIR}/src/buffer.c"
+    "${minhook_SOURCE_DIR}/src/hook.c"
+    "${minhook_SOURCE_DIR}/src/trampoline.c"
+    "${minhook_SOURCE_DIR}/src/hde/hde32.c"
+    "${minhook_SOURCE_DIR}/src/hde/hde64.c"
+)
+target_include_directories(minhook PUBLIC
+    "${minhook_SOURCE_DIR}/include"
+    "${minhook_SOURCE_DIR}/src"
+    "${CRABE_INCLUDE_SHIM_DIR}"
+)
+if(MSVC)
+    target_compile_options(minhook PRIVATE /W0)
+else()
+    target_compile_options(minhook PRIVATE -w)
+endif()
+
+if(CRABELOADER_BUILD_IMGUI)
+    add_library(imgui STATIC
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp"
+    )
+    target_include_directories(imgui PUBLIC
+        "${imgui_SOURCE_DIR}"
+        "${imgui_SOURCE_DIR}/backends"
+        "${CRABE_INCLUDE_SHIM_DIR}"
+    )
+    target_link_libraries(imgui PUBLIC
+        d3d11
+    )
+    if(MSVC)
+        target_compile_options(imgui PRIVATE /utf-8 /W0)
+    else()
+        target_compile_options(imgui PRIVATE -w)
+    endif()
+endif()
 
 
 set(CRABELOADER_CORE_SOURCES
@@ -176,26 +245,6 @@ set(CRABELOADER_CORE_SOURCES
     src/shared/loader_marker.cpp
 )
 
-set(CRABELOADER_MINHOOK_SOURCES
-    src/minhook/buffer.c
-    src/minhook/hook.c
-    src/minhook/trampoline.c
-    src/minhook/hde/hde32.c
-    src/minhook/hde/hde64.c
-)
-
-set(CRABELOADER_IMGUI_SOURCES)
-if(CRABELOADER_BUILD_IMGUI)
-    list(APPEND CRABELOADER_IMGUI_SOURCES
-        include/imgui/imgui.cpp
-        include/imgui/imgui_draw.cpp
-        include/imgui/imgui_tables.cpp
-        include/imgui/imgui_widgets.cpp
-        include/imgui/imgui_impl_win32.cpp
-        include/imgui/imgui_impl_dx11.cpp
-    )
-endif()
-
 # Multiplayer is work in progress and kept out of the repository (.gitignore):
 # it is built only where its sources are present, so a clean clone builds without it.
 set(CRABELOADER_MULTIPLAYER_SOURCES
@@ -222,8 +271,6 @@ endif()
 
 set(CRABELOADER_SOURCES
     ${CRABELOADER_CORE_SOURCES}
-    ${CRABELOADER_MINHOOK_SOURCES}
-    ${CRABELOADER_IMGUI_SOURCES}
 )
 
 if(CRABELOADER_AS_SHARED)
@@ -266,8 +313,6 @@ target_include_directories(${PROJECT_NAME}
         include/domain
         include/infrastructure
         include/shared
-        include/imgui
-        include/minhook
         src
 )
 
@@ -324,11 +369,13 @@ target_link_libraries(${PROJECT_NAME}
         setupapi
         nlohmann_json::nlohmann_json
         tomlplusplus::tomlplusplus
+        minhook
 )
 
 if(CRABELOADER_BUILD_IMGUI)
     target_link_libraries(${PROJECT_NAME}
         PRIVATE
+            imgui
             d3d11
             dxgi
             d3dcompiler
@@ -462,19 +509,17 @@ add_executable(test_draw_primitives
     tests/cpp/test_draw_primitives.cpp
     src/presentation/draw_buffer.cpp
     src/presentation/pad_state.cpp
-    include/imgui/imgui.cpp
-    include/imgui/imgui_draw.cpp
-    include/imgui/imgui_tables.cpp
-    include/imgui/imgui_widgets.cpp
 )
 target_include_directories(test_draw_primitives PRIVATE
     include
-    include/imgui
 )
 target_compile_definitions(test_draw_primitives PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
     _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_draw_primitives PRIVATE
+    imgui
 )
 if(MSVC)
     target_compile_options(test_draw_primitives PRIVATE /utf-8)
