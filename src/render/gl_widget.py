@@ -342,6 +342,29 @@ class GLRenderer:
         data = self.fbo.read(components=3, alignment=1)
         return Image.frombytes("RGB", (self.width, self.height), data).transpose(Image.FLIP_TOP_BOTTOM)
 
+    def render_icon(self, center, radius: float, size: int = 256, yaw: float = 0.0) -> Image.Image:
+        """The model alone, seen from the front and framed on a sphere (the head), on a transparent background."""
+        fbo = self.ctx.simple_framebuffer((size, size), components=4)
+        fbo.use()
+        self.ctx.viewport = (0, 0, size, size)
+        self.ctx.clear(0.0, 0.0, 0.0, 0.0)
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.enable(moderngl.BLEND)
+        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        fov = 40.0
+        distance = radius / np.tan(np.radians(fov / 2))
+        target = np.asarray(center, np.float32)
+        y = np.radians(yaw)
+        eye = target + distance * np.array([np.sin(y), 0.0, np.cos(y)], np.float32)
+        view = look_at(eye, target, np.array([0, 1, 0], np.float32))
+        self.prog["mvp"].write((view @ perspective(fov, 1.0, 0.02, 200.0)).astype("f4").tobytes())
+        if self.model:
+            self.model.draw()
+        data = fbo.read(components=4, alignment=1)
+        fbo.release()
+        self.fbo.use()
+        return Image.frombytes("RGBA", (size, size), data).transpose(Image.FLIP_TOP_BOTTOM)
+
     def _draw_scene(self, eye, target, aspect):
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.enable(moderngl.BLEND)

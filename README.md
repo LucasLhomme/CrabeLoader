@@ -120,6 +120,15 @@ filtre adoucit le bruit et les ombres cuites (filtre guidé qui préserve les co
 saturation. Il ne travaille qu'à l'intérieur des îlots UV : aucune couleur ne bave depuis le fond. Le résultat
 s'affiche dans la vue 3D et est celui qui est exporté dans le jeu.
 
+**Icône du personnage.** Case « Character icon » (onglet Modèle) : à l'installation, Creator photographie la tête du
+modèle (vue de face, T-pose, texture avec le filtre) et écrit dans le mod `<actor>_icon.png` plus la texture HUD
+(`textures/<hash>.tbody`) et son `<actor>.mtb`, au format du pipeline CrabeLoader (`make_icon.py`). Le bouton
+« Preview » montre le résultat. Expérimental : si la grille de sélection garde l'icône par défaut, le PNG reste
+utilisable tel quel.
+
+**Pastilles du squelette.** ✓ vert = proche des proportions de la base (y compris après un réglage manuel) ; ✎ bleu =
+réglé à la main mais encore éloigné de la base ; ⚠ = estimé ou trop différent.
+
 **Accessoires (cape, queue, ailes, arme).** Une cape qui pend derrière le bassin fausse les mesures (profondeur du
 torse, genoux, entrejambe) et se fait déchirer par les jambes. Dans l'onglet Modèle, boîte « Accessories » :
 

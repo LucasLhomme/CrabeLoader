@@ -38,7 +38,7 @@ import shutil
 def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Path,
             log: Callable[[str], None], entity_config: EntityConfig | None = None,
             abilities: CharacterAbilities | None = None,
-            use_legacy_zip: bool = False) -> InstallReport:
+            use_legacy_zip: bool = False, icon: Image.Image | None = None) -> InstallReport:
     base = rig.base
     game_dir = Path(game_dir)
     if not (game_dir / "assets").is_dir():
@@ -106,6 +106,12 @@ def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Pat
     log("Writing CrabeLoader V2 loose VFS textures (.tbody)...")
     export_loose_textures(ids, texture, mod_dir)
     report.notes.append(f"textures: loose VFS {ids.diffuse}.tbody, {ids.normal}.tbody")
+
+    if icon is not None:
+        from src.core.icon import write_icon
+        written = write_icon(icon, ident.actor, mod_dir)
+        log(f"Character icon written ({', '.join(p.name for p in written)})")
+        report.notes.append("icon: head picture + HUD texture (experimental: the selection grid may keep its default icon)")
 
     if use_legacy_zip:
         log("Rebuilding legacy encrypted texture archive (optional fallback)...")

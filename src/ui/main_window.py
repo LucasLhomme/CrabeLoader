@@ -436,8 +436,19 @@ class MainWindow(ctk.CTk):
         self._value_entry(look, 1, self.look_slider, self.on_look, "{:.2f}")
         self._on_look_drag(self.look_slider.get())
 
+        icon_row = ctk.CTkFrame(tab, fg_color="transparent")
+        icon_row.grid(row=r0 + 6, column=0, sticky="ew", pady=(10, 0))
+        icon_row.grid_columnconfigure(0, weight=1)
+        self.icon_var = ctk.BooleanVar(value=bool(self.settings.get("make_icon", True)))
+        ctk.CTkCheckBox(icon_row, text="Character icon: photograph the head when installing",
+                        variable=self.icon_var, font=ctk.CTkFont(size=11),
+                        command=lambda: self.settings.update(make_icon=bool(self.icon_var.get()))
+                        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(icon_row, text="Preview", width=70, height=24, fg_color="#27272a", hover_color="#3f3f46",
+                      command=self.on_preview_icon).grid(row=0, column=1, padx=(6, 0))
+
         ctk.CTkButton(tab, text="Preview the texture atlas", fg_color="#27272a", hover_color="#3f3f46",
-                      command=self.on_preview_texture).grid(row=r0 + 6, column=0, sticky="ew", pady=(10, 4))
+                      command=self.on_preview_texture).grid(row=r0 + 7, column=0, sticky="ew", pady=(10, 4))
 
     def _build_skeleton_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -1163,6 +1174,42 @@ class MainWindow(ctk.CTk):
                      text_color=RED if len(notes) > 1 and notes[1].startswith("⚠") else GREY).pack(padx=12)
         window.after(100, window.lift)
 
+    def _make_icon(self, size: int = 128):
+        """A picture of the head, taken from the model as it will be in game (T-pose, current texture)."""
+        from src.core import icon
+        if not (self.model and self.props):
+            return None
+        tpose = self.rig.tpose if self.rig else self.model.vertices()
+        restore = None
+        if self.rig and self.pose != "tpose":
+            restore = self.rig.posed(self.pose, float(self.pose_amount.get()))
+        self.renderer.update_model_vertices(tpose)
+        try:
+            center, radius = icon.head_sphere(np.asarray(tpose), self.props.neck_y, self.props.height)
+            raw = self.renderer.render_icon(center, radius, 256)
+        finally:
+            if restore is not None:
+                self.renderer.update_model_vertices(restore)
+        return icon.finish(raw, size)
+
+    def on_preview_icon(self):
+        picture = self._make_icon()
+        if picture is None:
+            self.model_info.configure(text="Import a model first.", text_color=YELLOW)
+            return
+        window = ctk.CTkToplevel(self)
+        window.title("Character icon")
+        window.geometry("300x340")
+        big = picture.resize((256, 256))
+        shown = ctk.CTkImage(light_image=big, dark_image=big, size=big.size)
+        label = ctk.CTkLabel(window, image=shown, text="")
+        label.image = shown
+        label.pack(padx=12, pady=12)
+        ctk.CTkLabel(window, text="Front view of the head, taken at install time. Move the model (placement) "
+                                  "or the height if the head is cut off.", wraplength=270, justify="left",
+                     text_color=GREY).pack(padx=12)
+        window.after(100, window.lift)
+
     def _model_pieces(self):
         """Connected-piece label of every vertex of the imported model (cached per model)."""
         if self._piece_labels is None and self.model:
@@ -1562,8 +1609,12 @@ class MainWindow(ctk.CTk):
                 icon.configure(text="")
                 self._status_text[name] = ""
             elif name in getattr(self, "_checked", set()):
-                icon.configure(text="✎", text_color="#60a5fa")
-                self._status_text[name] = "Adjusted by you."
+                if name in issues:
+                    icon.configure(text="✎", text_color="#60a5fa")
+                    self._status_text[name] = f"Adjusted by you, but still: {issues[name]}"
+                else:
+                    icon.configure(text="✓", text_color=GREEN)
+                    self._status_text[name] = "Adjusted by you: now matches the base figure's proportions."
             elif name in flagged:
                 icon.configure(text="⚠", text_color=YELLOW)
                 self._status_text[name] = "Guessed by the auto-fit, not found on the mesh: check it against the model."
@@ -1937,6 +1988,7 @@ class MainWindow(ctk.CTk):
         rig = self.rig
         texture = self.model.texture
         abilities = self.abilities
+        icon = self._make_icon() if self.icon_var.get() else None
         self._run(lambda: install(rig, texture, ident, game_dir, self.log, entity_cfg, abilities=abilities,
-                                    use_legacy_zip=bool(self.zip_var.get())), done)
+                                    use_legacy_zip=bool(self.zip_var.get()), icon=icon), done)
 
