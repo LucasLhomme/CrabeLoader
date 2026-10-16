@@ -310,14 +310,82 @@ end
 
 local gridUnlockPatchedClass = nil
 
--- Patches grid character selection to unlock all character tiles.
+-- Patches grid character selection to unlock all character tiles and unblock UI navigation.
 local function patchGridCharacter()
     ensureSetDataHooked()
     Crabe.VirtualReader._flushPending()
 
+    -- 1. Neutralize Disney's Onboard Tutorial (which intentionally disables Back/Escape in Win32 menus)
+    if rawget(_G, "UI_IsOnboardTutorialActive") ~= nil then
+        _G.UI_IsOnboardTutorialActive = function() return false end
+    end
+    if rawget(_G, "UI_ShouldOnboardTutorialRestrictInput") ~= nil then
+        _G.UI_ShouldOnboardTutorialRestrictInput = function() return false end
+    end
+
     local vrpc = rawget(_G, "VirtualReaderPC")
     if type(vrpc) == "table" and type(vrpc.IsOnboardTutorialActive) == "function" then
         vrpc.IsOnboardTutorialActive = function() return false end
+    end
+
+    local loadout = rawget(_G, "VirtualReaderPC_Loadout")
+    if type(loadout) == "table" then
+        if loadout.IsOnboardTutorialActive ~= nil then
+            loadout.IsOnboardTutorialActive = function() return false end
+        end
+        if type(loadout.ScreenDefinition) == "table" then
+            loadout.ScreenDefinition.doLuaInput = true
+        end
+        if type(loadout.HandleCloseButton) == "function" and not loadout._crabeNavPatched then
+            loadout._crabeNavPatched = true
+            local origClose = loadout.HandleCloseButton
+            loadout.HandleCloseButton = function(self)
+                if not self.hitContinue then
+                    if self.loadUGCHandle ~= nil then
+                        local h = UI.GetHandleFromName(self.loadUGCHandle, self.InstanceData.playerNum)
+                        if h ~= UI.INVALID_UI_HANDLE then
+                            self:CallScreenFunctionByScreenName(self.loadUGCHandle, self.InstanceData.playerNum, "SetScreenActive", true)
+                            self:CallScreenFunctionByScreenName(self.loadUGCHandle, self.InstanceData.playerNum, "SetFocus", true)
+                        end
+                    else
+                        local psHandle = UI.GetHandleFromName("PlaysetSelectMenu", 0)
+                        if psHandle ~= UI.INVALID_UI_HANDLE then
+                            self:CallScreenFunctionByScreenName("PlaysetSelectMenu", self.InstanceData.playerNum, "SetScreenActive", true)
+                            self:CallScreenFunctionByScreenName("PlaysetSelectMenu", self.InstanceData.playerNum, "SetFocus", true)
+                        else
+                            local plHandle = UI.GetHandleFromName("PlaysetListWin32", 0)
+                            if plHandle ~= UI.INVALID_UI_HANDLE then
+                                self:CallScreenFunctionByScreenName("PlaysetListWin32", self.InstanceData.playerNum, "SetScreenActive", true)
+                                self:CallScreenFunctionByScreenName("PlaysetListWin32", self.InstanceData.playerNum, "SetFocus", true)
+                            end
+                        end
+                    end
+                end
+                origClose(self)
+            end
+        end
+    end
+
+    local tabs = rawget(_G, "VirtualReaderPC_Tabs")
+    if type(tabs) == "table" and tabs.IsOnboardTutorialActive ~= nil then
+        tabs.IsOnboardTutorialActive = function() return false end
+    end
+
+    local plw = rawget(_G, "PlaysetListWin32")
+    if type(plw) == "table" and type(plw.GoBack) == "function" and not plw._crabeNavPatched then
+        plw._crabeNavPatched = true
+        plw.GoBack = function(self)
+            if self.cloudLoadStarted then return end
+            self:RequestExit()
+        end
+    end
+
+    local mb = rawget(_G, "MenuBase")
+    if type(mb) == "table" and type(mb.GoBack) == "function" and not mb._crabeNavPatched then
+        mb._crabeNavPatched = true
+        mb.GoBack = function(self)
+            self:RequestExit()
+        end
     end
 
     local cls = rawget(_G, "VirtualReaderPC_GridCharacter")
@@ -327,6 +395,8 @@ local function patchGridCharacter()
     if type(cls.DoSelectGridItem) ~= "function" or type(cls.GetGridButtonState) ~= "function" then
         return false
     end
+
+    cls.IsOnboardTutorialActive = function() return false end
 
     function cls:GetGridButtonState(info)
         local state = "available"
@@ -363,8 +433,9 @@ local function patchGridCharacter()
     return true
 end
 
--- Installs tick hook to continuously patch grid character unlock.
+-- Installs tick hook to continuously patch grid character unlock and UI navigation.
 function Crabe.VirtualReader.installGridUnlock()
     Game.onTick(patchGridCharacter)
     patchGridCharacter()
 end
+
