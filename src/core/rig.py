@@ -127,7 +127,7 @@ def vertex_tangents(verts, uvs, normals, faces):
 
 
 def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = True) -> RigResult:
+              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = False) -> RigResult:
     """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone.
 
     `weight_transfer`: when True, the rig is built both ways (bone heat and weights copied from the base body) and
@@ -152,8 +152,25 @@ def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender
     return robust if keep_robust else standard
 
 
+SHOULDER_SMOOTHING = 8
+"""Smoothing passes on the chest/arm transition after the bake (0 = off): rounds the square shoulder corners."""
+
+
+def shoulder_blend(weights: np.ndarray, names: list) -> np.ndarray:
+    """0-1 per vertex: how much it sits on the seam between the chest and the upper arm (1 = half and half)."""
+    col = lambda n: weights[:, names.index(n)] if n in names else np.zeros(len(weights))  # noqa: E731
+    out = np.zeros(len(weights))
+    for side, _ in SIDES:
+        arm = col(f"Shoulder_{side}")
+        torso = col(f"Clavicle_{side}") + col("Spine3") + col("Spine2")
+        total = arm + torso
+        share = arm / np.maximum(total, 1e-9)
+        out = np.maximum(out, np.clip(4 * share * (1 - share), 0, 1) * np.clip(total, 0, 1))
+    return out
+
+
 def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = True) -> RigResult:
+               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = False) -> RigResult:
     positions = model.vertices()
     faces = model.faces
     uvs = model.uvs
@@ -202,13 +219,21 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
         tpose = inflate(tpose, w, list(names), anchors, model.arm_scale, model.leg_scale, model.torso_scale)
         log(f"  thickness: arms x{model.arm_scale:.2f}, legs x{model.leg_scale:.2f}, torso x{model.torso_scale:.2f}")
     tnormals = sign * vertex_normals(wverts, wfaces[ok])[vweld]
-    baked = np.zeros_like(tpose)
-    bnormals = np.zeros_like(tpose)
-    for col, bone in enumerate(names):
-        m, t = bake[bone]
-        baked += w[:, col:col + 1] * (tpose @ m + t)
-        bnormals += w[:, col:col + 1] * (tnormals @ np.linalg.inv(m).T)
+    from src.core import dqs
+    transforms = [bake[bone] for bone in names]
+    if all(dqs.is_rigid(m) for m, _ in transforms):
+        # Rotations blended as dual quaternions: shoulders and hips keep their volume when the arms drop.
+        baked, bnormals = dqs.blend(tpose, tnormals, w, transforms)
+    else:  # stretched segments (proportions not preserved): linear blend
+        baked = np.zeros_like(tpose)
+        bnormals = np.zeros_like(tpose)
+        for col, (m, t) in enumerate(transforms):
+            baked += w[:, col:col + 1] * (tpose @ m + t)
+            bnormals += w[:, col:col + 1] * (tnormals @ np.linalg.inv(m).T)
     bnormals /= np.maximum(np.linalg.norm(bnormals, axis=1, keepdims=True), 1e-12)
+    strength = shoulder_blend(w, list(names))
+    if SHOULDER_SMOOTHING and strength.any():
+        baked = dqs.smooth_region(baked, vweld, wfaces[ok], strength, len(wverts), SHOULDER_SMOOTHING)
     tangents, tsign = vertex_tangents(baked, vuv, bnormals, vfaces)
 
     # Several canonical joints can share a palette bone on adapted skeletons (feet on the ball bone...): merge
@@ -219,7 +244,7 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
         merged[:, col] += w[:, j]
     if finger_weights:
         from src.core.fingers import add_fingers
-        merged, palette_cols = add_fingers(baked, merged, palette_cols, base)
+        merged, palette_cols = add_fingers(baked, merged, palette_cols, base, log)
     idx, wq = quantize_weights(merged, palette_cols)
     log(f"  {len(baked)} vertices, {len(vfaces)} triangles, weights: {method}")
     if len(vfaces) > HEAVY_TRIANGLES:
