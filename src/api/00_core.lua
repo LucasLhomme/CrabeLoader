@@ -7,13 +7,13 @@
 -- Authors: @LucasLhomme
 
 Crabe = Crabe or {}
-Crabe.version = "1.0.0"
+Crabe.version = "1.1.0"
 Crabe.versionMajor = 1
-Crabe.versionMinor = 0
+Crabe.versionMinor = 1
 Crabe.versionPatch = 0
-Crabe.version = Crabe.version or "1.0.0"
+Crabe.version = Crabe.version or "1.1.0"
 Crabe.versionMajor = Crabe.versionMajor or 1
-Crabe.versionMinor = Crabe.versionMinor or 0
+Crabe.versionMinor = Crabe.versionMinor or 1
 Crabe.versionPatch = Crabe.versionPatch or 0
 
 Crabe._lines = {}

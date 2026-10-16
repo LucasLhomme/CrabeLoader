@@ -1,4 +1,4 @@
-# CrabeLoader v1.0.0
+# CrabeLoader v1.1.0
 
 [![CI - Build & Test](https://github.com/LucasLhomme/CrabeLoader/actions/workflows/ci.yml/badge.svg)](https://github.com/LucasLhomme/CrabeLoader/actions/workflows/ci.yml)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
@@ -13,7 +13,7 @@ CrabeLoader is a native plugin, `CrabeLoader.asi`, started by a small bootstrap 
 
 ## Architecture Overview
 
-CrabeLoader v1.0.0 follows a strict **decoupled, layered architecture**:
+CrabeLoader v1.1.0 follows a strict **decoupled, layered architecture**:
 
 * **Core Platform (C++23):** Operates strictly as a neutral infrastructure layer. It contains **zero gameplay logic, zero cheats, and zero hardcoded menus**. Its responsibilities are limited to DirectX 11 hooks, Structured Exception Handling (SEH) crash guards, a multi-buffer UI command pipeline, and generic memory primitives.
 * **Modding Layer (Lua 5.1):** All gameplay mechanics, user interfaces (such as [CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)), camera modifications, custom characters, and skill trees execute as sandboxed Lua modules.
