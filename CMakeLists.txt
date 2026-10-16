@@ -67,6 +67,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # depend on a VC++ redistributable (debug or release) being installed there.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# Enable multi-processor compilation (/MP) for MSVC
+if(MSVC)
+    add_compile_options(/MP)
+endif()
+
 include(FetchContent)
 
 # Third-party dependencies
