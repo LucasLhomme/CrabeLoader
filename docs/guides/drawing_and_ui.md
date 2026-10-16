@@ -48,7 +48,7 @@ Crabe = Crabe or {}
 
 local showWindow = true
 local playerSpeed = 1.0
-local invulnerable = false
+local unkillable = false
 
 Crabe.Mod.register({
     name = "MyCustomHudMod",
@@ -67,21 +67,22 @@ Crabe.Mod.register({
             ImGui.Separator()
 
             -- Toggle Checkbox
-            local clicked, newInvul = ImGui.Checkbox("God Mode", invulnerable)
+            local clicked, newValue = ImGui.Checkbox("Cannot be defeated", unkillable)
             if clicked then
-                invulnerable = newInvul
-                Game.SetInvulnerable(invulnerable)
+                unkillable = newValue
+                Game.SetActorState(Game.GetAvatarHandle(), "Unkillable", unkillable)
             end
 
             -- Slider
             local changed, newSpeed = ImGui.SliderFloat("Move Speed", playerSpeed, 0.5, 3.0)
             if changed then
                 playerSpeed = newSpeed
+                Game.SetActorSpeedScale(Game.GetAvatarHandle(), playerSpeed)
             end
 
             -- Action Button
-            if ImGui.Button("Heal & Add 1,000 Sparks") then
-                Game.AddSparks(1000)
+            if ImGui.Button("Add 1,000 Sparks") then
+                Game.AddToInventory("Items.money", 1000)
             end
 
             ImGui.End()

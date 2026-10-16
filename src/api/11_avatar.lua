@@ -109,6 +109,43 @@ function Game.LevelUpAvatar(playerId, sku, route)
     return sku
 end
 
+-- Sets the current avatar to an absolute level from 0 to 20, down as well as up.
+-- Experience is untouched, so the next experience gained can level the avatar back up.
+function Game.SetAvatarLevel(level, playerId)
+    if type(Crabe._avatarSetLevel) ~= "function" then
+        error("Game.SetAvatarLevel: this loader has no avatar level native", 2)
+    end
+    level = tonumber(level)
+    if not level or level < 0 or level > 20 then
+        error("Game.SetAvatarLevel: level must be a number from 0 to 20", 2)
+    end
+
+    playerId = hostPlayer(playerId)
+    local sku = Game.GetAvatarSku(playerId)
+    if not sku then
+        error("Game.SetAvatarLevel: could not resolve the current avatar's sku_id", 2)
+    end
+    return Crabe._avatarSetLevel(playerId, sku, math.floor(level))
+end
+
+-- Returns the unspent skill points of the avatar, or nil when the skill tree data is unavailable.
+function Game.GetSkillPoints(playerId)
+    if type(UI_GetItemArgumentsForPlayer) ~= "function" then
+        error("Game.GetSkillPoints: UI_GetItemArgumentsForPlayer is not available in this Lua state", 2)
+    end
+    return tonumber(UI_GetItemArgumentsForPlayer("SkillTree_IN3", hostPlayer(playerId), "skillpoints"))
+end
+
+-- Refunds every skill the avatar bought, without the Sparks cost the skill tree screen charges.
+-- The game allows two refunds per figure, so call it sparingly.
+function Game.RespecAvatar(playerId)
+    if type(UI_GetItemArgumentsForPlayer) ~= "function" then
+        error("Game.RespecAvatar: UI_GetItemArgumentsForPlayer is not available in this Lua state", 2)
+    end
+    UI_GetItemArgumentsForPlayer("SkillTree_IN3", hostPlayer(playerId), "PerformRespec", 0)
+    return true
+end
+
 -- Sets current avatar progression level directly.
 function Game.SetAvatarProgression(level)
     level = tonumber(level)

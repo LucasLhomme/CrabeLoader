@@ -113,7 +113,23 @@ std::string InputHook::report() const
 
 } // namespace crabe::presentation
 
-// Lua binding for Crabe._keyDown; checks if a virtual key is currently held.
+namespace {
+
+// Reports whether a window of this process holds the foreground, so other applications' keystrokes are ignored.
+bool gameHasFocus()
+{
+    const HWND foreground = GetForegroundWindow();
+    if (!foreground)
+        return false;
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(foreground, &processId);
+    return processId == GetCurrentProcessId();
+}
+
+} // namespace
+
+// Lua binding for Crabe._keyDown; checks if a virtual key is currently held while the game has focus.
 int __cdecl crabe::input_natives::keyDown(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -125,7 +141,7 @@ int __cdecl crabe::input_natives::keyDown(void* L)
         return 1;
     }
 
-    const bool held = (GetAsyncKeyState(key) & 0x8000) != 0;
+    const bool held = gameHasFocus() && (GetAsyncKeyState(key) & 0x8000) != 0;
     lua.pushNumber(L, held ? 1.0 : 0.0);
     return 1;
 }
@@ -138,6 +154,8 @@ int __cdecl crabe::input_natives::padState(void* L)
 
     auto slot = static_cast<uint32_t>(lua.argToNumber(L, 1, 0.0));
     crabe::presentation::PadState pad = crabe::presentation::InputHook::get().pad(slot);
+    if (!gameHasFocus())
+        pad = crabe::presentation::PadState{};
 
     lua.pushBoolean(L, pad.connected);
     lua.pushNumber(L, pad.buttons);

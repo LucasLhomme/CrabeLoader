@@ -180,10 +180,22 @@ function Input.remapPadButton(from, to)
     return Crabe._inputRemap(Input.DEVICE.PAD, from, to)
 end
 
--- Clears remaps for specified device or all devices.
+-- Clears remaps for specified device, or for every device when none is given.
+-- The native reads a missing device as the keyboard, so "all" is spelled out one device at a time.
 function Input.clearRemap(device)
     if not Crabe._inputRemapClear then return end
-    Crabe._inputRemapClear(device)
+    if device ~= nil then
+        Crabe._inputRemapClear(device)
+        return
+    end
+    for _, each in pairs(Input.DEVICE) do Crabe._inputRemapClear(each) end
+end
+
+-- Returns what is currently taken from the game as { directInputCaptured, remapActive, capturedKeys }.
+function Input.status()
+    if not Crabe._inputStatus then return nil end
+    local directInputCaptured, remapActive, capturedKeys = Crabe._inputStatus()
+    return { directInputCaptured = directInputCaptured, remapActive = remapActive, capturedKeys = capturedKeys }
 end
 
 -- Returns mouse wheel notches read since the last tick.

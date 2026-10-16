@@ -78,6 +78,29 @@ function Game.ActorHasState(handle, state)
     return Crabe._actorTestState(handle, state)
 end
 
+-- Sets an actor's movement speed multiplier; 1.0 is normal speed and 20.0 the ceiling.
+-- Unlike the game clock it scales only this actor, so it can speed up the player alone.
+function Game.SetActorSpeedScale(handle, factor)
+    if type(Crabe._actorSetSpeedScale) ~= "function" then
+        error("Game.SetActorSpeedScale: this loader has no actor speed native", 2)
+    end
+    if type(handle) ~= "number" or type(factor) ~= "number" then
+        error("Game.SetActorSpeedScale: expected an actor handle and a factor as numbers", 2)
+    end
+    return Crabe._actorSetSpeedScale(handle, factor) == true
+end
+
+-- Returns an actor's movement speed multiplier, or nil when it cannot be read.
+function Game.ActorSpeedScale(handle)
+    if type(Crabe._actorSpeedScale) ~= "function" then
+        error("Game.ActorSpeedScale: this loader has no actor speed native", 2)
+    end
+    if type(handle) ~= "number" then
+        error("Game.ActorSpeedScale: expected an actor handle (number)", 2)
+    end
+    return Crabe._actorSpeedScale(handle)
+end
+
 -- Creates actors in front of the player camera, spread side by side.
 function Game.SpawnActorNearPlayer(parameters, count, distance, playerId)
     count = count or 1
@@ -209,6 +232,26 @@ function Game.LoadLevel(levelName, force)
     releaseFreeCam()
     Crabe.native("UI_LaunchLevel", "Game.LoadLevel")(levelName, "world", true, true, false)
     return levelName
+end
+
+-- Returns true when the Play Set has a saved game the engine can resume.
+function Game.CanContinuePlayset(playset)
+    if type(playset) ~= "string" or playset == "" then
+        error("Game.CanContinuePlayset: playset must be a non-empty string", 2)
+    end
+    return Crabe.native("UI_CanContinuePlayset", "Game.CanContinuePlayset")(playset) == true
+end
+
+-- Resumes the Play Set's saved game at the place it was saved, skipping the character screen.
+-- The engine picks that zone itself, whatever zone is given; unlike Game.LoadLevel it keeps the progress.
+function Game.ContinuePlayset(playset, zone)
+    if type(playset) ~= "string" or playset == "" then
+        error("Game.ContinuePlayset: playset must be a non-empty string", 2)
+    end
+
+    releaseFreeCam()
+    Crabe.native("UI_ContinuePlayset", "Game.ContinuePlayset")(playset, zone or "", true)
+    return playset
 end
 
 -- Launches front-end main menu screens.

@@ -11,6 +11,7 @@
 #include <string>
 #include <windows.h>
 
+#include "application/loader.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "presentation/dinput_hook.hpp"
 #include "presentation/input_remap.hpp"
@@ -61,6 +62,25 @@ int __cdecl crabe::input_natives::remapClear(void* L)
         default: remap.clearAll(); break;
     }
     return 0;
+}
+
+// Lua binding for Crabe._inputStatus; pushes whether DirectInput is captured, whether any remap is active
+// and how many virtual keys are captured.
+int __cdecl crabe::input_natives::inputStatus(void* L)
+{
+    crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+    if (!lua.hasReturnSupport()) return 0;
+
+    constexpr int kLastVirtualKey = 255;
+    int captured = 0;
+    for (int key = 1; key <= kLastVirtualKey; ++key) {
+        if (crabe::application::Loader::get().isKeyCaptured(key)) ++captured;
+    }
+
+    lua.pushBoolean(L, crabe::presentation::DirectInputHook::get().isCaptured());
+    lua.pushBoolean(L, crabe::presentation::InputRemap::get().isActive());
+    lua.pushNumber(L, static_cast<double>(captured));
+    return 3;
 }
 
 // Lua binding for Crabe._keyScanCode; converts a virtual key to a DirectInput scan code.

@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Declares the bridge to actor creation, state bits and area damage through Script VM natives.
+** Declares the bridge to actor creation, states, area damage and move speed (Script VM natives).
 ** Resolves engine entry points dynamically from script native wrappers without Rumpus editor.
 ** Knows no gameplay rules: it builds actors and flips states as requested, Lua decides.
 **
@@ -41,6 +41,14 @@ public:
     [[nodiscard]] bool damageRadius(const Position& center, float radius, float damage,
                                     const std::string& damageType, std::uint32_t exceptActorHandle);
 
+    // Sets the actor's cumulative movement speed multiplier to an absolute factor (1.0 is normal).
+    // Returns false if resolution fails, the actor has no movement data, or the call faults.
+    [[nodiscard]] bool setMoveSpeedScale(std::uint32_t actorHandle, float factor);
+
+    // Reads the actor's cumulative movement speed multiplier.
+    // Returns std::nullopt if the actor has no movement data or the read faults.
+    [[nodiscard]] std::optional<float> moveSpeedScale(std::uint32_t actorHandle);
+
 private:
     EngineActors() = default;
 
@@ -48,6 +56,7 @@ private:
     bool resolveCreate(std::uintptr_t base);
     bool resolveStates(std::uintptr_t base);
     bool resolveDamage(std::uintptr_t base);
+    bool resolveMovement(std::uintptr_t base);
     [[nodiscard]] const void* bitMask(const std::string& state) const;
     [[nodiscard]] void* stateData(std::uint32_t actorHandle) const;
 
@@ -64,6 +73,9 @@ private:
     std::uintptr_t _addState{0};
     std::uintptr_t _removeState{0};
     std::uintptr_t _filterAny{0};
+
+    std::uintptr_t _movementDataType{0};
+    std::uintptr_t _movementGetAgentData{0};
 
     std::uintptr_t _damageRadius{0};
     std::uintptr_t _actorFromHandle{0};

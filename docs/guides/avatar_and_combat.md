@@ -43,51 +43,91 @@ Use `Game.PlaceActor` to warp the player to exact coordinates while preserving f
 Game.PlaceActor(p1Handle, 150.0, 20.0, -85.5)
 ```
 
+### 2.3. Running Faster
+`Game.SetActorSpeedScale` scales how fast one actor moves, without touching the game clock, so enemies keep their pace. `1.0` is normal and `20.0` the ceiling; the engine rebuilds the value when a world loads, so set it again afterwards.
+
+```lua
+Game.SetActorSpeedScale(p1Handle, 3.0)
+print(Game.ActorSpeedScale(p1Handle))
+```
+
 ---
 
-## 3. Health, God Mode & Respawning
+## 3. Staying Alive, Defeat & Respawning
 
-CrabeLoader provides complete control over avatar mortality (`src/api/11b_avatar_state.lua`):
+Whether the avatar is alive, and getting it back after a defeat, live in `src/api/11b_avatar_state.lua`. Making it harder to kill goes through ActorStates (`Game.SetActorState`).
 
-### 3.1. Invulnerability (God Mode)
+### 3.1. Keeping the Hero Alive
+An ActorState is a named bit on an actor. With `Unkillable` the hero still takes damage, but its health stops at 1 instead of reaching 0, and hits no longer knock it down:
+
 ```lua
--- Make Player 1 invulnerable
-Game.SetInvulnerable(true)
+local hero = Game.GetAvatarHandle()
 
--- Turn off invulnerability
-Game.SetInvulnerable(false)
+Game.SetActorState(hero, "Unkillable", true)
+print(Game.ActorHasState(hero, "Unkillable"))   -- true
+
+Game.SetActorState(hero, "Unkillable", false)
 ```
+
+The engine drops the state when the avatar respawns, the hero is swapped or the zone changes, so a mod that wants it kept sets it again every half second. Other states that change how enemies treat the hero are `NotEnemyPerceivable` (enemies stop targeting it) and `EnemyUninterruptable` (a small flinch instead of a fall); the full list is in the game's `gamedb/core/bitmasks.lua`. Health itself is not an attribute you can write: a code cave on the engine's health update is how CrabeMenu's God Mode refills it.
 
 ### 3.2. Defeat & Respawn
 ```lua
--- Instantly defeats the avatar (triggers defeat animation & sound)
-Game.KillAvatar()
+if not Game.IsAvatarAlive() then
+    -- put the hero back at the last checkpoint
+    Game.CheckpointRespawn()
+end
 
--- Forces an immediate respawn at the nearest checkpoint
-Game.RespawnPlayer()
+-- the figure is flagged dead in the game's state
+print(Game.IsAvatarDead())
+
+-- clear that flag, or clear it and reload the character model
+Game.ClearDeathInfo()
+Game.ReviveAvatar()
 ```
+
+`Game.onDeath(playerId, fn)` calls a function when an avatar dies. All of these take an optional player id and default to the host player.
 
 ---
 
-## 4. Sparks, Level Progression & Economy
+## 4. Sparks, Level Progression & Skill Points
 
-Disney Infinity uses **Sparks** as currency (Orange Sparks for XP, Blue Sparks for Toy Box toys, Green Sparks for health):
+### 4.1. Sparks
+Sparks are the game's currency. Adding and removing go through the inventory; the game ignores a removal larger than the balance instead of clamping it to zero, so cap the amount yourself:
 
 ```lua
--- Query current spark balance
-local sparks = Game.GetSparks()
-print("Sparks:", sparks)
-
--- Add 5000 sparks
-Game.AddSparks(5000)
-
--- Set avatar level directly (Level 1 to 20)
-Game.SetLevel(20)
-
--- Query current level
-local currentLvl = Game.GetLevel()
-print("Current Level:", currentLvl)
+local balance = Game.GetSparks()
+Game.AddToInventory("Items.money", 5000)
+Game.RemoveFromInventory("Items.money", math.min(1000, balance))
 ```
+
+### 4.2. Level
+```lua
+print(Game.GetAvatarLevel())    -- level of the current hero, 0 to 20
+Game.LevelUpAvatar()            -- one level up
+Game.SetAvatarLevel(12)         -- absolute level, 0 to 20: down as well as up
+```
+
+`Game.SetAvatarLevel` calls the engine's own level-up code, so the hero's data is saved the way a normal level-up saves it. Experience is not touched: a hero set below the level its experience pays for levels back up at the next experience gained. It returns the level the game reports afterwards.
+
+### 4.3. Skill points
+Skill points are derived, never stored: points earned by the level (a table in the game's `avatarlevels.lua`, 75 in total at level 20) minus the cost of the skills bought. There is no setter, so the ways to have more are a higher level and a refund:
+
+```lua
+print(Game.GetSkillPoints())    -- unspent points
+Game.RespecAvatar()             -- refunds every bought skill, free; the game allows two per figure
+```
+
+Lowering a level below what the bought skills cost leaves the count negative; call `Game.RespecAvatar()` afterwards.
+
+To change the 75-point total itself, patch the table when the game loads it. The patch has to be a file read at startup (see [skilltrees.md](skilltrees.md)): `mods/<your mod>/skilltrees/SkillPointsEarned.patch` containing
+
+```lua
+local points = Data.SkillPointsEarned
+points[#points] = points[#points] + 25
+```
+
+gives a level 20 hero 100 points. It applies to every hero and takes effect the next time the game starts: a chunk patch registered later from Lua, with `Crabe.Hooks.patchChunk`, is too late because the table is read once at startup.
 
 ---
 
@@ -122,3 +162,21 @@ if px then
 end
 ```
 Victims calculate their own damage reactions, armor absorption, and debris physics automatically through the engine's combat rules.
+
+---
+
+## 6. Loading Worlds Without Losing a Play Set Save
+
+`Game.LoadLevel(zone)` behaves differently depending on where it is called from. Inside a loaded world the game saves the current world and then switches zone, so Play Set progress is kept. From the front end (or from a world of another Play Set) the engine starts the zone as a master zone without loading any save, which looks like a reset: story cutscenes replay and unlocked levels are locked again.
+
+To enter a Play Set zone with its save, resume the save first, then move to the zone:
+
+```lua
+if Game.CanContinuePlayset("InsideOut") then
+    Game.ContinuePlayset("InsideOut")
+    -- once the hero is standing in the Play Set (Game.GetAvatarHandle() answers, 3 to 4 seconds after load):
+    Game.LoadLevel("OUT_L2_S1")
+end
+```
+
+`Game.ContinuePlayset(playset, zone)` skips the character screen and resumes the save where it was saved: the engine picks that zone itself and ignores the one given. The Play Set of a zone is `Game.ZoneString("PlaysetProperties", zone)`. CrabeMenu's world travel follows exactly this sequence.
