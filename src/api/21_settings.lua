@@ -315,3 +315,209 @@ function Crabe.Settings.listOptions(screenName)
     end
     return out
 end
+
+-- Injects native video resolutions into SettingsVideo.
+local function installVideoResolutions(screen)
+    if not (Crabe._patchGetResolutionCount and Crabe._patchGetResolution) then return end
+    local count, activeIdx = Crabe._patchGetResolutionCount()
+    local widths, heights, texts = {}, {}, {}
+    for i = 1, count do
+        local w, h, label = Crabe._patchGetResolution(i)
+        widths[i] = w
+        heights[i] = h
+        texts[i] = label
+    end
+    screen.resolutionWidths = widths
+    screen.resolutionHeights = heights
+    screen.resolutionText = texts
+    screen.resolutionIndex = activeIdx
+    screen.oldResolutionIndex = activeIdx
+end
+
+-- Registers built-in video settings options for SettingsVideo.
+local function initVideoSettings()
+    if Crabe._patchGetResolutionCount then
+        Crabe.Settings.onBuild("SettingsVideo", installVideoResolutions)
+    end
+
+    if Crabe._patchGetFrameLimit and Crabe._patchSetFrameLimit and Crabe._patchGetFrameLimitChoicesCount then
+        local count = Crabe._patchGetFrameLimitChoicesCount()
+        local choices = {}
+        for i = 1, count do
+            choices[i] = Crabe._patchGetFrameLimitChoice(i)
+        end
+        Crabe.Settings.addOption("SettingsVideo", {
+            id = "crabeFrameLimit",
+            text = "Frame Rate Limit",
+            widgetType = "LR_Toggle",
+            choices = choices,
+            get = Crabe._patchGetFrameLimit,
+            set = Crabe._patchSetFrameLimit,
+        })
+    end
+
+    if Crabe._patchGetBorderless and Crabe._patchSetBorderless then
+        Crabe.Settings.addOption("SettingsVideo", {
+            id = "crabeWindowMode",
+            text = "Window Mode",
+            widgetType = "LR_Toggle",
+            choices = { "Windowed", "Borderless" },
+            get = Crabe._patchGetBorderless,
+            set = Crabe._patchSetBorderless,
+        })
+    end
+end
+
+local currentExtrasScreen = nil
+local currentExtrasPage = "keyboard"
+local capturingRow = nil
+
+-- Builds the list of action rows for SettingsExtras from native keybind data.
+local function populateExtras(screen, page)
+    local count = Crabe._patchKeybindGetActionCount(page) or 0
+    local list = {}
+    for i = 1, count do
+        local id, label, display = Crabe._patchKeybindGetAction(page, i)
+        list[i] = {
+            id = id,
+            text = label,
+            widgetType = "Button",
+            buttonState = "",
+            enumValue = display,
+        }
+    end
+    local resetLabel = (page == "keyboard") and "Reset keyboard and mouse" or "Reset controller"
+    list[#list + 1] = {
+        id = "crabe_bind_reset",
+        text = resetLabel,
+        widgetType = "Button",
+        buttonState = "",
+    }
+    screen.listData = list
+    return list
+end
+
+-- Opens the SettingsExtras screen configured for keyboard or controller rebinding.
+local function openKeybindsExtras(menu, page)
+    if not (require and _G) then return end
+    pcall(require, "SettingsExtras")
+    local cls = rawget(_G, "SettingsExtras")
+    if cls and not cls.__crabeKeybindsHooked then
+        cls.__crabeKeybindsHooked = true
+        cls.GetHeaderLabel = function(self)
+            return (currentExtrasPage == "keyboard") and "Keyboard and mouse bindings" or "Controller bindings"
+        end
+        cls.BuildList = function(self)
+            currentExtrasScreen = self
+            return populateExtras(self, currentExtrasPage)
+        end
+        cls.SelectItem = function(self, opt, ...)
+            local idx = tonumber(opt)
+            if not idx or not self.listData then return end
+            if idx == #self.listData then
+                Crabe._patchKeybindResetPage(currentExtrasPage)
+                populateExtras(self, currentExtrasPage)
+                if self.CallFlashFunction then
+                    self:CallFlashFunction("_root.SetListData", self.listData)
+                end
+                return
+            end
+            local prompt = Crabe._patchKeybindSelectAction(currentExtrasPage, idx)
+            if prompt then
+                capturingRow = idx
+                self.listData[idx].enumValue = prompt
+                if self.CallFlashFunction then
+                    self:CallFlashFunction("_root.SetItemData", idx - 1, self.listData[idx])
+                end
+            end
+        end
+        cls.MovieLoaded = function(self, ...)
+            self:SetButtonLegend("Btn_Legend_Select,Btn_Legend_Back")
+        end
+        cls.onExit = function(self, ...)
+            if Crabe._patchKeybindCancelCapture then
+                Crabe._patchKeybindCancelCapture()
+            end
+            capturingRow = nil
+            currentExtrasScreen = nil
+        end
+    end
+
+    currentExtrasPage = page
+    if menu and menu.AddScreen then
+        menu:AddScreen({
+            screenName = "SettingsExtras",
+            playerNum = menu.InstanceData and menu.InstanceData.playerNum,
+        })
+        menu:SetFocus(false)
+    end
+end
+
+-- Injects keyboard and controller bindings options into SettingsMenu.
+local function installKeybindsMenu(menu)
+    local worldFn = rawget(_G, "UI_CurrentWorldName")
+    if worldFn and worldFn() ~= "frontend" then return end
+    if menu.ClassName == "InGameSettingsMenu" then return end
+    if not menu.listData then return end
+    for _, item in ipairs(menu.listData) do
+        if item.id == "Crabe_KeyboardBindings" then return end
+    end
+    local pos = #menu.listData + 1
+    for i, item in ipairs(menu.listData) do
+        if item.id == "Scn_Controls_Options" then pos = i + 1 break end
+    end
+    table.insert(menu.listData, pos, {
+        id = "Crabe_KeyboardBindings",
+        text = "Keyboard and mouse bindings",
+        widgetType = "Button",
+        buttonState = "",
+        icon = "MenuIcon_Controls",
+    })
+    table.insert(menu.listData, pos + 1, {
+        id = "Crabe_PadBindings",
+        text = "Controller bindings",
+        widgetType = "Button",
+        buttonState = "",
+        icon = "MenuIcon_Controls",
+    })
+    if not rawget(menu, "__crabeKeybindHooked") then
+        rawset(menu, "__crabeKeybindHooked", true)
+        local orig = menu.SelectItem
+        menu.SelectItem = function(self, opt, ...)
+            local data = self.listData and self.listData[self.selectedIndex]
+            if data and data.id == "Crabe_KeyboardBindings" then
+                openKeybindsExtras(self, "keyboard")
+                return
+            elseif data and data.id == "Crabe_PadBindings" then
+                openKeybindsExtras(self, "pad")
+                return
+            end
+            if orig then return orig(self, opt, ...) end
+        end
+    end
+end
+
+-- Initializes built-in native key and controller bindings menu hooks.
+local function initKeybindSettings()
+    if not Crabe._patchKeybindGetActionCount then return end
+    Crabe.Settings.onBuild("SettingsMenu", installKeybindsMenu)
+
+    if Game and Game.onTick then
+        Game.onTick(function()
+            if not capturingRow or not currentExtrasScreen then return end
+            local finished, idx, display = Crabe._patchKeybindPoll()
+            if finished ~= nil then
+                if currentExtrasScreen.listData and currentExtrasScreen.listData[idx] then
+                    currentExtrasScreen.listData[idx].enumValue = display
+                    if currentExtrasScreen.CallFlashFunction then
+                        currentExtrasScreen:CallFlashFunction("_root.SetItemData", idx - 1, currentExtrasScreen.listData[idx])
+                    end
+                end
+                capturingRow = nil
+            end
+        end)
+    end
+end
+
+initVideoSettings()
+initKeybindSettings()

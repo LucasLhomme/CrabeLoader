@@ -64,7 +64,11 @@ public:
 
         m_readEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         m_writeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        return m_readEvent && m_writeEvent;
+        if (!m_readEvent || !m_writeEvent) {
+            Close();
+            return false;
+        }
+        return true;
     }
 
     void Close() override {

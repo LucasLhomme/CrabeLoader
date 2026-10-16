@@ -82,6 +82,7 @@ namespace crabe::multiplayer::application {
         std::atomic<bool> _initialized{ false };
         std::atomic<bool> _workerStop{ false };
         std::thread _workerThread;
+        std::thread _natThread;
     };
 
 } // namespace crabe::multiplayer::application

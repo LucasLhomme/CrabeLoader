@@ -52,10 +52,13 @@ namespace crabe::multiplayer::application {
         _workerStop = false;
         _workerThread = std::thread(&MultiplayerManager::patchWorkerThread, this);
 
+        if (_natThread.joinable()) {
+            _natThread.join();
+        }
         if (_natService) {
-            std::thread([this]() {
+            _natThread = std::thread([this]() {
                 (void)_natService->forwardPort(3074, "UDP", "Disney Infinity 3.0 P2P");
-            }).detach();
+            });
         }
 
         if (_steamService) {
@@ -75,6 +78,10 @@ namespace crabe::multiplayer::application {
         _workerStop = true;
         if (_workerThread.joinable()) {
             _workerThread.join();
+        }
+
+        if (_natThread.joinable()) {
+            _natThread.join();
         }
 
         if (_steamService) {

@@ -212,11 +212,27 @@ suite.cases[#suite.cases + 1] = {
 }
 
 suite.cases[#suite.cases + 1] = {
-    "the shipped window_mode mod registers its toggle through this API",
+    "a Toggle option registers and reacts to set through this API",
     function(state)
-        local chunk = assert(loadfile(harness.path("mods", "window_mode.lua")))
-        setfenv(chunk, state)
-        assertTrue(pcall(chunk), "the example mod must load cleanly")
+        state.Crabe.Settings.addOption("SettingsVideo", {
+            id = "crabeWindowMode",
+            text = "Borderless Window",
+            widgetType = "Toggle",
+            get = function()
+                return state.Crabe.GetWindowMode() == "borderless"
+            end,
+            set = function(self, id, value)
+                local borderless
+                if value == 1 or value == true or value == "1" then
+                    borderless = true
+                elseif value == 0 or value == false or value == "0" then
+                    borderless = false
+                else
+                    borderless = (state.Crabe.GetWindowMode() ~= "borderless")
+                end
+                state.Crabe.SetWindowMode(borderless and "borderless" or "windowed")
+            end,
+        })
 
         local options = state.Crabe.Settings.listOptions("SettingsVideo")
         assertEquals(#options, 1, "exactly one option registered")
