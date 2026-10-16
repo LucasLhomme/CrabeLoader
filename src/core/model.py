@@ -50,6 +50,9 @@ class CharacterModel:
     """Per-vertex flag: accessories (cape, weapon...) left out of the measurements and skinned to follow the torso."""
     removed: np.ndarray | None = None
     """Per-vertex flag: parts left out of the model altogether."""
+    arm_scale: float = 1.0
+    """Arm thickness around the bone axis (1 = as modelled), applied when the rig is built."""
+    leg_scale: float = 1.0
     look: float = 0.0
     """Game-look filter strength (0 = original texture)."""
     match: float = 0.0

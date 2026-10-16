@@ -197,6 +197,10 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     bake = bake_transforms(anchors, base.joints)
     w = weights[vweld]
     tpose = wverts[vweld]
+    if abs(model.arm_scale - 1) > 1e-3 or abs(model.leg_scale - 1) > 1e-3:
+        from src.core.limbs import inflate
+        tpose = inflate(tpose, w, list(names), anchors, model.arm_scale, model.leg_scale)
+        log(f"  limbs thickened: arms x{model.arm_scale:.2f}, legs x{model.leg_scale:.2f}")
     tnormals = sign * vertex_normals(wverts, wfaces[ok])[vweld]
     baked = np.zeros_like(tpose)
     bnormals = np.zeros_like(tpose)

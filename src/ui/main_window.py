@@ -510,8 +510,59 @@ class MainWindow(ctk.CTk):
         legend = ("• Green skeleton: Fitted to your 3D model (arms, legs, head).\n"
                   "• Cyan skeleton: Base character reference (on the ghost figure).\n"
                   "• Note: The builder automatically retargets your model to the game's bind pose.")
+        limbs = ctk.CTkFrame(tab, fg_color="transparent")
+        limbs.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        limbs.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(limbs, text="Limb thickness (Disney Infinity figures have thick arms; thin limbs get pinched "
+                                 "in game). Applied when the rig is built.", wraplength=330, justify="left",
+                     text_color=GREY, font=ctk.CTkFont(size=11)).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.limb_sliders = {}
+        for i, (key, text) in enumerate((("arm_scale", "Arms"), ("leg_scale", "Legs"))):
+            label = ctk.CTkLabel(limbs, text=f"{text}: ×1.00", font=ctk.CTkFont(size=12))
+            label.grid(row=1 + 2 * i, column=0, sticky="w")
+            slider = ctk.CTkSlider(limbs, from_=0.8, to=1.8, command=lambda v, k=key: self.on_limb(k, v))
+            slider.set(1.0)
+            slider.grid(row=2 + 2 * i, column=0, sticky="ew")
+            self._value_entry(limbs, 1 + 2 * i, slider, lambda v, k=key: self.on_limb(k, v), "{:.2f}")
+            self.limb_sliders[key] = (slider, label, text)
+        self.limb_hint = ctk.CTkLabel(limbs, text="", font=ctk.CTkFont(size=10), text_color=GREY, wraplength=330,
+                                      justify="left")
+        self.limb_hint.grid(row=5, column=0, sticky="w")
+        ctk.CTkButton(limbs, text="Match the base", width=110, height=24, fg_color="#27272a", hover_color="#3f3f46",
+                      command=self.on_limb_match).grid(row=5, column=1, sticky="e")
         ctk.CTkLabel(tab, text=legend, text_color=GREY, wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(
-            row=5, column=0, sticky="w", pady=4)
+            row=6, column=0, sticky="w", pady=4)
+
+    def on_limb(self, key, value):
+        value = float(value)
+        slider, label, text = self.limb_sliders[key]
+        label.configure(text=f"{text}: ×{value:.2f}")
+        self._sync_entry(slider)
+        if not self.model:
+            return
+        setattr(self.model, key, value)
+        if self.rig is not None and self.anchors is not None:
+            self._geometry_changed()
+            self.log("Limb thickness changed: build the rig again to see it.")
+
+    def _limb_suggestion(self):
+        from src.core.limbs import suggest
+        parts = getattr(self, "base_parts", None) or []
+        if not (self.model and self.base and self.anchors and parts):
+            return None
+        base_verts = np.concatenate([p[0] for p in parts])
+        return suggest(self.model.vertices(), self.anchors, base_verts, self.base.joints)
+
+    def on_limb_match(self):
+        values = self._limb_suggestion()
+        if values is None:
+            self.limb_hint.configure(text="Import a model and pick a base first.")
+            return
+        for key, value in zip(("arm_scale", "leg_scale"), values):
+            self.limb_sliders[key][0].set(value)
+            self.on_limb(key, value)
+        self.limb_hint.configure(text=f"Base thickness: arms ×{values[0]:.2f}, legs ×{values[1]:.2f} "
+                                      "(capped at ×1.60; baggy clothes count as thick).")
 
     # -------------------------------------------------------- abilities & moveset
     def _build_abilities_tab(self, tab):
@@ -1586,6 +1637,11 @@ class MainWindow(ctk.CTk):
         placement = auto_placement(source, self.height_slider.get())
         self.model = CharacterModel(source, placement, look=float(self.look_slider.get()),
                                match=float(self.match_slider.get()), match_target=self._base_brightness())
+        for key, (slider, label, text) in self.limb_sliders.items():  # a new model starts as modelled
+            slider.set(1.0)
+            label.configure(text=f"{text}: ×1.00")
+            self._sync_entry(slider)
+        self.limb_hint.configure(text="")
         self.model_info.configure(
             text=f"{Path(path).name}\n{len(source.vertices)} vertices, {len(source.faces)} triangles, "
                  f"texture {source.texture.width}×{source.texture.height}\n"

@@ -134,6 +134,12 @@ pire image, zones touchées), `report.json` et des images de la pire image des a
 étirées en rouge). Les clips sont les mouvements procéduraux de Creator, pas les animations d'origine du jeu. Les doigts
 suivent la main dans ces clips (avant, ils restaient en arrière et déchiraient les mains à l'écran).
 
+**Épaisseur des membres.** Onglet Squelette, curseurs « Arms » et « Legs » (×0,8 à ×1,8). Les personnages Disney
+Infinity ont des bras épais ; un modèle aux membres fins paraît « bâton » en jeu, et le moteur pince encore plus les
+membres fins quand ils se tordent. Le bouton « Match the base » propose l'épaisseur de la base (plafonnée à ×1,6 ; un
+pantalon ample compte comme épais). Les membres gonflent autour de leur axe, sans changer de longueur, en fondu avec les
+poids : épaules et hanches restent lisses. Appliqué à la construction du rig.
+
 **Pastilles du squelette.** ✓ vert = proche des proportions de la base (y compris après un réglage manuel) ; ✎ bleu =
 réglé à la main mais encore éloigné de la base ; ⚠ = estimé ou trop différent.
 
