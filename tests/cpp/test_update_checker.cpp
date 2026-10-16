@@ -208,11 +208,31 @@ void testConfigKey()
     require(generated->getIgnoredKeys().empty(), "the generated default file contains no unknown key");
 }
 
+/// Verifies the [startup] section of crabe.toml: logos kept by default, skippable, no stray key.
+void testStartupKey()
+{
+    const auto defaults = domain::Config::parse("", "crabe.toml");
+    require(defaults.has_value() && !defaults->skipStartupLogos(), "the startup logos are kept by default");
+
+    const auto on = domain::Config::parse("[startup]\nskipLogos = true\n", "crabe.toml");
+    require(on.has_value() && on->skipStartupLogos(), "skipLogos = true must skip them");
+    require(on->getIgnoredKeys().empty(), "[startup].skipLogos is a known key");
+
+    const auto typo = domain::Config::parse("[startup]\nskiplogos = true\n", "crabe.toml");
+    require(typo.has_value() && !typo->skipStartupLogos(), "a typo must not skip the logos");
+    require(typo->getIgnoredKeys().size() == 1, "a typo must be reported as an ignored key");
+
+    const auto generated = domain::Config::parse(domain::buildDefaultConfigText(), "crabe.toml");
+    require(generated.has_value() && !generated->skipStartupLogos(), "the generated file keeps the logos");
+    require(generated->getIgnoredKeys().empty(), "the generated file has no unknown [startup] key");
+}
+
 } // namespace
 
 int main()
 {
     testParseAndCompare();
+    testStartupKey();
     testCheckerFlow();
     testConfigKey();
     std::cout << "[PASS] test_update_checker" << std::endl;
