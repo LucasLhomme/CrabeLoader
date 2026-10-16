@@ -8,8 +8,13 @@ Actions crée alors l'étiquette et la release.
 ## [Non publié]
 ### Ajouté
 - Aperçu en direct de l'épaisseur des membres dans la vue 3D, avant la construction du rig.
+- Aperçu en direct des filtres de texture (Game look, luminosité) sur le modèle et dans la fenêtre de l'atlas, avec
+  une case « Show the original » pour comparer.
+### Modifié
+- Filtre de texture environ 2,5× plus rapide en pleine résolution (filtre guidé rapide), calculé en arrière-plan.
 ### Corrigé
 - Texte de suggestion de l'épaisseur caché derrière le bouton « Match the base ».
+- Fausse alerte « Mostly black » dans l'aperçu de l'atlas : les statistiques ne comptent plus les zones vides.
 
 ## [0.3.0] - 2026-10-16
 ### Ajouté

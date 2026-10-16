@@ -35,3 +35,13 @@ def test_match_moves_brightness_towards_target():
     assert abs(gamelook.mean_luma(out) - 0.5) < 0.03
     half = gamelook.apply(img, 0.0, None, 0.5, 0.5)
     assert gamelook.mean_luma(img) < gamelook.mean_luma(half) < gamelook.mean_luma(out)
+
+
+def test_texture_preview_is_small_and_filtered():
+    from src.core.model import CharacterModel, SourceModel
+    tex = Image.fromarray(np.full((1024, 1024, 3), 60, np.uint8))
+    src = SourceModel("t", np.zeros((3, 3)), np.array([[0, 1, 2]]), np.array([[0, 0], [1, 0], [0, 1]], float), tex, 1.0)
+    model = CharacterModel(src, look=1.0)
+    small = model.texture_preview(256)
+    assert small.size == (256, 256)
+    assert np.asarray(small)[10, 10].sum() > 180  # brighter than the original 60/60/60

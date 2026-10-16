@@ -7,6 +7,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 import numpy as np
+from PIL import Image
 
 from src.core.base_character import BaseCharacter
 from src.core.base_pack import has_pack, preview_texture, status
@@ -1221,34 +1222,59 @@ class MainWindow(ctk.CTk):
 
     # -------------------------------------------------------------- model
     def on_preview_texture(self):
-        """Show the texture the game will receive (after atlas packing) with a few sanity checks."""
+        """Show the texture the game will receive (after atlas packing, with the filters), updated live."""
         if not self.model:
             self.model_info.configure(text="Import a model first.", text_color=YELLOW)
             return
-        import numpy as np
-        image = self.model.source.texture.convert("RGB")
-        pixels = np.asarray(image, dtype=np.float32)
-        luminance = pixels @ np.array([0.299, 0.587, 0.114], np.float32)
-        dark = float((luminance < 12).mean())
-        notes = [f"{image.width}×{image.height} px, average brightness {luminance.mean():.0f}/255, "
-                 f"{dark * 100:.0f}% of pixels almost black."]
-        if dark > 0.6 or luminance.mean() < 25:
-            notes.append("⚠ Mostly black: the model probably had no colour texture (or it was lost on import). "
-                         "It will look black in game too.")
-        if image.width != image.height:
-            notes.append("Not square: the game packs it to a power of two.")
+        atlas = getattr(self, "_atlas", None)
+        if atlas and atlas["window"].winfo_exists():
+            atlas["window"].lift()
+            self._refresh_atlas()
+            return
         window = ctk.CTkToplevel(self)
         window.title("Texture atlas")
-        window.geometry("700x780")
+        window.geometry("700x820")
+        label = ctk.CTkLabel(window, text="")
+        label.pack(padx=12, pady=(12, 4))
+        original = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(window, text="Show the original (before the filters)", variable=original,
+                        command=self._refresh_atlas, font=ctk.CTkFont(size=11)).pack(padx=12, anchor="w")
+        notes = ctk.CTkLabel(window, text="", wraplength=650, justify="left")
+        notes.pack(padx=12, pady=(4, 8))
+        self._atlas = {"window": window, "label": label, "notes": notes, "original": original}
+        self._refresh_atlas()
+        window.after(100, window.lift)
+
+    def _refresh_atlas(self):
+        """Redraw the atlas window (if open) with the texture currently on the model, plus sanity checks."""
+        atlas = getattr(self, "_atlas", None)
+        if not atlas or not self.model or not atlas["window"].winfo_exists():
+            return
+        if atlas["original"].get():
+            image = self.model.source.texture.convert("RGB")
+        else:
+            image = self._view_texture().convert("RGB")
+        source = self.model.source.texture
+        mask = self.model.coverage()
+        if mask.shape != (image.height, image.width):
+            mask = np.asarray(Image.fromarray(mask).resize(image.size, Image.NEAREST))
+        luminance = np.asarray(image, dtype=np.float32) @ np.array([0.299, 0.587, 0.114], np.float32)
+        used = luminance[mask] if mask.any() else luminance.ravel()
+        dark = float((used < 12).mean())
+        notes = [f"{source.width}×{source.height} px, {100 * mask.mean():.0f}% of the atlas used by the model. "
+                 f"Used part: average brightness {used.mean():.0f}/255, {dark * 100:.0f}% almost black."]
+        if dark > 0.6 or used.mean() < 25:
+            notes.append("⚠ Mostly black: the model probably had no colour texture (or it was lost on import). "
+                         "It will look black in game too.")
+        if source.width != source.height:
+            notes.append("Not square: the game packs it to a power of two.")
         shown = image.copy()
         shown.thumbnail((660, 660))
         picture = ctk.CTkImage(light_image=shown, dark_image=shown, size=shown.size)
-        label = ctk.CTkLabel(window, image=picture, text="")
-        label.image = picture
-        label.pack(padx=12, pady=12)
-        ctk.CTkLabel(window, text="\n".join(notes), wraplength=650, justify="left",
-                     text_color=RED if len(notes) > 1 and notes[1].startswith("⚠") else GREY).pack(padx=12)
-        window.after(100, window.lift)
+        atlas["label"].configure(image=picture)
+        atlas["label"].image = picture
+        atlas["notes"].configure(text="\n".join(notes),
+                                 text_color=RED if len(notes) > 1 and notes[1].startswith("⚠") else GREY)
 
     def _make_icon(self, size: int = 128):
         """A picture of the head, taken from the model as it will be in game (T-pose, current texture)."""
@@ -1323,11 +1349,13 @@ class MainWindow(ctk.CTk):
         return mask if mask.any() else None
 
     def _on_look_drag(self, value):
+        self._schedule_texture_preview()
         self._sync_entry(self.look_slider)
         self.look_label.configure(text=f"Game look (texture filter): {float(value):.2f}. Softens baked shading and "
                                        "noise, lifts shadows, boosts colours like the base characters. 0 = original.")
 
     def _on_match_drag(self, value):
+        self._schedule_texture_preview()
         self._sync_entry(self.match_slider)
         self.match_label.configure(text=f"Match the base figure's brightness: {float(value):.2f} "
                                         "(0 = off, 1 = same average brightness as the base texture).")
@@ -1335,13 +1363,67 @@ class MainWindow(ctk.CTk):
     def _base_brightness(self):
         from src.core.gamelook import base_luma
         parts = getattr(self, "base_parts", None) or []
+        cached = getattr(self, "_base_luma_cache", None)
+        if cached and cached[0] is parts:
+            return cached[1]
         seen, images = set(), []
         for part in parts:
             tex = part[3]
             if tex is not None and id(tex) not in seen:
                 seen.add(id(tex))
                 images.append(tex)
-        return base_luma(images)
+        value = base_luma(images)
+        self._base_luma_cache = (parts, value)
+        return value
+
+    def _view_texture(self):
+        """Texture for the viewport without blocking: the last filtered one, else the original until it is ready."""
+        return getattr(self, "_shown_texture", None) or self.model.source.texture
+
+    def _sync_filter_settings(self):
+        """Copy the two texture sliders onto the model (the texture is recomputed from them)."""
+        self.model.look = float(self.look_slider.get())
+        self.model.match = float(self.match_slider.get())
+        self.model.match_target = self._base_brightness()
+
+    def _schedule_texture_preview(self):
+        """While a texture slider moves: a quick 512 px version on the model and in the atlas, at most every 80 ms."""
+        if not getattr(self, "model", None):
+            return
+        if getattr(self, "_tex_job", None):
+            self.after_cancel(self._tex_job)
+        self._tex_job = self.after(80, lambda: self._update_texture(full=False))
+
+    def _update_texture(self, full: bool):
+        """Recompute the filtered texture in the background; only the latest request is shown."""
+        self._tex_job = None
+        if not self.model:
+            return
+        self._sync_filter_settings()
+        self._tex_generation = getattr(self, "_tex_generation", 0) + 1
+        generation, model = self._tex_generation, self.model
+
+        def work():
+            try:
+                image = model.texture if full else model.texture_preview(512)
+            except Exception as exc:  # noqa: BLE001 - shown in the log, the slider keeps working
+                errorlog.info(traceback.format_exc())
+                self._events.put(lambda exc=exc: self.log(f"Texture filter failed: {exc}"))
+                return
+            self._events.put(lambda: self._show_texture(image, generation, full))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_texture(self, image, generation, full):
+        if generation != getattr(self, "_tex_generation", 0) or self.model is None:
+            return  # a newer slider position is on its way
+        self._shown_texture = image
+        self.renderer.set_model_texture(image)
+        self.renderer.request_render()
+        self._refresh_atlas()
+        if full:
+            look, match = self.model.look, self.model.match
+            self.log(f"Texture updated (game look {look:.2f}, brightness match {match:.2f})."
+                     if look > 0 or match > 0 else "Texture filters off: original texture.")
 
     def on_match(self, value):
         value = float(value)
@@ -1349,33 +1431,24 @@ class MainWindow(ctk.CTk):
         self.settings.update(match_brightness=value)
         if not self.model:
             return
-        self.model.match = value
-        self.model.match_target = self._base_brightness()
-        if value > 0 and self.model.match_target is None:
+        if value > 0 and self._base_brightness() is None:
             self.log("Pick a base first: its texture gives the target brightness.")
-        self.on_look(self.look_slider.get())
+        self._commit_texture()
 
     def on_look(self, value):
         """Apply the game-look filter to the texture shown and exported."""
         value = float(value)
         self._on_look_drag(value)
         self.settings.update(game_look=value)
-        if not self.model:
-            return
-        self.model.look = value
+        if self.model:
+            self._commit_texture()
 
-        def job():
-            self.model.texture  # computed (and cached) off the UI thread
-        def done(_result, error):
-            self._set_busy(False)
-            if error:
-                return self._failed(error)
-            if self.rig is not None:
-                self.renderer.set_model(self.rig.tpose, self.rig.faces, self.rig.uvs, self.model.texture)
-            else:
-                self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
-            self.log(f"Game look {value:.2f}: texture updated" if value > 0 else "Game look off: original texture.")
-        self._run(job, done)
+    def _commit_texture(self):
+        """Slider released or value typed: the full-resolution texture (the one exported), in the background."""
+        if getattr(self, "_tex_job", None):
+            self.after_cancel(self._tex_job)
+            self._tex_job = None
+        self._update_texture(full=True)
 
     def on_acc_limit(self, value, detect=True):
         self.acc_limit_label.configure(text=f"Depth behind the body to count as accessory: {float(value):.2f} × height")
@@ -1405,7 +1478,7 @@ class MainWindow(ctk.CTk):
         if kind == "remove":
             self.piece_overrides = []
             self._refresh_piece_list()
-            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
+            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self._view_texture())
         self._show_piece_selection()
         self._refit()
         self.log(f"{int(mask.sum())} vertices {'ignored for the measurements and following the torso' if kind == 'ignore' else 'removed from the model'}. Build the rig again to apply it.")
@@ -1423,7 +1496,7 @@ class MainWindow(ctk.CTk):
 
     def _restore_accessories(self, attr):
         setattr(self.model, attr, None)
-        self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self._view_texture())
         self._refresh_accessory_list()
         self._refit()
 
@@ -1662,7 +1735,10 @@ class MainWindow(ctk.CTk):
                  f"{', stood up (Z-up file)' if placement.upright_fix else ''}"
                  + ("".join(f"\n⚠ {line}" for line in source.report[:6]) if source.report else ""),
             text_color=YELLOW if source.report else GREEN)
-        self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self._shown_texture = None
+        self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self._view_texture())
+        if self.model.look > 0 or self.model.match > 0:
+            self._commit_texture()
         self.piece_overrides, self._piece_labels, self._selected_pieces = [], None, set()
         self._zone_mask = None
         self.acc_label.configure(text="")
@@ -1775,7 +1851,7 @@ class MainWindow(ctk.CTk):
         self.quality_label.configure(text="Deformation: build the rig to measure it.", text_color=GREY)
         self.anchors = build_anchors(self.props, self.base)
         if showing_rig:
-            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
+            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self._view_texture())
         else:
             self.renderer.update_model_vertices(self._display_vertices())
         self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
@@ -1801,7 +1877,7 @@ class MainWindow(ctk.CTk):
         self._sync_entry(slider)
         if self.rig is not None:  # the view shows the rig's vertex set: go back to the model first
             self.rig = None
-            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
+            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self._view_texture())
         self.renderer.update_model_vertices(self._display_vertices())
         self.renderer.request_render()
         if getattr(self, "_place_job", None):
@@ -2015,7 +2091,7 @@ class MainWindow(ctk.CTk):
             self.rig = rig
             self.timeline.set_rig_ready(True)
             # The rig has its own vertex set (seams welded, UV splits rebuilt): show that mesh from now on.
-            self.renderer.set_model(rig.tpose, rig.faces, rig.uvs, self.model.texture)
+            self.renderer.set_model(rig.tpose, rig.faces, rig.uvs, self._view_texture())
             self.log(f"Rig ready ({rig.method} weights). Try the “In-game pose”, “Arms up” and “Walk” previews.")
             self.pose_buttons.configure(state="normal")
             self.pose_buttons.set("In-game pose")
@@ -2099,9 +2175,9 @@ class MainWindow(ctk.CTk):
             else:
                 self.log("Some checks failed: the entity may not show up in game.")
         rig = self.rig
-        texture = self.model.texture
+        model = self.model
         abilities = self.abilities
         icon = self._make_icon() if self.icon_var.get() else None
-        self._run(lambda: install(rig, texture, ident, game_dir, self.log, entity_cfg, abilities=abilities,
+        self._run(lambda: install(rig, model.texture, ident, game_dir, self.log, entity_cfg, abilities=abilities,
                                     use_legacy_zip=bool(self.zip_var.get()), icon=icon), done)
 

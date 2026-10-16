@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import uniform_filter
 
-LUMA = np.array([0.2126, 0.7152, 0.0722])
+LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 
 
 def coverage(uvs: np.ndarray, faces: np.ndarray, size: tuple[int, int]) -> np.ndarray:
@@ -26,16 +26,58 @@ def _box(x, r):
     return uniform_filter(x, size=2 * r + 1, mode="nearest")
 
 
+def _box3(x, r):
+    """Box blur of an (H, W, C) stack, channel by channel, in one call."""
+    return uniform_filter(x, size=(2 * r + 1, 2 * r + 1, 1), mode="nearest")
+
+
+def _down(x, k):
+    """Average over k x k blocks (the image is cropped to a multiple of k)."""
+    h, w = (x.shape[0] // k) * k, (x.shape[1] // k) * k
+    x = x[:h, :w]
+    return x.reshape(h // k, k, w // k, k, *x.shape[2:]).mean(axis=(1, 3))
+
+
+def _up(x, shape):
+    """Bilinear resize back to the full (H, W), channel by channel (PIL is much faster than scipy here)."""
+    size = (shape[1], shape[0])
+    if x.ndim == 2:
+        return np.asarray(Image.fromarray(x.astype(np.float32), "F").resize(size, Image.BILINEAR))
+    return np.stack([_up(x[..., c], shape) for c in range(x.shape[2])], -1)
+
+
+def _fast_guided(guide, src, weight, r, eps, k):
+    """Fast guided filter (He & Sun 2015): coefficients computed at 1/k resolution, applied at full resolution.
+    Same look as the full filter for large radii, about k^2 times cheaper."""
+    if k <= 1:
+        return _guided(guide, src, weight, r, eps)
+    g, p, w = _down(guide, k), _down(src, k), _down(weight, k)
+    rk = max(1, round(r / k))
+    wsum = np.maximum(_box(w, rk), 1e-6)
+    mi = _box(g * w, rk) / wsum
+    var = _box(g * g * w, rk) / wsum - mi * mi
+    w3, g3, ws3, mi3 = w[..., None], g[..., None], wsum[..., None], mi[..., None]
+    mp = _box3(p * w3, rk) / ws3
+    cov = _box3(g3 * p * w3, rk) / ws3 - mi3 * mp
+    a = cov / (var[..., None] + eps)
+    b = mp - a * mi3
+    a, b = _box3(a * w3, rk) / ws3, _box3(b * w3, rk) / ws3
+    shape = guide.shape
+    return _up(a, shape) * guide[..., None] + _up(b, shape)
+
+
 def _guided(guide, src, weight, r, eps):
-    """Guided filter that ignores texels outside the mask (normalised convolution)."""
+    """Guided filter of the (H, W, 3) image `src`, ignoring texels outside the mask (normalised convolution).
+    The guide's statistics are shared by the three channels."""
     wsum = np.maximum(_box(weight, r), 1e-6)
-    mean = lambda x: _box(x * weight, r) / wsum
-    mi, mp = mean(guide), mean(src)
-    var = mean(guide * guide) - mi * mi
-    cov = mean(guide * src) - mi * mp
-    a = cov / (var + eps)
-    b = mp - a * mi
-    return _box(a * weight, r) / wsum * guide + _box(b * weight, r) / wsum
+    mi = _box(guide * weight, r) / wsum
+    var = _box(guide * guide * weight, r) / wsum - mi * mi
+    w3, g3, ws3, mi3 = weight[..., None], guide[..., None], wsum[..., None], mi[..., None]
+    mp = _box3(src * w3, r) / ws3
+    cov = _box3(g3 * src * w3, r) / ws3 - mi3 * mp
+    a = cov / (var[..., None] + eps)
+    b = mp - a * mi3
+    return _box3(a * w3, r) / ws3 * g3 + _box3(b * w3, r) / ws3
 
 
 def mean_luma(image: Image.Image, mask: np.ndarray | None = None) -> float:
@@ -60,12 +102,15 @@ def _match(out: np.ndarray, mask, target: float, amount: float) -> np.ndarray:
     keep = (y > 0.05) if mask is None else ((y > 0.05) & mask)
     if not keep.any():
         return out
-    cur = float(y[keep].mean())
+    sample = y[keep]
+    if len(sample) > 200_000:  # the curve only needs the brightness distribution: a sample is enough
+        sample = sample[np.random.default_rng(0).choice(len(sample), 200_000, replace=False)]
+    cur = float(sample.mean())
     goal = cur + amount * (target - cur)
     lo, hi = 0.3, 3.0
     for _ in range(24):
         g = (lo + hi) / 2
-        if float((y[keep] ** g).mean()) > goal:
+        if float((sample ** g).mean()) > goal:
             lo = g
         else:
             hi = g
@@ -92,8 +137,9 @@ def apply(image: Image.Image, strength: float, mask: np.ndarray | None = None,
     guide = a.mean(-1)
     eps = 0.004 + 0.02 * s
     sm = a
+    k = max(1, r // 2)  # coefficient resolution: 1/k of the texture (k = 1 below 1024 px)
     for _ in range(2):
-        sm = np.stack([_guided(guide, sm[..., c], w, r, eps) for c in range(3)], -1)
+        sm = _fast_guided(guide, sm, w, r, eps, k)
     out = a * (1 - 0.8 * s) + sm * (0.8 * s)
     lift = 0.6 * s
     out = np.clip(0.05 * lift + out * (1 - 0.05 * lift), 0, 1) ** (1 - 0.3 * lift)

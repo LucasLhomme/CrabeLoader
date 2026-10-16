@@ -142,6 +142,16 @@ class GLRenderer:
             self.model.release()
         self.model = _Mesh(self.ctx, self.prog, verts, faces, uvs, texture) if verts is not None else None
 
+    def set_model_texture(self, texture: Image.Image):
+        """Swap the model's texture without rebuilding its mesh (live texture filters)."""
+        if not self.model:
+            return
+        if self.model.texture is not None:
+            self.model.texture.release()
+        img = texture.convert("RGBA")
+        self.model.texture = self.ctx.texture(img.size, 4, img.tobytes())
+        self.model.texture.build_mipmaps()
+
     def update_model_vertices(self, verts):
         if self.model:
             self.model.update(verts)

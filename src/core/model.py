@@ -60,6 +60,7 @@ class CharacterModel:
     match_target: float | None = None
     """Average brightness of the base figure's texture."""
     _look_cache: tuple | None = field(default=None, repr=False, compare=False)
+    _coverage: object = field(default=None, repr=False, compare=False)
 
     @property
     def faces(self) -> np.ndarray:
@@ -86,10 +87,26 @@ class CharacterModel:
         key = (round(self.look, 3), round(self.match, 3), self.match_target if use_match else None)
         if self._look_cache is None or self._look_cache[0] != key:
             from src.core import gamelook
-            tex = self.source.texture
-            mask = gamelook.coverage(self.source.uvs, self.source.faces, tex.size)
-            self._look_cache = (key, gamelook.apply(tex, self.look, mask, self.match, self.match_target))
+            self._look_cache = (key, gamelook.apply(self.source.texture, self.look, self.coverage(), self.match,
+                                                    self.match_target))
         return self._look_cache[1]
+
+    def coverage(self) -> np.ndarray:
+        """Texels of the atlas the model actually uses (cached)."""
+        if self._coverage is None:
+            from src.core import gamelook
+            self._coverage = gamelook.coverage(self.source.uvs, self.source.faces, self.source.texture.size)
+        return self._coverage
+
+    def texture_preview(self, size: int = 512) -> Image.Image:
+        """Quick, lower-resolution version of `texture` for live slider feedback (about 0.1 s)."""
+        from src.core import gamelook
+        tex = self.source.texture
+        scale = min(1.0, size / max(tex.size))
+        small_size = (max(1, round(tex.width * scale)), max(1, round(tex.height * scale)))
+        small = tex.convert("RGB").resize(small_size, Image.BILINEAR)
+        mask = np.asarray(Image.fromarray(self.coverage()).resize(small_size, Image.NEAREST))
+        return gamelook.apply(small, self.look, mask, self.match, self.match_target)
 
     def vertices(self) -> np.ndarray:
         return place(self.source.vertices, self.placement)
