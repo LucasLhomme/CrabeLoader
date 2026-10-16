@@ -423,8 +423,21 @@ class MainWindow(ctk.CTk):
         self.acc_list.grid_columnconfigure(0, weight=1)
         self._zone_mask = None
 
+        look = ctk.CTkFrame(tab, fg_color="transparent")
+        look.grid(row=r0 + 5, column=0, sticky="ew", pady=(10, 0))
+        look.grid_columnconfigure(0, weight=1)
+        self.look_label = ctk.CTkLabel(look, text="", wraplength=330, justify="left", text_color=GREY,
+                                       font=ctk.CTkFont(size=11))
+        self.look_label.grid(row=0, column=0, columnspan=2, sticky="w")
+        self.look_slider = ctk.CTkSlider(look, from_=0, to=1, command=self._on_look_drag)
+        self.look_slider.set(float(self.settings.get("game_look", 0.0)))
+        self.look_slider.grid(row=1, column=0, sticky="ew")
+        self.look_slider.bind("<ButtonRelease-1>", lambda _e: self.on_look(self.look_slider.get()))
+        self._value_entry(look, 1, self.look_slider, self.on_look, "{:.2f}")
+        self._on_look_drag(self.look_slider.get())
+
         ctk.CTkButton(tab, text="Preview the texture atlas", fg_color="#27272a", hover_color="#3f3f46",
-                      command=self.on_preview_texture).grid(row=r0 + 5, column=0, sticky="ew", pady=(10, 4))
+                      command=self.on_preview_texture).grid(row=r0 + 6, column=0, sticky="ew", pady=(10, 4))
 
     def _build_skeleton_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -1186,6 +1199,31 @@ class MainWindow(ctk.CTk):
             mask |= self._zone_mask
         return mask if mask.any() else None
 
+    def _on_look_drag(self, value):
+        self.look_label.configure(text=f"Game look (texture filter): {float(value):.2f}. Softens baked shading and "
+                                       "noise, lifts shadows, boosts colours like the base characters. 0 = original.")
+
+    def on_look(self, value):
+        """Apply the game-look filter to the texture shown and exported."""
+        value = float(value)
+        self.settings.update(game_look=value)
+        if not self.model:
+            return
+        self.model.look = value
+
+        def job():
+            self.model.texture  # computed (and cached) off the UI thread
+        def done(_result, error):
+            self._set_busy(False)
+            if error:
+                return self._failed(error)
+            if self.rig is not None:
+                self.renderer.set_model(self.rig.tpose, self.rig.faces, self.rig.uvs, self.model.texture)
+            else:
+                self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+            self.log(f"Game look {value:.2f}: texture updated" if value > 0 else "Game look off: original texture.")
+        self._run(job, done)
+
     def on_acc_limit(self, value, detect=True):
         self.acc_limit_label.configure(text=f"Depth behind the body to count as accessory: {float(value):.2f} × height")
         if detect and self.model and self._zone_mask is not None:
@@ -1457,7 +1495,7 @@ class MainWindow(ctk.CTk):
             return
         source.report = list(notes) + list(source.report)
         placement = auto_placement(source, self.height_slider.get())
-        self.model = CharacterModel(source, placement)
+        self.model = CharacterModel(source, placement, look=float(self.look_slider.get()))
         self.model_info.configure(
             text=f"{Path(path).name}\n{len(source.vertices)} vertices, {len(source.faces)} triangles, "
                  f"texture {source.texture.width}×{source.texture.height}\n"

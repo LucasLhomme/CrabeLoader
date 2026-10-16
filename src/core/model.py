@@ -50,6 +50,9 @@ class CharacterModel:
     """Per-vertex flag: accessories (cape, weapon...) left out of the measurements and skinned to follow the torso."""
     removed: np.ndarray | None = None
     """Per-vertex flag: parts left out of the model altogether."""
+    look: float = 0.0
+    """Game-look filter strength (0 = original texture)."""
+    _look_cache: tuple | None = field(default=None, repr=False, compare=False)
 
     @property
     def faces(self) -> np.ndarray:
@@ -69,7 +72,16 @@ class CharacterModel:
 
     @property
     def texture(self) -> Image.Image:
-        return self.source.texture
+        """The texture that is shown and exported: the original, or filtered towards the game's look."""
+        if self.look <= 0:
+            return self.source.texture
+        key = round(self.look, 3)
+        if self._look_cache is None or self._look_cache[0] != key:
+            from src.core import gamelook
+            tex = self.source.texture
+            mask = gamelook.coverage(self.source.uvs, self.source.faces, tex.size)
+            self._look_cache = (key, gamelook.apply(tex, self.look, mask))
+        return self._look_cache[1]
 
     def vertices(self) -> np.ndarray:
         return place(self.source.vertices, self.placement)

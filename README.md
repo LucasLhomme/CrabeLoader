@@ -114,6 +114,12 @@ rester plats. La pose **Fist** du sélecteur montre le résultat.
 fichier), unité et axe vertical. Un modèle skinné est lu dans sa pose de repos. Avec la case de nettoyage cochée,
 Blender (import Collada) le nettoie comme les autres formats.
 
+**Rendu du jeu (filtre de texture).** Onglet Modèle, curseur « Game look » (0 = texture d'origine). Les modèles de fans
+sont plus sombres, plus ternes et pleins d'ombres peintes ; les personnages du jeu sont clairs, saturés et lisses. Le
+filtre adoucit le bruit et les ombres cuites (filtre guidé qui préserve les contours), relève les ombres et ajoute de la
+saturation. Il ne travaille qu'à l'intérieur des îlots UV : aucune couleur ne bave depuis le fond. Le résultat
+s'affiche dans la vue 3D et est celui qui est exporté dans le jeu.
+
 **Accessoires (cape, queue, ailes, arme).** Une cape qui pend derrière le bassin fausse les mesures (profondeur du
 torse, genoux, entrejambe) et se fait déchirer par les jambes. Dans l'onglet Modèle, boîte « Accessories » :
 
