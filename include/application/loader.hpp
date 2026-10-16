@@ -35,12 +35,10 @@ class Loader {
         void onLuaState(void *L);
         void onLoadmods();
         void registerKeybind(int virtualKey, std::function<void()> onPress);
-        // isRepeat: a key-down Windows generated because the key is held (lParam bit 30).
+        // Handles key events; isRepeat indicates a held key from Windows.
         void onKeyEvent(int virtualKey, bool isDown, bool isRepeat = false);
 
-        // Virtual keys the window procedure must swallow instead of forwarding
-        // to the game. Which keys those are is the caller's business, so a mod
-        // navigating a list can stop it from also steering the player.
+        // Sets virtual keys swallowed by the window procedure.
         void setCapturedKeys(std::vector<int> virtualKeys);
         [[nodiscard]] bool isKeyCaptured(int virtualKey) const;
         [[nodiscard]] void* getLuaState() const noexcept { return _runtimeReady.load() ? _luaState : nullptr; }
@@ -48,69 +46,49 @@ class Loader {
         void queueLuaCall(const std::string& luaFunctionName);
         void drainPendingKeybindCalls(void* L);
 
-        // Emits key presses recorded by the window thread. Script thread only.
+        // Emits key presses recorded by the window thread.
         void drainPendingKeyEvents(void* L);
         void queueConsoleSnippet(const std::string& code);
         void drainPendingSnippets(void* L);
+
+        // Queues a Lua snippet sent by a native plugin through the plugin API.
+        void queuePluginSnippet(const std::string& owner, std::string code);
+        void drainPluginSnippets(void* L);
         void drainLuaOutput(void* L);
 
-        // Polls crabe_remote_cmd.txt for a new command and queues it as if
-        // typed into the overlay console -- lets an external process drive it.
+        // Polls crabe_remote_cmd.txt for external commands.
         void drainRemoteCommandFile(void* L);
 
-        // Polls Crabe.Quarantine.report() (src/api/02c_quarantine.lua) the
-        // same way drainLuaOutput polls Crabe.flush(), and folds any change
-        // into domain::Config::active()'s [quarantine] section -- the
-        // overlay reads that same snapshot. Script thread only.
+        // Polls quarantine report and updates active configuration.
         void drainQuarantineReport(void* L);
         void ensureRuntimeReady(void* L);
         void runTicks(void* L);
         bool isGameState(void* L) const;
 
-        // One rule against one chunk. `label` names the rule in the log --
-        // "skilltrees/hulk", "characters/", "figure registry" -- since `key`
-        // may be binary and tells a reader nothing.
         struct ChunkRule {
             std::string key;
             std::string source;
             std::string label;
         };
 
-        // Replaces the next content-matched loadbuffer chunk outright, before
-        // compilation. See skilltrees/README.md.
+        // Replaces content-matched loadbuffer chunk before compilation.
         void registerLoadOverride(std::string matchSubstring, std::string replacement,
                                   std::string label = {});
         void clearLoadOverrides();
         const std::string* findLoadOverride(const char* buff, size_t size) const;
 
-        // Runs `patchSource` against the next content-matched chunk right
-        // after that chunk's own call returns. Not limited to skill trees --
-        // the figure registry is injected this way too. See skilltrees/README.md.
+        // Registers patch source to run after matching chunk returns.
         void registerChunkPatch(std::string matchSubstring, std::string patchSource,
                                 std::string label = {});
-        // Arming and consuming both carry the Lua call depth, because chunks
-        // nest and a single armed slot cannot tell whose call just returned.
-        //
-        // Presentation/SettingsVideo.lua loads Presentation/SettingsBase.lua
-        // while it is running. With one slot consumed by the next call to
-        // return, SettingsVideo's patch fired after SettingsBase -- before
-        // SettingsVideo.lua had finished, so before the table it builds was
-        // assigned to its global. Every mod trying to reach that screen found
-        // nothing, silently, and the patch was gone by the time the chunk
-        // really returned.
-        //
-        // A chunk armed at depth D runs under a call that takes the depth to
-        // D+1, so its patch belongs to the return that brings it back to D.
+        // Arms chunk patch matched by content and call depth.
         void armPatchIfMatched(const char* buff, size_t size, int depth);
+        // Arms chunk patch matched by name and call depth.
         void armPatchIfNameMatched(const char* name, int depth);
 
-        // The patch owed to a call returning to `depth`, or nothing. Anything
-        // armed deeper can no longer fire -- its chunk never ran -- and is
-        // dropped here rather than left to accumulate.
+        // Returns patch rule armed for the given call depth.
         std::optional<ChunkRule> takePatchForDepth(int depth);
 
-        // Same as registerChunkPatch/armPatchIfMatched, keyed on the chunk's
-        // exact loadbuffer name instead of its content.
+        // Registers chunk patch keyed on exact loadbuffer name.
         void registerNamedPatch(std::string exactName, std::string patchSource,
                                 std::string label = {});
 
@@ -124,14 +102,10 @@ class Loader {
         void registerDefaultKeybinds();
         void registerLuaKeybind(int virtualKey, const std::string& luaFunctionName);
 
-        // Reads <gameDir>/skilltrees/*.{lua,patch} into overrides/patches,
-        // before LuaCall installs the loadbuffer hook. See skilltrees/README.md.
+        // Reads skilltrees/*.lua and patch files from disk.
         void loadOverridesFromDisk();
 
-        // Reads <gameDir>/characters/*.lua and mods/<name>/characters/*.lua into
-        // the catalog patch and the figure registry slots the game needs to
-        // accept those characters. Same timing constraint as the above: it must
-        // run before LuaCall installs the loadbuffer hook. See characters/README.md.
+        // Reads character definitions and generates gateway registry patch.
         void loadCharactersFromDisk();
 
         struct Keybind {
@@ -147,8 +121,8 @@ class Loader {
         std::mutex _luaCallQueueMutex;
         std::vector<std::string> _pendingSnippets;
         std::mutex _snippetQueueMutex;
-        // Bounded: a key held down while the script thread is stalled must not
-        // grow this queue without limit.
+        std::vector<std::pair<std::string, std::string>> _pendingPluginSnippets;
+        std::mutex _pluginSnippetQueueMutex;
         static constexpr std::size_t kMaxPendingKeyEvents = 64;
         struct PendingKeyEvent {
             int virtualKey;
@@ -166,9 +140,6 @@ class Loader {
         std::atomic<bool> _runtimeReady{false};
         bool _sawForeignState = false;
         std::unordered_set<void*> _initializedStates;
-        // States that answered the probe and are not the game's. They are not
-        // probed again unless the game's natives appear at that address, which
-        // means the game closed that state and opened its own in its place.
         std::unordered_set<void*> _rejectedStates;
 
         std::vector<ChunkRule> _loadOverrides;
@@ -176,8 +147,6 @@ class Loader {
         std::vector<ChunkRule> _namedPatches;
         std::string _characterInjectionScript;
 
-        // Armed patches that have not fired yet, innermost last. Bounded by
-        // the nesting depth of the game's own chunk loading, which is two.
         struct ArmedPatch {
             ChunkRule rule;
             int depth{0};

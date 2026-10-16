@@ -55,11 +55,9 @@ namespace crabe::cli {
             return text.size();
         }
 
-        // 1-based (line, column) lookups for byte offsets into one piece of
-        // text, computed once so a file with many call sites is not
-        // rescanned from the top for each one.
         class LineIndex {
         public:
+            // Builds line start offsets for 1-based line and column lookups.
             explicit LineIndex(std::string_view text)
             {
                 _lineStarts.push_back(0);
@@ -69,6 +67,7 @@ namespace crabe::cli {
                 }
             }
 
+            // Returns the 1-based line and column for a byte offset.
             [[nodiscard]] std::pair<std::size_t, std::size_t> at(std::size_t offset) const
             {
                 const auto it = std::upper_bound(_lineStarts.begin(), _lineStarts.end(), offset);
@@ -81,6 +80,7 @@ namespace crabe::cli {
             std::vector<std::size_t> _lineStarts;
         };
 
+        // Strips leading and trailing ASCII whitespace from a string view.
         std::string_view trim(std::string_view text)
         {
             while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
@@ -113,6 +113,7 @@ namespace crabe::cli {
 
     } // namespace
 
+    // Replaces comments and string literals with spaces while preserving line breaks.
     std::string stripCommentsAndStrings(std::string_view source)
     {
         std::string out(source);
@@ -176,15 +177,12 @@ namespace crabe::cli {
         return out;
     }
 
+    // Finds call expressions whose leftmost identifier is one of roots, normalising colons to dots.
     std::vector<CallSite> findCallSites(std::string_view source, const std::set<std::string>& roots)
     {
         const std::string cleaned = stripCommentsAndStrings(source);
         const LineIndex lines(cleaned);
 
-        // A dotted or colon-joined identifier chain immediately followed by
-        // '('. `\b` keeps this from matching in the middle of a longer
-        // identifier; it does not stop a chain from being found starting
-        // anywhere a call could legally begin.
         static const std::regex callPattern(
             R"(\b([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)[ \t]*\()");
 
@@ -207,6 +205,7 @@ namespace crabe::cli {
         return sites;
     }
 
+    // Returns true when source declares a local variable or parameter named root anywhere in the file.
     bool hasShadowedRoot(std::string_view source, std::string_view root)
     {
         const std::string cleaned = stripCommentsAndStrings(source);
@@ -228,6 +227,7 @@ namespace crabe::cli {
         return false;
     }
 
+    // Plain Levenshtein edit distance between two strings.
     std::size_t editDistance(std::string_view a, std::string_view b)
     {
         const std::size_t n = a.size();

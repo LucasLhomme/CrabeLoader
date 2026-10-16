@@ -30,8 +30,6 @@ namespace crabe::domain {
 
         constexpr unsigned int kHighestSupportedManifestVersion = 1;
 
-        // The canonical spelling of the id pattern, quoted verbatim in error
-        // messages so the reader can compare it against what they wrote.
         constexpr std::string_view kIdPattern = "^[a-z0-9]+(\\.[a-z0-9-]+)+$";
 
         constexpr std::array<std::string_view, 5> kKnownKeysV0 = {
@@ -75,8 +73,7 @@ namespace crabe::domain {
             std::size_t column{0};
         };
 
-        // `byte` is nlohmann's 1-based index of the last character it read, so
-        // the character it blames sits at byte - 1.
+        // Returns the 1-based line and column for a given byte offset.
         [[nodiscard]] SourcePosition positionOf(std::string_view text, std::size_t byte) noexcept
         {
             if (byte == 0)
@@ -108,10 +105,7 @@ namespace crabe::domain {
             return diagnostic;
         }
 
-        // nlohmann's what() reads
-        // "[json.exception.parse_error.101] parse error at line 3, column 5: <detail>".
-        // The exception id is noise and the position is reported separately in
-        // structured form, so only <detail> is kept.
+        // Strips JSON exception prefixes and line/column annotations to extract detail.
         [[nodiscard]] std::string parseErrorDetail(std::string_view what)
         {
             if (const std::size_t bracket = what.find("] "); bracket != std::string_view::npos)
@@ -128,14 +122,6 @@ namespace crabe::domain {
             return std::string(what);
         }
 
-        // ------------------------------------------------------------------
-        // Typed field access.
-        //
-        // Every reader below reports the key, the type it wanted and the type
-        // it found, plus a JSON pointer: a manifest defect has to be fixable
-        // from the log line alone.
-        // ------------------------------------------------------------------
-
         class FieldReader {
         public:
             FieldReader(const Json& root, const std::filesystem::path& file)
@@ -143,9 +129,7 @@ namespace crabe::domain {
             {
             }
 
-            // A std::string is built on purpose: nlohmann's heterogeneous
-            // lookup depends on the object comparator being transparent, which
-            // is not something to bet a build on for one avoided allocation.
+            // Finds a non-null JSON element matching the given key.
             [[nodiscard]] const Json* find(std::string_view key) const
             {
                 const auto it = _root.find(std::string(key));
@@ -299,8 +283,6 @@ namespace crabe::domain {
                         }
                         dependency.range = *range;
                     } else {
-                        // An omitted range means any version of that mod will
-                        // do, which is what "*" says.
                         dependency.versionSpec = "*";
                     }
 
@@ -376,10 +358,9 @@ namespace crabe::domain {
         return out;
     }
 
+    // Validates a reverse-DNS mod identifier against the required format.
     std::expected<void, std::string> validateModId(std::string_view id)
     {
-        // ^[a-z0-9]+(\.[a-z0-9-]+)+$ -- checked by hand rather than with
-        // std::regex so the failure can name the character and its index.
         if (id.empty())
             return std::unexpected(std::format("it is empty; ids must match {}", kIdPattern));
 
@@ -535,7 +516,6 @@ namespace crabe::domain {
             }
         }
 
-        // Shared by both schema versions.
         if (auto value = reader.optionalString("name"); value)
             manifest._name = std::move(*value);
         else
@@ -557,14 +537,6 @@ namespace crabe::domain {
             return std::unexpected(std::move(value.error()));
 
         if (manifest._manifestVersion == 0) {
-            // v0 is frozen: exactly the four keys above, no validation beyond
-            // their type. Existing mods were written against a loader that
-            // never checked more than that, and tightening it now would
-            // retroactively break them.
-            //
-            // "version" is still parsed if it happens to be a semantic
-            // version, because the dependency resolver can use it when it is
-            // there -- but a v0 manifest is never rejected over it.
             if (auto parsed = SemVer::parse(manifest._version); parsed)
                 manifest._semver = *parsed;
 
@@ -572,8 +544,6 @@ namespace crabe::domain {
             manifest._state = ManifestState::Valid;
             return manifest;
         }
-
-        // ---- manifestVersion 1 ----
 
         if (const Json* value = reader.find("id"); value == nullptr) {
             return std::unexpected(reader.missing(
@@ -655,9 +625,6 @@ namespace crabe::domain {
         else
             return std::unexpected(std::move(value.error()));
 
-        // Ordering hints and conflicts name other mods, so their entries are
-        // held to the id pattern. "provides" names capabilities, which are
-        // free-form ("hud-registry" is not and need not be an id).
         if (auto value = reader.optionalStringArray("loadAfter", true); value)
             manifest._loadAfter = std::move(*value);
         else
@@ -795,8 +762,6 @@ namespace crabe::domain {
 
     bool ModManifest::isCompatible() const
     {
-        // The lower bound still goes through crabe::version::isCompatible so a
-        // v0 manifest gets bit-for-bit the answer it got before this rewrite.
         if (!_minLoaderVersion.empty() && !crabe::version::isCompatible(_minLoaderVersion))
             return false;
 

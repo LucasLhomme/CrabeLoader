@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -25,7 +26,6 @@
 
 namespace crabe::infrastructure {
 
-/// Manages virtual-to-physical asset path mappings loaded from the mods directory.
 class VfsOverrideManager final {
 public:
     struct OverrideEntry {
@@ -40,43 +40,48 @@ public:
         std::size_t totalHits{0};
     };
 
+    // Returns the singleton instance of VfsOverrideManager.
     static VfsOverrideManager& get() noexcept;
 
-    /// Discovers and indexes all loose asset overrides found inside the mods directory.
+    // Discovers and indexes all loose asset overrides found inside the mods directory.
     void initialize(const std::filesystem::path& gameRoot);
 
-    /// Recursively indexes all loose asset files present within subfolders of modsFolder.
+    // Recursively indexes all loose asset files present within subfolders of modsFolder.
     void scanModsDirectory(const std::filesystem::path& modsFolder);
 
-    /// Manually registers an override mapping a virtual asset path to a physical disk file.
+    // Manually registers an override mapping a virtual asset path to a physical disk file.
     bool registerOverride(std::string_view virtualPath,
                           const std::filesystem::path& physicalPath,
                           std::string_view originMod);
 
-    /// Resolves a requested asset path to its loose mod file in constant O(1) memory time.
+    // Resolves a requested asset path to its loose mod file in constant O(1) memory time.
     [[nodiscard]] bool resolve(std::string_view requestedPath,
                                std::filesystem::path& outPhysicalPath) const noexcept;
 
-    /// Optional-returning overload of asset path resolution for convenient query callers.
+    // Resolves a requested asset path and reads the whole loose file into memory.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> readOverrideBytes(
+        std::string_view requestedPath) const noexcept;
+
+    // Optional-returning overload of asset path resolution.
     [[nodiscard]] std::optional<std::filesystem::path> resolve(
         std::string_view requestedPath) const noexcept;
 
-    /// Normalizes virtual paths into lowercase forward-slash keys without leading prefixes.
+    // Normalizes virtual paths into lowercase forward-slash keys without leading prefixes.
     [[nodiscard]] static std::string normalizeVirtualPath(std::string_view path) noexcept;
 
-    /// Returns the total count of currently registered virtual file overrides.
+    // Returns the total count of currently registered virtual file overrides.
     [[nodiscard]] std::size_t getOverrideCount() const noexcept;
 
-    /// Returns a snapshot of operational lookup and hit statistics.
+    // Returns a snapshot of operational lookup and hit statistics.
     [[nodiscard]] VfsStats getStats() const noexcept;
 
-    /// Returns a list of all active virtual paths and their associated override entries.
+    // Returns a list of all active virtual paths and their associated override entries.
     [[nodiscard]] std::vector<std::pair<std::string, OverrideEntry>> getActiveOverrides() const;
 
-    /// Returns the virtual path of the most recently redirected asset lookup.
+    // Returns the virtual path of the most recently redirected asset lookup.
     [[nodiscard]] std::string getLastRedirectedFile() const;
 
-    /// Clears all registered overrides and resets counters.
+    // Clears all registered overrides and resets counters.
     void clear() noexcept;
 
 private:

@@ -34,6 +34,12 @@ namespace crabe::installer {
                "  Crabe\\crabe.toml            Settings: keys, profiles, updates.\r\n"
                "  Crabe\\crash-*.txt, *.dmp    Crash reports (only created if the game crashes).\r\n"
                "\r\n"
+               ".ASI PLUGINS\r\n"
+               "  32-bit .asi plugins load before the game starts, from the game folder,\r\n"
+               "  scripts\\, plugins\\ or a mod's folder. To turn them off, in Crabe\\crabe.toml:\r\n"
+               "      [plugins]\r\n"
+               "      asi = false\r\n"
+               "\r\n"
                "UPDATES\r\n"
                "  At launch, CrabeLoader asks GitHub whether a newer version exists and\r\n"
                "  asks you in a window. To never do that, add this to Crabe\\crabe.toml:\r\n"
@@ -41,8 +47,7 @@ namespace crabe::installer {
                "      check = false\r\n"
                "\r\n"
                "UNINSTALL\r\n"
-               "  Delete bink2w32.dll, then rename bink2w32_orig.dll to bink2w32.dll.\r\n"
-               "  (Or, in Steam: Verify integrity of game files.)\r\n"
+               "  Delete dinput8.dll and CrabeLoader.asi from the game folder. No game file was changed.\r\n"
                "\r\n"
                "\r\n"
                "CrabeLoader - LISEZMOI\r\n"
@@ -65,6 +70,13 @@ namespace crabe::installer {
                "  Crabe\\crabe.toml            Configuration : touches, profils, mises \xC3\xA0 jour.\r\n"
                "  Crabe\\crash-*.txt, *.dmp    Rapports de plantage (cr\xC3\xA9\xC3\xA9s seulement si le jeu plante).\r\n"
                "\r\n"
+               "PLUGINS .ASI\r\n"
+               "  Les plugins .asi 32 bits se chargent avant le d\xC3\xA9marrage du jeu, depuis le\r\n"
+               "  dossier du jeu, scripts\\, plugins\\ ou le dossier d'un mod. Pour les d\xC3\xA9sactiver,\r\n"
+               "  dans Crabe\\crabe.toml :\r\n"
+               "      [plugins]\r\n"
+               "      asi = false\r\n"
+               "\r\n"
                "MISES \xC3\x80 JOUR\r\n"
                "  Au lancement, CrabeLoader demande \xC3\xA0 GitHub si une nouvelle version existe\r\n"
                "  et vous pose la question dans une fen\xC3\xAAtre. Pour ne jamais le faire, ajoutez ceci\r\n"
@@ -73,8 +85,8 @@ namespace crabe::installer {
                "      check = false\r\n"
                "\r\n"
                "D\xC3\x89SINSTALLER\r\n"
-               "  Supprimez bink2w32.dll puis renommez bink2w32_orig.dll en bink2w32.dll.\r\n"
-               "  (Ou, dans Steam : V\xC3\xA9rifier l'int\xC3\xA9grit\xC3\xA9 des fichiers du jeu.)\r\n";
+               "  Supprimez dinput8.dll et CrabeLoader.asi du dossier du jeu. Aucun fichier du jeu n'a \xC3\xA9t\xC3\xA9 "
+               "modifi\xC3\xA9.\r\n";
     }
 
 } // namespace crabe::installer

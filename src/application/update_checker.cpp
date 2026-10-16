@@ -16,6 +16,7 @@
 
 namespace crabe::application {
 
+    // Returns a human-readable description of an update outcome.
     std::string_view describe(UpdateOutcome outcome) noexcept
     {
         switch (outcome) {
@@ -37,6 +38,7 @@ namespace crabe::application {
         return "unknown";
     }
 
+    // Constructs an update checker with required domain services and the current version.
     UpdateChecker::UpdateChecker(domain::IReleaseSource& source,
                                  domain::IUpdatePrompt& prompt,
                                  domain::IUrlOpener& opener,
@@ -45,6 +47,7 @@ namespace crabe::application {
     {
     }
 
+    // Queries the release source, prompts the user if an update is available, and opens the release page.
     UpdateOutcome UpdateChecker::run() const
     {
         crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();

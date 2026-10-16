@@ -29,9 +29,6 @@ namespace {
         TabItem,
     };
 
-    // `needsEnd` records whether the matching ImGui Begin was actually issued.
-    // Windows and children always need their End; tab bars and tab items must
-    // only be closed when ImGui accepted them.
     struct Scope {
         ScopeKind kind = ScopeKind::Window;
         bool needsEnd = false;
@@ -187,18 +184,21 @@ namespace {
 
 }
 
+// Returns the singleton instance of DrawBuffer.
 DrawBuffer& DrawBuffer::get()
 {
     static DrawBuffer instance;
     return instance;
 }
 
+// Clears current frame recordings on the script thread.
 void DrawBuffer::beginFrame()
 {
     _recording.clear();
     _sequence = 0;
 }
 
+// Appends a draw command to the current recording buffer.
 std::uint32_t DrawBuffer::record(DrawCommand command)
 {
     command.id = makeWidgetId(command.label, _sequence++);
@@ -208,6 +208,7 @@ std::uint32_t DrawBuffer::record(DrawCommand command)
     return id;
 }
 
+// Appends a scope-opening command and returns previous frame state for it.
 bool DrawBuffer::recordScope(DrawCommand command, bool fallback)
 {
     command.id = makeWidgetId(command.label, _sequence++);
@@ -225,6 +226,7 @@ bool DrawBuffer::recordScope(DrawCommand command, bool fallback)
     return value;
 }
 
+// Publishes the recorded frame for the render thread to replay.
 void DrawBuffer::endFrame()
 {
     std::lock_guard<std::mutex> lock(_publishMutex);
@@ -232,6 +234,7 @@ void DrawBuffer::endFrame()
     _hasPublished = true;
 }
 
+// Retrieves measured widget state for the given widget id.
 bool DrawBuffer::tryResult(std::uint32_t id, WidgetResult& out) const
 {
     std::lock_guard<std::mutex> lock(_resultsMutex);
@@ -488,11 +491,13 @@ void DrawBuffer::replay()
     }
 }
 
+// Configures the image texture resolver callback.
 void DrawBuffer::setImageResolver(ImageResolver resolver)
 {
     g_imageResolver.store(resolver, std::memory_order_release);
 }
 
+// Returns the last observed display dimensions.
 void DrawBuffer::displaySize(float& width, float& height) const
 {
     width = _displayWidth.load(std::memory_order_relaxed);

@@ -26,6 +26,7 @@ namespace {
 
     using Microsoft::WRL::ComPtr;
 
+    // Checks if the given path remains relative and confined within the game root.
     bool isConfined(const std::string& path)
     {
         if (path.empty() || path.find(':') != std::string::npos)
@@ -35,6 +36,7 @@ namespace {
         return path.find("..") == std::string::npos;
     }
 
+    // Converts a UTF-8 string to a wide UTF-16 string.
     std::wstring widen(const std::string& text)
     {
         const int length = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
@@ -45,10 +47,9 @@ namespace {
         return wide;
     }
 
+    // Creates and returns a Windows Imaging Component factory instance.
     ComPtr<IWICImagingFactory> createFactory()
     {
-        // The render thread may or may not already be in a COM apartment; either
-        // way WIC works, and RPC_E_CHANGED_MODE only means one exists.
         CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
         ComPtr<IWICImagingFactory> factory;
@@ -56,7 +57,7 @@ namespace {
         return factory;
     }
 
-    // Straight-alpha RGBA8, which is what ImGui's blend state expects.
+    // Decodes an image file to straight-alpha RGBA8 pixel data via WIC.
     bool decode(const std::wstring& path, std::vector<std::uint8_t>& pixels, UINT& width, UINT& height)
     {
         ComPtr<IWICImagingFactory> factory = createFactory();
@@ -73,7 +74,7 @@ namespace {
         if (FAILED(decoder->GetFrame(0, &frame)) || FAILED(factory->CreateFormatConverter(&converter)))
             return false;
         if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
-                                         nullptr, 0.0, WICBitmapPaletteTypeCustom)))
+                                          nullptr, 0.0, WICBitmapPaletteTypeCustom)))
             return false;
         if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0)
             return false;
@@ -84,17 +85,20 @@ namespace {
 
 }
 
+// Returns the singleton instance of TextureCache.
 TextureCache& TextureCache::get()
 {
     static TextureCache instance;
     return instance;
 }
 
+// Associates the Direct3D 11 device used for creating textures.
 void TextureCache::attach(ID3D11Device* device)
 {
     _device = device;
 }
 
+// Releases all cached shader resource views and clears the device reference.
 void TextureCache::release()
 {
     for (auto& entry : _textures) {
@@ -105,6 +109,7 @@ void TextureCache::release()
     _device = nullptr;
 }
 
+// Looks up or loads a texture, returning the cached shader resource view pointer.
 void* TextureCache::resolve(const std::string& path)
 {
     if (!_device)
@@ -116,11 +121,13 @@ void* TextureCache::resolve(const std::string& path)
     return found->second;
 }
 
+// Adapter function for DrawBuffer texture lookups.
 void* TextureCache::resolveForDrawBuffer(const std::string& path)
 {
     return get().resolve(path);
 }
 
+// Loads an image file from disk and creates an immutable D3D11 texture resource.
 ID3D11ShaderResourceView* TextureCache::load(const std::string& path) const
 {
     auto& log = crabe::shared::Logger::getInstance();

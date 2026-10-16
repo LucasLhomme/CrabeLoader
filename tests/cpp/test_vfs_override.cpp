@@ -9,11 +9,13 @@
 */
 
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "infrastructure/vfs_override_manager.hpp"
 
@@ -125,6 +127,34 @@ int main()
         auto stats = vfs.getStats();
         require(stats.totalHits >= kIterations, "Hit count mismatch");
         std::cout << "[Test] Benchmark passed successfully.\n";
+
+        std::cout << "[Test] 4. Reading loose override bytes (binary-exact)...\n";
+        std::filesystem::path modC = tempDir / "mod_c";
+        std::vector<std::uint8_t> payload;
+        for (int i = 0; i < 1024; ++i)
+            payload.push_back(static_cast<std::uint8_t>((i * 31 + 7) & 0xFF));
+        payload[10] = 0;
+        payload[11] = '\r';
+        payload[12] = '\n';
+        std::filesystem::create_directories(modC / "textures");
+        {
+            std::ofstream out(modC / "textures" / "eb09ed7830de9976.tbody", std::ios::binary);
+            out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
+        }
+        {
+            std::ofstream out(modC / "textures" / "empty.tbody", std::ios::binary | std::ios::trunc);
+        }
+        vfs.scanModsDirectory(tempDir);
+
+        auto bytesCanonical = vfs.readOverrideBytes("textures/eb09ed7830de9976.tbody");
+        require(bytesCanonical.has_value() && *bytesCanonical == payload, "Loose bytes must match exactly");
+        auto bytesUpper = vfs.readOverrideBytes("Textures\\EB09ED7830DE9976.TBODY");
+        require(bytesUpper.has_value() && *bytesUpper == payload, "Lookup must be case and separator insensitive");
+        auto bytesBare = vfs.readOverrideBytes("eb09ed7830de9976.tbody");
+        require(bytesBare.has_value() && *bytesBare == payload, "Bare hash alias must resolve");
+        require(!vfs.readOverrideBytes("textures/ffffffffffffffff.tbody").has_value(), "Unknown texture must be absent");
+        require(!vfs.readOverrideBytes("textures/empty.tbody").has_value(), "Empty loose file must be refused");
+        std::cout << "[Test] Loose byte reads passed.\n";
 
     } catch (...) {
         std::filesystem::remove_all(tempDir, ec);

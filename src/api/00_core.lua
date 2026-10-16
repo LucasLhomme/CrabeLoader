@@ -6,22 +6,20 @@
 --
 -- Authors: @LucasLhomme
 
--- `Crabe` is the modloader namespace, `Game` the game API.
--- Loaded first: the other modules report their errors through Crabe.write.
-
 Crabe = Crabe or {}
-Crabe.version = "1.0.0"
+Crabe.version = "1.1.0"
 Crabe.versionMajor = 1
-Crabe.versionMinor = 0
+Crabe.versionMinor = 1
 Crabe.versionPatch = 0
-Crabe.version = Crabe.version or "1.0.0"
+Crabe.version = Crabe.version or "1.1.0"
 Crabe.versionMajor = Crabe.versionMajor or 1
-Crabe.versionMinor = Crabe.versionMinor or 0
+Crabe.versionMinor = Crabe.versionMinor or 1
 Crabe.versionPatch = Crabe.versionPatch or 0
 
 Crabe._lines = {}
 Crabe._maxLines = 200
 
+-- Appends a line to the internal log buffer, trimming excess lines beyond capacity.
 function Crabe.write(line)
     local lines = Crabe._lines
     lines[#lines + 1] = tostring(line)
@@ -31,6 +29,7 @@ function Crabe.write(line)
     end
 end
 
+-- Flushes and returns all buffered log lines concatenated with newlines.
 function Crabe.flush()
     local lines = Crabe._lines
     if #lines == 0 then return "" end
@@ -40,9 +39,6 @@ function Crabe.flush()
     return joined
 end
 
--- print is redirected to the overlay console. Guarded: the runtime is loaded
--- once per lua_State, and chaining the wrapper onto itself would double every
--- line.
 if not Crabe._printHooked then
     Crabe._printHooked = true
     local originalPrint = print
@@ -79,7 +75,36 @@ function Crabe.GetWindowMode()
     return Crabe._windowMode
 end
 
--- Generic helpers
+-- Caps the game frame rate; 0 or nil removes the cap.
+function Crabe.SetFrameLimit(fps)
+    fps = tonumber(fps) or 0
+    if fps < 0 then
+        error("Crabe.SetFrameLimit: expected 0 (unlimited) or a positive FPS, got " .. tostring(fps), 2)
+    end
+    if type(Crabe._setFrameLimitNative) ~= "function" then
+        error("Crabe.SetFrameLimit: the frame limiter is not available in this Lua state", 2)
+    end
+    Crabe._setFrameLimitNative(math.floor(fps))
+    return Crabe.GetFrameLimit()
+end
+
+-- Returns the current frame rate cap, 0 when unlimited.
+function Crabe.GetFrameLimit()
+    if type(Crabe._getFrameLimitNative) == "function" then
+        return Crabe._getFrameLimitNative() or 0
+    end
+    return 0
+end
+
+-- Returns the presented frames per second measured at Present.
+function Crabe.GetRenderFps()
+    if type(Crabe._getRenderFpsNative) == "function" then
+        return Crabe._getRenderFpsNative() or 0
+    end
+    return 0
+end
+
+-- Resolves an engine native from the global environment, raising if missing.
 function Crabe.native(name, caller)
     local fn = rawget(_G, name)
     if type(fn) ~= "function" then
@@ -88,10 +113,12 @@ function Crabe.native(name, caller)
     return fn
 end
 
+-- Resolves the target player id, defaulting to the host player.
 function Crabe.hostPlayer(playerId)
     return playerId or (type(Players_GetHostPlayerID) == "function" and Players_GetHostPlayerID() or 0)
 end
 
+-- Splits a comma-separated string into a table of trimmed non-empty strings.
 function Crabe.splitList(csv)
     local out = {}
     if type(csv) ~= "string" then return out end
@@ -103,7 +130,6 @@ function Crabe.splitList(csv)
     return out
 end
 
--- Disk module loader for require(): enables loading submodules from disk (mods/, mods/disneyinfinitymp/, etc.)
 if package and type(package.loaders) == "table" and not Crabe._diskLoaderInstalled then
     Crabe._diskLoaderInstalled = true
     table.insert(package.loaders, 2, function(modname)

@@ -34,10 +34,7 @@ namespace crabe::domain {
             return !text.empty() && std::ranges::all_of(text, isDigit);
         }
 
-        // One numeric component of the version core. Strict on purpose: a
-        // leading zero is a specification violation, not a formatting quirk,
-        // and silently accepting "01" would make "01.0.0" and "1.0.0" two
-        // spellings of one version that compare equal but do not round-trip.
+        // Parses a single numeric component of a semantic version string.
         [[nodiscard]] std::expected<std::uint32_t, SemVerError> parseComponent(std::string_view text)
         {
             if (text.empty())
@@ -56,10 +53,7 @@ namespace crabe::domain {
             return static_cast<std::uint32_t>(value);
         }
 
-        // A dot-separated run of [0-9A-Za-z-] identifiers, none of them empty.
-        // Numeric prerelease identifiers additionally may not carry a leading
-        // zero; build metadata identifiers may, so `numericRulesApply` says
-        // which set is being checked.
+        // Validates dot-separated alphanumeric identifiers for prerelease or build metadata.
         [[nodiscard]] std::expected<void, SemVerError> validateIdentifiers(
             std::string_view text, bool numericRulesApply)
         {
@@ -88,9 +82,7 @@ namespace crabe::domain {
             return {};
         }
 
-        // Precedence between two prerelease identifiers (semver.org, rule 11):
-        // all-numeric ones compare numerically and sort below alphanumeric
-        // ones; anything else compares as ASCII.
+        // Compares two prerelease identifiers according to SemVer precedence rules.
         [[nodiscard]] std::strong_ordering compareIdentifier(std::string_view lhs,
                                                              std::string_view rhs) noexcept
         {
@@ -98,8 +90,6 @@ namespace crabe::domain {
             const bool rhsNumeric = isAllDigits(rhs);
 
             if (lhsNumeric && rhsNumeric) {
-                // Compared by length first so an identifier wider than any
-                // integer type still orders correctly.
                 std::string_view l = lhs.substr(std::min(lhs.find_first_not_of('0'), lhs.size() - 1));
                 std::string_view r = rhs.substr(std::min(rhs.find_first_not_of('0'), rhs.size() - 1));
                 if (l.size() != r.size())
@@ -111,12 +101,12 @@ namespace crabe::domain {
             return lhs.compare(rhs) <=> 0;
         }
 
+        // Compares dot-separated prerelease chains according to SemVer precedence rules.
         [[nodiscard]] std::strong_ordering comparePrerelease(std::string_view lhs,
                                                              std::string_view rhs) noexcept
         {
             if (lhs.empty() && rhs.empty())
                 return std::strong_ordering::equal;
-            // A release outranks any of its prereleases.
             if (lhs.empty())
                 return std::strong_ordering::greater;
             if (rhs.empty())
@@ -126,8 +116,6 @@ namespace crabe::domain {
             std::size_t lhsPos = 0;
             std::size_t rhsPos = 0;
             while (lhsPos != kEnd || rhsPos != kEnd) {
-                // Identical up to here, so the longer set of identifiers wins
-                // (semver.org, rule 11: 1.0.0-alpha < 1.0.0-alpha.1).
                 if (lhsPos == kEnd)
                     return std::strong_ordering::less;
                 if (rhsPos == kEnd)
@@ -154,13 +142,6 @@ namespace crabe::domain {
             return text;
         }
 
-        // ------------------------------------------------------------------
-        // Range parsing helpers
-        // ------------------------------------------------------------------
-
-        // A version token as written inside a range: possibly partial
-        // ("1.2"), possibly wildcarded ("1.x"). `specified` counts the
-        // concrete numeric components that preceded any wildcard.
         struct PartialVersion {
             std::uint32_t parts[3]{0, 0, 0};
             int specified{0};
@@ -208,8 +189,6 @@ namespace crabe::domain {
                 if (isWildcardToken(part)) {
                     out.wildcard = true;
                 } else {
-                    // Nothing concrete may follow a wildcard: "1.x.3" asks for
-                    // two incompatible things at once.
                     if (out.wildcard)
                         return std::unexpected(VersionRangeError::MisplacedWildcard);
                     const auto component = parseComponent(part);
@@ -237,9 +216,7 @@ namespace crabe::domain {
             return out;
         }
 
-        // Bumping a component can overflow only for a version nobody will ever
-        // write; when it would, the caller drops the upper bound rather than
-        // wrapping around to an upper bound of zero that matches nothing.
+        // Increments a version component with overflow checking.
         [[nodiscard]] bool bump(std::uint32_t value, std::uint32_t& out) noexcept
         {
             if (value == std::numeric_limits<std::uint32_t>::max())
@@ -250,6 +227,7 @@ namespace crabe::domain {
 
     } // namespace
 
+    // Returns a human-readable description of a SemVer parse error.
     std::string_view describe(SemVerError error) noexcept
     {
         switch (error) {
@@ -275,6 +253,7 @@ namespace crabe::domain {
         return "it is not a semantic version";
     }
 
+    // Returns a human-readable description of a VersionRange parse error.
     std::string_view describe(VersionRangeError error) noexcept
     {
         switch (error) {
@@ -296,6 +275,7 @@ namespace crabe::domain {
         return "it is not a version range";
     }
 
+    // Parses a semantic version string.
     std::expected<SemVer, SemVerError> SemVer::parse(std::string_view text)
     {
         text = stripLeadingV(text);
@@ -347,6 +327,7 @@ namespace crabe::domain {
         return out;
     }
 
+    // Compares this version against another using SemVer precedence rules.
     std::strong_ordering SemVer::compare(const SemVer& other) const noexcept
     {
         if (const auto order = _major <=> other._major; order != std::strong_ordering::equal)
@@ -358,6 +339,7 @@ namespace crabe::domain {
         return comparePrerelease(_prerelease, other._prerelease);
     }
 
+    // Formats this semantic version into a standard string representation.
     std::string SemVer::toString() const
     {
         std::string out = std::to_string(_major);
@@ -376,6 +358,7 @@ namespace crabe::domain {
         return out;
     }
 
+    // Parses a version range specification string.
     std::expected<VersionRange, VersionRangeError> VersionRange::parse(std::string_view text)
     {
         if (text.find("||") != std::string_view::npos)
@@ -393,8 +376,6 @@ namespace crabe::domain {
             if (pos == std::string_view::npos)
                 break;
 
-            // The operator, if any. Two-character forms are tested first so
-            // ">=" is never read as ">" followed by a bogus version "=1.2.0".
             const char lead = text[pos];
             std::string_view op;
             if (text.compare(pos, 2, ">=") == 0 || text.compare(pos, 2, "<=") == 0) {
@@ -403,7 +384,6 @@ namespace crabe::domain {
             } else if (lead == '>' || lead == '<' || lead == '=' || lead == '~' || lead == '^') {
                 op = text.substr(pos, 1);
                 pos += 1;
-                // "=>" and "=<" are a common slip and mean nothing here.
                 if (pos < text.size() && (text[pos] == '>' || text[pos] == '<' || text[pos] == '='))
                     return std::unexpected(VersionRangeError::UnknownOperator);
             } else if (!isDigit(lead) && lead != 'v' && lead != 'V'
@@ -411,7 +391,6 @@ namespace crabe::domain {
                 return std::unexpected(VersionRangeError::UnknownOperator);
             }
 
-            // An operator may be detached from its version (">= 1.2.0").
             pos = text.find_first_not_of(" \t\r\n", pos);
             if (pos == std::string_view::npos)
                 return std::unexpected(VersionRangeError::MissingVersion);
@@ -435,9 +414,6 @@ namespace crabe::domain {
 
             SemVer lower(partial->parts[0], partial->parts[1], partial->parts[2]);
             if (!partial->prerelease.empty() || !partial->build.empty()) {
-                // parsePartial already accepted the shape; re-parsing is how
-                // the prerelease and build strings get onto the bound itself,
-                // because only a complete version can carry them.
                 const auto full = SemVer::parse(token);
                 if (!full)
                     return std::unexpected(VersionRangeError::InvalidVersion);
@@ -468,9 +444,6 @@ namespace crabe::domain {
                 if (partial->specified == 0)
                     return std::unexpected(VersionRangeError::MissingVersion);
                 range._comparators.push_back({Op::GreaterEqual, lower});
-                // The caret pins the left-most non-zero component, but only
-                // among the components that were actually written: "^0.x" is
-                // "<1.0.0", while "^0.0.x" is "<0.1.0".
                 const bool pinMajor = partial->specified == 1 || partial->parts[0] != 0;
                 const bool pinMinor = !pinMajor && (partial->specified == 2 || partial->parts[1] != 0);
                 if (pinMajor) {
@@ -483,13 +456,9 @@ namespace crabe::domain {
                     range._comparators.push_back({Op::Less, SemVer(0, 0, bumped)});
                 }
             } else {
-                // No operator, or an explicit "=". A complete version pins
-                // exactly; anything partial or wildcarded widens to the range
-                // the missing components imply.
                 if (!partial->wildcard && partial->specified == 3) {
                     range._comparators.push_back({Op::Equal, lower});
                 } else if (partial->specified == 0) {
-                    // "*" / "x": no constraint at all.
                 } else if (partial->specified == 1) {
                     range._comparators.push_back({Op::GreaterEqual, SemVer(partial->parts[0], 0, 0)});
                     if (bump(partial->parts[0], bumped))
@@ -509,6 +478,7 @@ namespace crabe::domain {
         return range;
     }
 
+    // Checks whether the specified version satisfies all constraints in this range.
     bool VersionRange::matches(const SemVer& version) const noexcept
     {
         for (const Comparator& comparator : _comparators) {
@@ -537,6 +507,7 @@ namespace crabe::domain {
         return true;
     }
 
+    // Checks whether the specified version strictly exceeds the upper bound of this range.
     bool VersionRange::exceededBy(const SemVer& version) const noexcept
     {
         for (const Comparator& comparator : _comparators) {
@@ -551,7 +522,6 @@ namespace crabe::domain {
                 if (order != std::strong_ordering::less)
                     return true;
                 break;
-            // A lower bound can never be overshot.
             case Op::Greater:
             case Op::GreaterEqual:
                 break;

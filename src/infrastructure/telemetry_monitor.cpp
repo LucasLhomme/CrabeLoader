@@ -18,14 +18,14 @@
 
 namespace crabe::infrastructure {
 
-/// Initializes the telemetry monitor and sets the initial session timestamp.
+// Initializes the telemetry monitor and sets the initial session timestamp.
 TelemetryMonitor::TelemetryMonitor(size_t windowCapacity)
     : _windowCapacity(windowCapacity == 0 ? 1000 : windowCapacity),
       _startTime(std::chrono::steady_clock::now())
 {
 }
 
-/// Ingests a new frame delta and recalculates pacing statistics.
+// Ingests a new frame delta and recalculates pacing statistics.
 void TelemetryMonitor::recordFrameTime(double deltaSeconds)
 {
     const double ms = deltaSeconds * 1000.0;
@@ -55,7 +55,7 @@ void TelemetryMonitor::recordFrameTime(double deltaSeconds)
     }
 }
 
-/// Updates current memory allocations and identifies potential leaks.
+// Updates current memory allocations and identifies potential leaks.
 void TelemetryMonitor::recordMemorySample(double workingSetMb, double privateBytesMb, double luaHeapKb)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -72,7 +72,7 @@ void TelemetryMonitor::recordMemorySample(double workingSetMb, double privateByt
     _currentLuaHeapKb = luaHeapKb;
 }
 
-/// Tracks VFS resolutions and increments cache hit counters.
+// Tracks VFS resolutions and increments cache hit counters.
 void TelemetryMonitor::recordVfsLookup(bool isHit)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -82,7 +82,7 @@ void TelemetryMonitor::recordVfsLookup(bool isHit)
     }
 }
 
-/// Increments event dispatch count and records peak listeners.
+// Increments event dispatch count and records peak listeners.
 void TelemetryMonitor::recordEventDispatched(size_t listenerCount)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -92,7 +92,7 @@ void TelemetryMonitor::recordEventDispatched(size_t listenerCount)
     }
 }
 
-/// Updates active fiber count and peak concurrency records.
+// Updates active fiber count and peak concurrency records.
 void TelemetryMonitor::recordFiberCount(size_t activeCount)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -103,7 +103,7 @@ void TelemetryMonitor::recordFiberCount(size_t activeCount)
     }
 }
 
-/// Computes the requested percentile value from buffered frame durations.
+// Computes the requested percentile value from buffered frame durations.
 double TelemetryMonitor::calculatePercentile(double percentile) const
 {
     if (_frametimesMs.empty()) {
@@ -121,7 +121,7 @@ double TelemetryMonitor::calculatePercentile(double percentile) const
     return sorted[lower] + weight * (sorted[upper] - sorted[lower]);
 }
 
-/// Computes frametime standard deviation as a measure of jitter.
+// Computes frametime standard deviation as a measure of jitter.
 double TelemetryMonitor::calculateJitter() const
 {
     if (_frametimesMs.size() < 2) {
@@ -140,7 +140,7 @@ double TelemetryMonitor::calculateJitter() const
     return std::sqrt(sumSqDiff / static_cast<double>(_frametimesMs.size() - 1));
 }
 
-/// Compiles and returns a complete diagnostic snapshot of the system.
+// Compiles and returns a complete diagnostic snapshot of the system.
 TelemetrySnapshot TelemetryMonitor::getSnapshot() const
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -182,7 +182,7 @@ TelemetrySnapshot TelemetryMonitor::getSnapshot() const
     return s;
 }
 
-/// Serializes system snapshot metrics into structured JSON format.
+// Serializes system snapshot metrics into structured JSON format.
 std::string TelemetryMonitor::exportJson() const
 {
     const TelemetrySnapshot s = getSnapshot();
@@ -233,7 +233,7 @@ std::string TelemetryMonitor::exportJson() const
     return j.dump(2);
 }
 
-/// Clears collected metrics and restarts the timer.
+// Clears collected metrics and restarts the timer.
 void TelemetryMonitor::reset()
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -255,4 +255,4 @@ void TelemetryMonitor::reset()
     _startTime = std::chrono::steady_clock::now();
 }
 
-}
+} // namespace crabe::infrastructure

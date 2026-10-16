@@ -8,26 +8,37 @@
 ** Authors: @LucasLhomme
 */
 
+#include <array>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <windows.h>
 
+#include "shared/build_info.hpp"
 #include "shared/version.hpp"
 #include "presentation/imgui_bindings.hpp"
+#include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
+#include "presentation/input_remap.hpp"
 #include "application/gateway.hpp"
 #include "application/loader.hpp"
 #include "application/lua_runtime.hpp"
+#include "application/plugin_api.hpp"
+#include "infrastructure/asi_loader.hpp"
 #include "infrastructure/lua_call.hpp"
 #include "infrastructure/memory.hpp"
 #include "infrastructure/code_cave.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_gateway.hpp"
 #include "infrastructure/engine_actors.hpp"
+#include "infrastructure/engine_avatar.hpp"
 #include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/engine_sky.hpp"
 #include "infrastructure/message_hook.hpp"
@@ -35,6 +46,7 @@
 #if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_natives.hpp"
 #endif
+#include "infrastructure/portal/portal_service.hpp"
 #include "presentation/render_hook.hpp"
 #include "shared/logger.hpp"
 
@@ -59,6 +71,49 @@ namespace {
 
         bool borderless = (crabe::presentation::RenderHook::get().getCurrentWindowMode() == crabe::presentation::WindowMode::BorderlessWindowed);
         lua.pushString(L, borderless ? "borderless" : "windowed");
+        return 1;
+    }
+
+    // Crabe._getRenderResolutionNative() -> width, height of the back buffer, or nothing
+    // before the first frame.
+    int __cdecl nativeGetRenderResolution(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        UINT width = 0;
+        UINT height = 0;
+        if (!crabe::presentation::RenderHook::get().getRenderResolution(width, height))
+            return 0;
+        lua.pushNumber(L, static_cast<double>(width));
+        lua.pushNumber(L, static_cast<double>(height));
+        return 2;
+    }
+
+    // Crabe._setFrameLimitNative(fps) -> caps the frame rate (0 = unlimited) and saves it.
+    int __cdecl nativeSetFrameLimit(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const double fps = lua.argToNumber(L, 1);
+        crabe::presentation::RenderHook::get().setFrameLimit(fps > 0.0 ? static_cast<std::uint32_t>(fps) : 0u, true);
+        return 0;
+    }
+
+    // Crabe._getFrameLimitNative() -> the current cap, 0 when unlimited.
+    int __cdecl nativeGetFrameLimit(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushNumber(L, static_cast<double>(crabe::presentation::RenderHook::get().getFrameLimit()));
+        return 1;
+    }
+
+    // Crabe._getRenderFpsNative() -> frames presented per second, as measured at Present.
+    int __cdecl nativeGetRenderFps(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushNumber(L, static_cast<double>(crabe::presentation::RenderHook::get().getRenderFps()));
         return 1;
     }
 
@@ -248,6 +303,52 @@ namespace {
         return 1;
     }
 
+    // Crabe._avatarSetLevel(playerId, characterId, level) -> the level the game reports after
+    // setting the avatar to that absolute level (0 to 20), or nothing when it could not be set.
+    int __cdecl nativeAvatarSetLevel(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+        const auto characterId = static_cast<std::uint32_t>(lua.argToNumber(L, 2, 0.0));
+        const auto level = static_cast<int>(lua.argToNumber(L, 3, -1.0));
+
+        const auto result = crabe::infrastructure::EngineAvatar::get().setAvatarLevel(playerId, characterId, level);
+        if (!lua.hasReturnSupport() || !result) return 0;
+
+        lua.pushNumber(L, static_cast<double>(*result));
+        return 1;
+    }
+
+    // Crabe._actorSetSpeedScale(actorHandle, factor) -> true when the actor's movement speed
+    // multiplier was set; 1.0 is normal speed, 20.0 the ceiling.
+    int __cdecl nativeActorSetSpeedScale(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const auto factor = static_cast<float>(lua.argToNumber(L, 2, 1.0));
+
+        const bool applied = crabe::infrastructure::EngineActors::get().setMoveSpeedScale(handle, factor);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, applied);
+        return 1;
+    }
+
+    // Crabe._actorSpeedScale(actorHandle) -> the actor's movement speed multiplier, or nothing
+    // when it cannot be read.
+    int __cdecl nativeActorSpeedScale(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        if (!lua.hasReturnSupport()) return 0;
+
+        const auto result = crabe::infrastructure::EngineActors::get().moveSpeedScale(handle);
+        if (!result) return 0;
+
+        lua.pushNumber(L, static_cast<double>(*result));
+        return 1;
+    }
+
     // Crabe._damageRadius(x, y, z, radius, damage, damageType, exceptActorHandle) -> true when the
     // engine ran the area damage. damageType is "damageExplosive", "damageNormal", "damageSpecial" or
     // a four-character code; the actor behind exceptActorHandle (0 for none) is spared.
@@ -315,12 +416,65 @@ namespace {
         return 0;
     }
 
-    // Crabe._vfsList([prefix]) -> one string, a "virtualPath\toriginMod\n" line
-    // per override whose virtual path starts with prefix (normalized like any
-    // virtual path; every override when absent). One string rather than a
-    // table because LuaCall cannot build tables, and rather than one value per
-    // override because a mod with thousands of textures would overflow the
-    // stack. Crabe.Vfs.list parses it.
+    // Crabe._asiReport() -> one string, a "file\tsource\tstatus\tdetail\n" line per .asi plugin found.
+    int __cdecl nativeAsiReport(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const crabe::infrastructure::AsiLoader& loader = crabe::infrastructure::AsiLoader::get();
+        const std::filesystem::path root = loader.gameRoot();
+        std::string out;
+        for (const crabe::infrastructure::AsiLoadRecord& record : loader.records()) {
+            std::error_code error;
+            std::filesystem::path shown = std::filesystem::relative(record.path, root, error);
+            if (error || shown.empty() || shown.native().starts_with(L".."))
+                shown = record.path;
+            const std::u8string file = shown.generic_u8string();
+            out.append(file.begin(), file.end());
+            out += '\t';
+            out += record.source;
+            out += '\t';
+            out += crabe::infrastructure::asiStatusName(record.status);
+            out += '\t';
+            out += record.detail;
+            out += '\n';
+        }
+        lua.pushString(L, out);
+        return 1;
+    }
+
+    // Crabe._pluginGetValue(key) -> the value a native plugin or a mod shared under key, or nil.
+    int __cdecl nativePluginGetValue(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const char* key = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        const std::optional<std::string> value =
+            key ? crabe::application::PluginApi::get().value(key) : std::nullopt;
+        if (value)
+            lua.pushString(L, *value);
+        else
+            lua.pushNil(L);
+        return 1;
+    }
+
+    // Crabe._pluginSetValue(key, value) shares value with native plugins; a nil value erases the key.
+    int __cdecl nativePluginSetValue(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const char* key = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        if (!key || !*key)
+            return 0;
+        const char* value = lua.getTop(L) >= 2 ? lua.argToString(L, 2) : nullptr;
+        crabe::application::PluginApi::get().setValue(
+            key, value ? std::optional<std::string>(value) : std::nullopt);
+        return 0;
+    }
+
+    // Crabe._vfsList([prefix]) -> returns tab-separated virtualPath and originMod lines
+    // for overrides starting with prefix, or all overrides when prefix is omitted.
     int __cdecl nativeVfsList(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -368,13 +522,14 @@ namespace {
         return 1;
     }
 
-    // Crabe._inputReport() -> which XInput slots the game has polled so far.
+    // Crabe._inputReport() -> which XInput slots and DirectInput devices the game has polled so far.
     int __cdecl nativeInputReport(void* L)
     {
         crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
         if (!lua.hasReturnSupport()) return 0;
 
-        lua.pushString(L, crabe::presentation::InputHook::get().report());
+        lua.pushString(L, crabe::presentation::InputHook::get().report() + " | "
+                              + crabe::presentation::DirectInputHook::get().report());
         return 1;
     }
 
@@ -402,8 +557,6 @@ namespace {
         crabe::infrastructure::MessageHook::get().clear();
         return 0;
     }
-
-    // --- Generic Memory & Patch Primitives ---
 
     // Crabe._patternScan("55 8B EC ...") -> address, or nil
     int __cdecl nativePatternScan(void* L)
@@ -714,8 +867,248 @@ namespace {
         return 1;
     }
 
+    // Crabe._portalIsConnected() -> bool, true while a physical base is connected and answering.
+    int __cdecl nativePortalIsConnected(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, crabe::infrastructure::portal::PortalService::Instance().IsConnected());
+        return 1;
+    }
+
+    // Short name of a base type, as Crabe.Portal.getStatus reports it.
+    const char* portalTypeName(crabe::infrastructure::portal::PortalType type)
+    {
+        using crabe::infrastructure::portal::PortalType;
+        switch (type) {
+            case PortalType::StandardHid: return "hid";
+            case PortalType::Xbox360: return "xbox360";
+            case PortalType::XboxOne: return "xboxone";
+            default: return "none";
+        }
+    }
+
+    // Crabe._portalGetStatus() -> connected, typeDesc, slot1Sku, slot2Sku, slot3Sku, diagnostic, typeName.
+    // An empty slot reads 0; the diagnostic tells the player what is missing when no base answers.
+    int __cdecl nativePortalGetStatus(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const auto status = crabe::infrastructure::portal::PortalService::Instance().GetStatus();
+        lua.pushBoolean(L, status.connected);
+        lua.pushString(L, status.typeDescription);
+        lua.pushNumber(L, status.slot1Sku.value_or(0));
+        lua.pushNumber(L, status.slot2Sku.value_or(0));
+        lua.pushNumber(L, status.slot3Sku.value_or(0));
+        lua.pushString(L, status.diagnosticMessage);
+        lua.pushString(L, portalTypeName(status.type));
+        return 7;
+    }
+
+    // Crabe._portalSetLed(slot, r, g, b) -> bool, false when no base is connected.
+    int __cdecl nativePortalSetLed(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const auto slot = static_cast<std::uint8_t>(lua.argToNumber(L, 1, 0.0));
+        const auto r = static_cast<std::uint8_t>(lua.argToNumber(L, 2, 0.0));
+        const auto g = static_cast<std::uint8_t>(lua.argToNumber(L, 3, 0.0));
+        const auto b = static_cast<std::uint8_t>(lua.argToNumber(L, 4, 0.0));
+        lua.pushBoolean(L, crabe::infrastructure::portal::PortalService::Instance().SetLed(slot, r, g, b));
+        return 1;
+    }
+
+    // Hex text of a tag UID, the way UIDs travel to Lua: 7 bytes do not fit a Lua number exactly.
+    std::string uidToHex(std::uint64_t uid)
+    {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%014llx", static_cast<unsigned long long>(uid));
+        return text;
+    }
+
+    // Tag UID from its hex text. Zero for anything that is not plain hex.
+    std::uint64_t uidFromHex(const char* text)
+    {
+        if (!text || !*text) return 0;
+        char* end = nullptr;
+        const unsigned long long uid = std::strtoull(text, &end, 16);
+        return end && *end == '\0' ? uid : 0;
+    }
+
+    // Hex text of the 8 skill bytes, as stored on a tag.
+    std::string skillBitsToHex(const std::array<std::uint8_t, 8>& bits)
+    {
+        char text[17];
+        for (std::size_t i = 0; i < bits.size(); ++i)
+            std::snprintf(text + 2 * i, 3, "%02x", bits[i]);
+        return text;
+    }
+
+    // The 8 skill bytes from exactly 16 hex digits. std::nullopt for anything else.
+    std::optional<std::array<std::uint8_t, 8>> skillBitsFromHex(const char* text)
+    {
+        if (!text || std::strlen(text) != 16) return std::nullopt;
+        std::array<std::uint8_t, 8> bits{};
+        for (std::size_t i = 0; i < bits.size(); ++i) {
+            const char pair[3] = { text[2 * i], text[2 * i + 1], '\0' };
+            char* end = nullptr;
+            const unsigned long value = std::strtoul(pair, &end, 16);
+            if (!end || *end != '\0') return std::nullopt;
+            bits[i] = static_cast<std::uint8_t>(value);
+        }
+        return bits;
+    }
+
+    // Crabe._portalPollEvent() -> type (0 none, 1 placed, 2 removed), slot, sku, uidHex,
+    // level, experience, skillBitsHex, actionFlags, lastPlayed. The last five are the progression
+    // saved on a physical character figure, nil when it has none.
+    int __cdecl nativePortalPollEvent(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+
+        const auto ev = crabe::infrastructure::portal::PortalService::Instance().PollEvent();
+        if (!ev) {
+            lua.pushNumber(L, 0);
+            lua.pushNumber(L, 0);
+            lua.pushNumber(L, 0);
+            lua.pushString(L, "");
+            return 4;
+        }
+
+        lua.pushNumber(L, ev->type == crabe::infrastructure::portal::PortalTagEvent::Type::Placed ? 1 : 2);
+        lua.pushNumber(L, ev->slot);
+        lua.pushNumber(L, ev->sku);
+        lua.pushString(L, ev->uid ? uidToHex(ev->uid) : std::string());
+        if (!ev->progress) {
+            for (int i = 0; i < 5; ++i) lua.pushNil(L);
+            return 9;
+        }
+        lua.pushNumber(L, ev->progress->level);
+        lua.pushNumber(L, ev->progress->experience);
+        lua.pushString(L, skillBitsToHex(ev->progress->skillBits));
+        lua.pushNumber(L, ev->progress->actionFlags);
+        lua.pushNumber(L, ev->progress->lastPlayed);
+        return 9;
+    }
+
+    // Crabe._portalWriteProgress(slot, level, experience, skillBitsHex, actionFlags, lastPlayed) -> bool.
+    // Saves progression onto the physical figure of slot 1 or 2, into the older copy, with read-back.
+    // False when nothing was queued: no figure there, bad arguments, or nothing changed.
+    int __cdecl nativePortalWriteProgress(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto slot = static_cast<std::uint8_t>(lua.argToNumber(L, 1, 0.0));
+        const auto bits = skillBitsFromHex(lua.argToString(L, 4));
+        crabe::infrastructure::portal::FigureProgress progress;
+        progress.level = static_cast<std::uint8_t>(lua.argToNumber(L, 2, 0.0));
+        progress.experience = static_cast<std::uint32_t>(lua.argToNumber(L, 3, 0.0));
+        progress.actionFlags = static_cast<std::uint8_t>(lua.argToNumber(L, 5, 0.0));
+        progress.lastPlayed = static_cast<std::uint32_t>(lua.argToNumber(L, 6, 0.0));
+        if (bits) progress.skillBits = *bits;
+
+        const bool queued = (slot == 1 || slot == 2) && bits &&
+                            crabe::infrastructure::portal::PortalService::Instance().WriteProgress(slot, progress);
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, queued);
+        return 1;
+    }
+
+    // Crabe._portalEmulatePlace(slot, sku) -> true. Reports a virtual figure on a slot, as a base would.
+    int __cdecl nativePortalEmulatePlace(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto slot = static_cast<std::uint8_t>(lua.argToNumber(L, 1, 1.0));
+        const auto sku = static_cast<std::uint32_t>(lua.argToNumber(L, 2, 0.0));
+        crabe::infrastructure::portal::PortalService::Instance().EmulatePlaceFigure(slot, sku);
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, true);
+        return 1;
+    }
+
+    // Crabe._portalEmulateRemove(slot) -> true. Reports the figure of a slot as removed.
+    int __cdecl nativePortalEmulateRemove(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto slot = static_cast<std::uint8_t>(lua.argToNumber(L, 1, 1.0));
+        crabe::infrastructure::portal::PortalService::Instance().EmulateRemoveFigure(slot);
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, true);
+        return 1;
+    }
+
+    // Crabe._gatewayAddTag(uidHex, characterId, antenna, watch, experience, level, lastPlayed, action,
+    // owner [, skillBitsHex]) -> bool. Adds a tag to the engine's own figure registry, as a reader would.
+    // With watch, the game's writes to it come back through _gatewayPollWrite; game thread only.
+    int __cdecl nativeGatewayAddTag(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const std::uint64_t uid = uidFromHex(lua.argToString(L, 1));
+        const auto characterId = static_cast<std::uint32_t>(lua.argToNumber(L, 2, 0.0));
+        const auto antenna = static_cast<std::uint8_t>(lua.argToNumber(L, 3, 0.0));
+        const bool watch = lua.argToBoolean(L, 4);
+        crabe::infrastructure::EngineGateway::TagData data;
+        data.experience = static_cast<std::uint32_t>(lua.argToNumber(L, 5, 0.0));
+        data.level = static_cast<std::uint8_t>(lua.argToNumber(L, 6, 0.0));
+        data.lastPlayed = static_cast<std::uint32_t>(lua.argToNumber(L, 7, 0.0));
+        data.action = static_cast<std::uint8_t>(lua.argToNumber(L, 8, 0.0));
+        data.owner = static_cast<std::uint8_t>(lua.argToNumber(L, 9, 0.0));
+        data.progression = skillBitsFromHex(lua.argToString(L, 10));
+
+        const bool added = uid != 0 && characterId != 0 &&
+                           crabe::infrastructure::EngineGateway::get().addTag(uid, characterId, antenna, data, watch);
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, added);
+        return 1;
+    }
+
+    // Crabe._gatewayRemoveTag(uidHex) -> bool. Removes a tag from the engine's registry; game thread only.
+    int __cdecl nativeGatewayRemoveTag(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const std::uint64_t uid = uidFromHex(lua.argToString(L, 1));
+        const bool removed = uid != 0 && crabe::infrastructure::EngineGateway::get().removeTag(uid);
+        if (!lua.hasReturnSupport()) return 0;
+        lua.pushBoolean(L, removed);
+        return 1;
+    }
+
+    // Crabe._gatewayVirtualAvatar() -> character id of the virtual reader's avatar tag, 0 when none.
+    // Nothing when this build does not carry the bridge to the engine's registry.
+    int __cdecl nativeGatewayVirtualAvatar(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        const auto id = crabe::infrastructure::EngineGateway::get().virtualAvatarTag();
+        if (!id) return 0;
+        lua.pushNumber(L, static_cast<double>(*id));
+        return 1;
+    }
+
+    // Crabe._gatewayPollWrite() -> uidHex, field, value, or nothing when the queue is empty.
+    // The oldest write the game made to a watched tag; value is a number, or skill hex for progression.
+    int __cdecl nativeGatewayPollWrite(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        const auto write = crabe::infrastructure::EngineGateway::get().pollWrite();
+        if (!write) return 0;
+
+        using Field = crabe::infrastructure::EngineGateway::Field;
+        lua.pushString(L, uidToHex(write->uid));
+        lua.pushString(L, crabe::infrastructure::EngineGateway::fieldName(write->field));
+        if (write->field == Field::Progression)
+            lua.pushString(L, skillBitsToHex(write->progression));
+        else
+            lua.pushNumber(L, static_cast<double>(write->value));
+        return 3;
+    }
+
 } // namespace
 
+// Registers all Crabe native C functions into the game Lua state.
 bool crabe::lua_runtime::registerNatives(void* L)
 {
     struct Entry {
@@ -726,6 +1119,10 @@ bool crabe::lua_runtime::registerNatives(void* L)
     static constexpr Entry kNatives[] = {
         { "_setWindowModeNative",   &nativeSetWindowMode },
         { "_getWindowModeNative",   &nativeGetWindowMode },
+        { "_getRenderResolutionNative", &nativeGetRenderResolution },
+        { "_setFrameLimitNative",   &nativeSetFrameLimit },
+        { "_getFrameLimitNative",   &nativeGetFrameLimit },
+        { "_getRenderFpsNative",    &nativeGetRenderFps },
         { "_findGameNative",        &nativeFindGameNative },
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
@@ -738,11 +1135,21 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_actorCreate",           &nativeActorCreate },
         { "_actorSetState",         &nativeActorSetState },
         { "_actorTestState",        &nativeActorTestState },
+        { "_avatarSetLevel",        &nativeAvatarSetLevel },
+        { "_actorSetSpeedScale",    &nativeActorSetSpeedScale },
+        { "_actorSpeedScale",       &nativeActorSpeedScale },
         { "_damageRadius",          &nativeDamageRadius },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
         { "_padState",              &crabe::input_natives::padState },
         { "_setPadCaptured",        &crabe::input_natives::setPadCaptured },
+        { "_setDirectInputCaptured", &crabe::input_natives::setDirectInputCaptured },
+        { "_inputRemap",            &crabe::input_natives::remapSet },
+        { "_inputRemapClear",       &crabe::input_natives::remapClear },
+        { "_inputStatus",           &crabe::input_natives::inputStatus },
+        { "_keyScanCode",           &crabe::input_natives::keyScanCode },
+        { "_mouseWheel",            &crabe::input_natives::mouseWheel },
+        { "_keyName",               &crabe::input_natives::keyName },
         { "_setCapturedKeys",       &nativeSetCapturedKeys },
         { "_messageWatch",          &nativeMessageWatch },
         { "_messageReport",         &nativeMessageReport },
@@ -766,8 +1173,22 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
         { "_vfsResolve",            &nativeVfsResolve },
         { "_vfsList",               &nativeVfsList },
+        { "_asiReport",             &nativeAsiReport },
+        { "_pluginGetValue",        &nativePluginGetValue },
+        { "_pluginSetValue",        &nativePluginSetValue },
         { "_vfsGetStats",           &nativeVfsGetStats },
         { "_vfsLastRedirected",     &nativeVfsLastRedirected },
+        { "_portalIsConnected",     &nativePortalIsConnected },
+        { "_portalGetStatus",       &nativePortalGetStatus },
+        { "_portalSetLed",          &nativePortalSetLed },
+        { "_portalWriteProgress",   &nativePortalWriteProgress },
+        { "_portalPollEvent",       &nativePortalPollEvent },
+        { "_portalEmulatePlace",    &nativePortalEmulatePlace },
+        { "_portalEmulateRemove",   &nativePortalEmulateRemove },
+        { "_gatewayAddTag",         &nativeGatewayAddTag },
+        { "_gatewayRemoveTag",      &nativeGatewayRemoveTag },
+        { "_gatewayVirtualAvatar",  &nativeGatewayVirtualAvatar },
+        { "_gatewayPollWrite",      &nativeGatewayPollWrite },
     };
 
 #if CRABELOADER_WITH_MULTIPLAYER
@@ -779,8 +1200,9 @@ bool crabe::lua_runtime::registerNatives(void* L)
 
     crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
         "Crabe = Crabe or {{}}; Crabe.version = '{}'; Crabe.versionMajor = {}; "
-        "Crabe.versionMinor = {}; Crabe.versionPatch = {};",
-        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch));
+        "Crabe.versionMinor = {}; Crabe.versionPatch = {}; Crabe.versionFull = '{}'; Crabe.buildCommit = '{}';",
+        crabe::version::String, crabe::version::Major, crabe::version::Minor, crabe::version::Patch,
+        crabe::build::label(), crabe::build::commit()));
 
     for (const auto& entry : kNatives) {
         if (crabe::infrastructure::LuaCall::get().registerNativeFunction(L, "Crabe", entry.name, entry.fn)) continue;

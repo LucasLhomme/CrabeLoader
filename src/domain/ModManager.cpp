@@ -246,9 +246,7 @@ void ModManager::reloadAllMods(void* L)
     discoverAndLoadMods(L, targetFolder);
 }
 
-// Records one frame of mod ImGui calls on the script thread. Nothing is drawn
-// here: the commands are replayed later by RenderHook inside Present, which is
-// the only place allowed to touch Direct3D (Architecture Blueprint, Rule 3).
+// Records one frame of mod ImGui calls into the DrawBuffer for Present replay.
 void ModManager::dispatchDraw(void* L)
 {
     if (!L || !Loader::get().isRuntimeReady())

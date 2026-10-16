@@ -56,10 +56,10 @@ function Resolve-GameDirectory {
 
 $resolvedGameDir = Resolve-GameDirectory -ExplicitPath $GameDir
 $gameExe = Join-Path $resolvedGameDir "DisneyInfinity3.exe"
-$dllCandidates = @(
-    (Join-Path $projectRoot "build\Release\bink2w32.dll"),
-    (Join-Path $projectRoot "Release\bink2w32.dll"),
-    (Join-Path $projectRoot "build\vs2022-dll\Release\bink2w32.dll")
+$buildFolders = @(
+    (Join-Path $projectRoot "build\Release"),
+    (Join-Path $projectRoot "Release"),
+    (Join-Path $projectRoot "build\vs2022-dll\Release")
 )
 
 Write-Host "=== 1. Closing Game (if running) ===" -ForegroundColor Cyan
@@ -74,15 +74,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "=== 3. Deploying artifacts ===" -ForegroundColor Cyan
-$origDll = Join-Path $resolvedGameDir "bink2w32_orig.dll"
-$targetDll = Join-Path $resolvedGameDir "bink2w32.dll"
-if (!(Test-Path $origDll) -and (Test-Path $targetDll)) {
-    Copy-Item -Path $targetDll -Destination $origDll -Force
+$legacyBackup = Join-Path $resolvedGameDir "bink2w32_orig.dll"
+$legacyProxy = Join-Path $resolvedGameDir "bink2w32.dll"
+# A 1.0 install put CrabeLoader in bink2w32.dll and kept the game's own as bink2w32_orig.dll:
+# put the game's file back, since the loader is CrabeLoader.asi started by dinput8.dll now.
+if (Test-Path $legacyBackup) {
+    Move-Item -Path $legacyBackup -Destination $legacyProxy -Force
 }
 
-$dllSrc = $dllCandidates | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTime } -Descending | Select-Object -First 1
-Copy-Item -Path $dllSrc -Destination $targetDll -Force
-Write-Host "[OK] bink2w32.dll -> $resolvedGameDir" -ForegroundColor Green
+$buildFolder = $buildFolders | Where-Object { Test-Path (Join-Path $_ "CrabeLoader.asi") } |
+    Sort-Object { (Get-Item (Join-Path $_ "CrabeLoader.asi")).LastWriteTime } -Descending | Select-Object -First 1
+foreach ($file in @("CrabeLoader.asi", "dinput8.dll")) {
+    Copy-Item -Path (Join-Path $buildFolder $file) -Destination (Join-Path $resolvedGameDir $file) -Force
+    Write-Host "[OK] $file -> $resolvedGameDir" -ForegroundColor Green
+}
 
 # Clean legacy API folder if present (Lua API is compiled into the DLL)
 $apiDir = Join-Path $resolvedGameDir "api"
@@ -93,6 +98,12 @@ if (Test-Path $apiDir) {
 # Deploy to mods/ directory
 $modsDir = Join-Path $resolvedGameDir "mods"
 if (!(Test-Path $modsDir)) { New-Item -ItemType Directory -Force -Path $modsDir | Out-Null }
+foreach ($obsoleteMod in @("resolution.lua", "window_mode.lua")) {
+    $obsoletePath = Join-Path $modsDir $obsoleteMod
+    if (Test-Path $obsoletePath) {
+        Remove-Item -Path $obsoletePath -Force -ErrorAction SilentlyContinue
+    }
+}
 if (Test-Path (Join-Path $projectRoot "mods")) {
     Copy-Item -Path (Join-Path $projectRoot "mods\*.lua") -Destination $modsDir -Force -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $projectRoot "mods") -Directory |

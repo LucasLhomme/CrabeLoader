@@ -21,7 +21,6 @@
 
 namespace crabe::infrastructure {
 
-/// Telemetry metrics for frame pacing and stutter detection.
 struct FramePacingMetrics {
     uint64_t totalFrames{0};
     double averageFrametimeMs{0.0};
@@ -35,7 +34,6 @@ struct FramePacingMetrics {
     uint64_t stutters50ms{0};
 };
 
-/// Telemetry metrics for process memory tracking and leak detection.
 struct MemoryMetrics {
     double initialWorkingSetMb{0.0};
     double peakWorkingSetMb{0.0};
@@ -46,27 +44,23 @@ struct MemoryMetrics {
     bool leakSuspected{false};
 };
 
-/// Telemetry metrics for VFS resolutions and cache performance.
 struct VfsMetrics {
     uint64_t totalLookups{0};
     uint64_t totalHits{0};
     double hitRatio{0.0};
 };
 
-/// Telemetry metrics for the event bus.
 struct EventMetrics {
     uint64_t totalDispatched{0};
     size_t peakListenerCount{0};
 };
 
-/// Telemetry metrics for coroutine fiber scheduler.
 struct FiberMetrics {
     uint64_t totalScheduled{0};
     size_t currentActive{0};
     size_t peakActive{0};
 };
 
-/// Aggregate telemetry snapshot combining all system metrics.
 struct TelemetrySnapshot {
     std::string timestamp;
     double elapsedSeconds{0.0};
@@ -77,46 +71,43 @@ struct TelemetrySnapshot {
     FiberMetrics fibers;
 };
 
-/// Abstract interface for recording telemetry events.
 class ITelemetryCollector {
 public:
     virtual ~ITelemetryCollector() = default;
 
-    /// Records the execution duration of a single rendered frame.
+    // Records the execution duration of a single rendered frame.
     virtual void recordFrameTime(double deltaSeconds) = 0;
 
-    /// Records current memory usage and updates baseline drift.
+    // Records current memory usage and updates baseline drift.
     virtual void recordMemorySample(double workingSetMb, double privateBytesMb, double luaHeapKb) = 0;
 
-    /// Records a virtual file system lookup and cache hit status.
+    // Records a virtual file system lookup and cache hit status.
     virtual void recordVfsLookup(bool isHit) = 0;
 
-    /// Records an event dispatch with its associated listener count.
+    // Records an event dispatch with its associated listener count.
     virtual void recordEventDispatched(size_t listenerCount) = 0;
 
-    /// Updates the count of active coroutine fibers.
+    // Updates the count of active coroutine fibers.
     virtual void recordFiberCount(size_t activeCount) = 0;
 };
 
-/// Abstract interface for reading and serializing telemetry snapshots.
 class ITelemetryExporter {
 public:
     virtual ~ITelemetryExporter() = default;
 
-    /// Generates a complete snapshot of all collected telemetry metrics.
+    // Generates a complete snapshot of all collected telemetry metrics.
     [[nodiscard]] virtual TelemetrySnapshot getSnapshot() const = 0;
 
-    /// Serializes the aggregate telemetry data into a JSON string.
+    // Serializes the aggregate telemetry data into a JSON string.
     [[nodiscard]] virtual std::string exportJson() const = 0;
 
-    /// Resets all internal metric accumulators to initial state.
+    // Resets all internal metric accumulators to initial state.
     virtual void reset() = 0;
 };
 
-/// Thread-safe performance and telemetry monitor implementing SOLID collection and export.
 class TelemetryMonitor final : public ITelemetryCollector, public ITelemetryExporter {
 public:
-    /// Constructs a telemetry monitor with an optional sliding window capacity.
+    // Constructs a telemetry monitor with an optional sliding window capacity.
     explicit TelemetryMonitor(size_t windowCapacity = 1000);
 
     ~TelemetryMonitor() override = default;
@@ -126,32 +117,35 @@ public:
     TelemetryMonitor(TelemetryMonitor&&) = delete;
     TelemetryMonitor& operator=(TelemetryMonitor&&) = delete;
 
-    /// Records the execution duration of a single rendered frame.
+    // Records the execution duration of a single rendered frame.
     void recordFrameTime(double deltaSeconds) override;
 
-    /// Records current memory usage and updates baseline drift.
+    // Records current memory usage and updates baseline drift.
     void recordMemorySample(double workingSetMb, double privateBytesMb, double luaHeapKb) override;
 
-    /// Records a virtual file system lookup and cache hit status.
+    // Records a virtual file system lookup and cache hit status.
     void recordVfsLookup(bool isHit) override;
 
-    /// Records an event dispatch with its associated listener count.
+    // Records an event dispatch with its associated listener count.
     void recordEventDispatched(size_t listenerCount) override;
 
-    /// Updates the count of active coroutine fibers.
+    // Updates the count of active coroutine fibers.
     void recordFiberCount(size_t activeCount) override;
 
-    /// Generates a complete snapshot of all collected telemetry metrics.
+    // Generates a complete snapshot of all collected telemetry metrics.
     [[nodiscard]] TelemetrySnapshot getSnapshot() const override;
 
-    /// Serializes the aggregate telemetry data into a JSON string.
+    // Serializes the aggregate telemetry data into a JSON string.
     [[nodiscard]] std::string exportJson() const override;
 
-    /// Resets all internal metric accumulators to initial state.
+    // Resets all internal metric accumulators to initial state.
     void reset() override;
 
 private:
+    // Calculates the specified percentile from recorded frame times.
     [[nodiscard]] double calculatePercentile(double percentile) const;
+
+    // Computes mean absolute frame time variance.
     [[nodiscard]] double calculateJitter() const;
 
     mutable std::mutex _mutex;

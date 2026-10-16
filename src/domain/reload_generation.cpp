@@ -12,10 +12,7 @@
 
 namespace crabe::domain {
 
-// Recomputes the lock-free hint. Caller holds _mutex.
-//
-// O(states), and states number about four -- but it only runs on a reload
-// request or a catch-up, never on the pcall path that reads the hint.
+// Recomputes the lock-free hint of states behind generation. Caller holds _mutex.
 void ReloadGenerations::refreshBehindCount()
 {
     std::size_t behind = 0;
@@ -27,6 +24,7 @@ void ReloadGenerations::refreshBehindCount()
     _behind.store(behind, std::memory_order_release);
 }
 
+// Increments the target reload generation.
 void ReloadGenerations::requestReload()
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -34,33 +32,23 @@ void ReloadGenerations::requestReload()
     refreshBehindCount();
 }
 
+// Checks whether the specified Lua state is behind the current generation.
 bool ReloadGenerations::needsReload(void* L) const
 {
     if (!L)
         return false;
 
-    // The quiet path, and the one that matters: this is reached from
-    // LuaCall::hkPcall, which the game calls thousands of times a second on
-    // several threads. Once every state has caught up -- which is the steady
-    // state, since a reload is a keypress -- the answer is one relaxed atomic
-    // load and no lock at all.
-    //
-    // The hint can lag a request by the width of requestReload's critical
-    // section, and that is harmless: a reader that misses it asks again on the
-    // next pcall, microseconds later. It can never lag the other way, because
-    // the count is only lowered under the same lock that records the catch-up.
     if (_behind.load(std::memory_order_acquire) == 0)
         return false;
 
     std::lock_guard<std::mutex> lock(_mutex);
     const auto it = _states.find(L);
-    // Unknown state: it has not loaded its mods yet, and doing that is
-    // discoverAndLoadMods's job on creation, not a reload's.
     if (it == _states.end())
         return false;
     return it->second < _generation;
 }
 
+// Marks a Lua state as caught up to the current generation.
 bool ReloadGenerations::markReloaded(void* L)
 {
     if (!L)
@@ -70,8 +58,6 @@ bool ReloadGenerations::markReloaded(void* L)
     _states[L] = _generation;
     refreshBehindCount();
 
-    // Generation 0 is the initial load, which no state is ever "first" to:
-    // there is nothing installed yet to tear down.
     if (_generation == 0 || _servicedGeneration >= _generation)
         return false;
 
@@ -79,6 +65,7 @@ bool ReloadGenerations::markReloaded(void* L)
     return true;
 }
 
+// Stops tracking the specified Lua state.
 void ReloadGenerations::forget(void* L)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -86,17 +73,20 @@ void ReloadGenerations::forget(void* L)
     refreshBehindCount();
 }
 
+// Returns the current reload generation counter.
 std::uint64_t ReloadGenerations::generation() const
 {
     std::lock_guard<std::mutex> lock(_mutex);
     return _generation;
 }
 
+// Returns the number of tracked states that have not caught up to current generation.
 std::size_t ReloadGenerations::statesBehind() const
 {
     return _behind.load(std::memory_order_acquire);
 }
 
+// Returns the count of actively tracked Lua states.
 std::size_t ReloadGenerations::trackedStates() const
 {
     std::lock_guard<std::mutex> lock(_mutex);

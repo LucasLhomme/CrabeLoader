@@ -8,12 +8,8 @@
 
 Game = Game or {}
 
--- Deals `damage` of an engine damage type to every actor within `radius` of x, y, z (y being
--- height), the way the engine's DamageRadiusExceptActor script native does, with no source and
--- no owner. damageType is "damageExplosive" (the default), "damageNormal", "damageSpecial" or a
--- four-character damage code. The actor behind `exceptHandle` (Game.GetAvatarHandle for a
--- player) is spared. Victims keep their own health, armour and team rules: a big enough number
--- kills anything that can be killed. True when the engine ran the call.
+-- Deals area damage to actors within radius of x, y, z.
+-- Spares the actor specified by exceptHandle.
 function Game.DamageRadius(x, y, z, radius, damage, damageType, exceptHandle)
     if type(Crabe._damageRadius) ~= "function" then
         error("Game.DamageRadius: this loader has no area damage native", 2)

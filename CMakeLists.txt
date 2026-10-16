@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(CrabeLoader VERSION 0.2.0 LANGUAGES C CXX)
 # Read VERSION file as the single source of truth
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" CRABELOADER_VERSION_RAW)
 string(STRIP "${CRABELOADER_VERSION_RAW}" CRABELOADER_VERSION)
@@ -18,12 +17,33 @@ configure_file(
     @ONLY
 )
 
+# The build label (include/shared/build_info.hpp): restamped at every build, so two
+# builds never look alike in the log, the overlay or a crash report. A release
+# build (the release workflow) is labelled with the plain version.
+option(CRABELOADER_RELEASE_BUILD "Label this build as a release (plain version) instead of a development build." OFF)
+set(CRABE_BUILD_STAMP_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(CRABE_BUILD_STAMP_COMMAND
+    "${CMAKE_COMMAND}"
+    "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DOUTPUT_DIR=${CRABE_BUILD_STAMP_DIR}"
+    "-DVERSION=${CRABELOADER_VERSION}"
+    "-DRELEASE=${CRABELOADER_RELEASE_BUILD}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_stamp.cmake"
+)
+execute_process(COMMAND ${CRABE_BUILD_STAMP_COMMAND})
+add_custom_target(crabe_build_stamp
+    COMMAND ${CRABE_BUILD_STAMP_COMMAND}
+    BYPRODUCTS "${CRABE_BUILD_STAMP_DIR}/build_stamp.cpp" "${CRABE_BUILD_STAMP_DIR}/build_stamp.h"
+    COMMENT "Stamping the build label"
+    VERBATIM
+)
+
 option(CRABELOADER_AS_SHARED "Build CrabeLoader as a shared library (DLL)." OFF)
 option(CRABELOADER_BUILD_IMGUI "Build bundled Dear ImGui sources/backends." ON)
 option(CRABELOADER_BUILD_TESTS "Build the unit test suite." OFF)
 option(CRABELOADER_BUILD_CLI "Build crabe-cli, the offline mod-authoring tool." OFF)
 option(CRABELOADER_BUILD_INSTALLER "Build CrabeInstaller.exe, the one-click installer." OFF)
-option(CRABELOADER_INSTALLER_EMBED_DLL "Embed bink2w32.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
+option(CRABELOADER_INSTALLER_EMBED_DLL "Embed CrabeLoader.asi and dinput8.dll inside CrabeInstaller.exe (needs CRABELOADER_AS_SHARED)." ON)
 
 # The test suite exercises the real crabe-cli.exe (new-mod's scaffold is fed
 # straight into validate, end to end), so a test build needs it regardless of
@@ -46,6 +66,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # depend on a VC++ redistributable (debug or release) being installed there.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# Enable multi-processor compilation (/MP) for MSVC
+if(MSVC)
+    add_compile_options(/MP)
+endif()
+
 include(FetchContent)
 
 # Third-party dependencies
@@ -67,7 +92,76 @@ FetchContent_Declare(
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
-FetchContent_MakeAvailable(nlohmann_json tomlplusplus)
+FetchContent_Declare(
+    minhook
+    URL https://github.com/TsudaKageyu/minhook/archive/refs/tags/v1.3.3.tar.gz
+    URL_HASH SHA256=5bec16358ec9086d4593124bf558635e89135abea2c76e5761ecaf09f4546b19
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR crabe-does-not-configure-minhook
+)
+
+FetchContent_Declare(
+    imgui
+    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.90.9.tar.gz
+    URL_HASH SHA256=04943919721e874ac75a2f45e6eb6c0224395034667bf508923388afda5a50bf
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR crabe-does-not-configure-imgui
+)
+
+FetchContent_MakeAvailable(nlohmann_json tomlplusplus minhook imgui)
+
+# Compatibility include shims for "imgui/imgui.h" and "minhook/MinHook.h"
+set(CRABE_INCLUDE_SHIM_DIR "${CMAKE_CURRENT_BINARY_DIR}/include_shims")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui.h" "#pragma once\n#include <imgui.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui_internal.h" "#pragma once\n#include <imgui_internal.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui_impl_win32.h" "#pragma once\n#include <imgui_impl_win32.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/imgui/imgui_impl_dx11.h" "#pragma once\n#include <imgui_impl_dx11.h>\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/minhook/MinHook.h" "#pragma once\n#include <MinHook.h>\n")
+file(MAKE_DIRECTORY "${CRABE_INCLUDE_SHIM_DIR}/minhook/hde")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/minhook/hde/hde32.h" "#pragma once\n#include \"${minhook_SOURCE_DIR}/src/hde/hde32.h\"\n")
+file(WRITE "${CRABE_INCLUDE_SHIM_DIR}/minhook/hde/hde64.h" "#pragma once\n#include \"${minhook_SOURCE_DIR}/src/hde/hde64.h\"\n")
+
+add_library(minhook STATIC
+    "${minhook_SOURCE_DIR}/src/buffer.c"
+    "${minhook_SOURCE_DIR}/src/hook.c"
+    "${minhook_SOURCE_DIR}/src/trampoline.c"
+    "${minhook_SOURCE_DIR}/src/hde/hde32.c"
+    "${minhook_SOURCE_DIR}/src/hde/hde64.c"
+)
+target_include_directories(minhook PUBLIC
+    "${minhook_SOURCE_DIR}/include"
+    "${minhook_SOURCE_DIR}/src"
+    "${CRABE_INCLUDE_SHIM_DIR}"
+)
+if(MSVC)
+    target_compile_options(minhook PRIVATE /W0)
+else()
+    target_compile_options(minhook PRIVATE -w)
+endif()
+
+if(CRABELOADER_BUILD_IMGUI)
+    add_library(imgui STATIC
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp"
+    )
+    target_include_directories(imgui PUBLIC
+        "${imgui_SOURCE_DIR}"
+        "${imgui_SOURCE_DIR}/backends"
+        "${CRABE_INCLUDE_SHIM_DIR}"
+    )
+    target_link_libraries(imgui PUBLIC
+        d3d11
+    )
+    if(MSVC)
+        target_compile_options(imgui PRIVATE /utf-8 /W0)
+    else()
+        target_compile_options(imgui PRIVATE -w)
+    endif()
+endif()
 
 
 set(CRABELOADER_CORE_SOURCES
@@ -79,6 +173,9 @@ set(CRABELOADER_CORE_SOURCES
     src/presentation/render_hook.cpp
     src/presentation/input_hook.cpp
     src/presentation/pad_state.cpp
+    src/presentation/input_remap.cpp
+    src/presentation/input_remap_natives.cpp
+    src/presentation/dinput_hook.cpp
     src/presentation/imgui_bindings.cpp
     src/presentation/draw_buffer.cpp
     src/presentation/texture_cache.cpp
@@ -89,6 +186,8 @@ set(CRABELOADER_CORE_SOURCES
     src/application/gateway.cpp
     src/application/lua_runtime.cpp
     src/application/lua_natives.cpp
+    src/application/plugin_api.cpp
+    src/application/plugin_host.cpp
     src/application/update_checker.cpp
     src/application/update_launcher.cpp
 
@@ -102,6 +201,7 @@ set(CRABELOADER_CORE_SOURCES
     src/domain/mod_manager.cpp
     src/domain/reload_generation.cpp
     src/domain/config.cpp
+    src/domain/asi_plugins.cpp
     src/domain/update_check.cpp
 
     # Infrastructure Layer
@@ -114,10 +214,18 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/minhook_backend.cpp
     src/infrastructure/code_cave.cpp
     src/infrastructure/engine_actors.cpp
+    src/infrastructure/engine_avatar.cpp
     src/infrastructure/engine_free_camera.cpp
+    src/infrastructure/engine_gateway.cpp
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_meridian.cpp
+    src/infrastructure/engine_resolution.cpp
+    src/infrastructure/engine_startup.cpp
+    src/infrastructure/patch/patch_resolution.cpp
+    src/infrastructure/patch/patch_borderless.cpp
+    src/infrastructure/patch/patch_keybind.cpp
     src/infrastructure/engine_shaders.cpp
+    src/infrastructure/engine_asset_loader.cpp
     src/infrastructure/engine_sky.cpp
     src/infrastructure/script_natives.cpp
     src/infrastructure/message_hook.cpp
@@ -125,33 +233,26 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/lua_symbols.cpp
     src/infrastructure/vfs_override_manager.cpp
     src/infrastructure/vfs_hook.cpp
+    src/infrastructure/http_redirect_rules.cpp
+    src/infrastructure/http_redirect.cpp
     src/infrastructure/update_services.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_protocol.cpp
+    src/infrastructure/portal/portal_transports.cpp
+    src/infrastructure/portal/portal_transport_gip.cpp
+    src/infrastructure/portal/usb_device.cpp
+    src/infrastructure/portal/portal_worker.cpp
+    src/infrastructure/portal/portal_service.cpp
+    src/infrastructure/loader_instance.cpp
+    src/infrastructure/asi_loader.cpp
+    src/infrastructure/entry_point_hook.cpp
 
     # Shared Layer
     src/shared/logger.cpp
     src/shared/version.cpp
     src/shared/keybind_names.cpp
+    src/shared/loader_marker.cpp
 )
-
-set(CRABELOADER_MINHOOK_SOURCES
-    src/minhook/buffer.c
-    src/minhook/hook.c
-    src/minhook/trampoline.c
-    src/minhook/hde/hde32.c
-    src/minhook/hde/hde64.c
-)
-
-set(CRABELOADER_IMGUI_SOURCES)
-if(CRABELOADER_BUILD_IMGUI)
-    list(APPEND CRABELOADER_IMGUI_SOURCES
-        include/imgui/imgui.cpp
-        include/imgui/imgui_draw.cpp
-        include/imgui/imgui_tables.cpp
-        include/imgui/imgui_widgets.cpp
-        include/imgui/imgui_impl_win32.cpp
-        include/imgui/imgui_impl_dx11.cpp
-    )
-endif()
 
 # Multiplayer is work in progress and kept out of the repository (.gitignore):
 # it is built only where its sources are present, so a clean clone builds without it.
@@ -179,16 +280,36 @@ endif()
 
 set(CRABELOADER_SOURCES
     ${CRABELOADER_CORE_SOURCES}
-    ${CRABELOADER_MINHOOK_SOURCES}
-    ${CRABELOADER_IMGUI_SOURCES}
 )
 
 if(CRABELOADER_AS_SHARED)
     add_library(${PROJECT_NAME} SHARED ${CRABELOADER_SOURCES})
-    # The game loads bink2w32.dll; proxy.hpp forwards every export to
-    # bink2w32_orig.dll. Naming the output anything else means the game never
-    # loads the loader at all.
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "bink2w32")
+    # The loader is an .asi plugin: the bootstrap dinput8.dll below loads it,
+    # and so does any other ASI loader. proxy.hpp keeps the Bink exports, so the
+    # same file still works as the bink2w32.dll of a 1.x install.
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "CrabeLoader" SUFFIX ".asi")
+
+    # The game imports dinput8.dll and Windows looks in the game folder first:
+    # this small DLL answers as dinput8.dll, forwards DirectInput to the system
+    # copy, and starts CrabeLoader.asi at the game's entry point.
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/bootstrap/bootstrap.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/bootstrap/bootstrap.rc"
+        @ONLY
+    )
+    add_library(CrabeBootstrap SHARED
+        src/bootstrap/bootstrap_main.cpp
+        src/bootstrap/load_loader.cpp
+        src/bootstrap/dinput8_proxy.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/bootstrap/bootstrap.rc"
+    )
+    set_target_properties(CrabeBootstrap PROPERTIES OUTPUT_NAME "dinput8")
+    target_include_directories(CrabeBootstrap PRIVATE include "${CRABE_BUILD_STAMP_DIR}")
+    add_dependencies(CrabeBootstrap crabe_build_stamp)
+    target_compile_definitions(CrabeBootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(MSVC)
+        target_compile_options(CrabeBootstrap PRIVATE /W4 /utf-8)
+    endif()
 else()
     add_executable(${PROJECT_NAME} ${CRABELOADER_SOURCES})
 endif()
@@ -201,8 +322,6 @@ target_include_directories(${PROJECT_NAME}
         include/domain
         include/infrastructure
         include/shared
-        include/imgui
-        include/minhook
         src
 )
 
@@ -212,6 +331,10 @@ target_compile_definitions(${PROJECT_NAME}
         NOMINMAX
         _CRT_SECURE_NO_WARNINGS
 )
+
+target_sources(${PROJECT_NAME} PRIVATE "${CRABE_BUILD_STAMP_DIR}/build_stamp.cpp")
+target_include_directories(${PROJECT_NAME} PRIVATE "${CRABE_BUILD_STAMP_DIR}")
+add_dependencies(${PROJECT_NAME} crabe_build_stamp)
 if(CRABELOADER_WITH_MULTIPLAYER)
     target_compile_definitions(${PROJECT_NAME} PRIVATE CRABELOADER_WITH_MULTIPLAYER=1)
 endif()
@@ -251,13 +374,17 @@ endif()
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         dbghelp
+        hid
+        setupapi
         nlohmann_json::nlohmann_json
         tomlplusplus::tomlplusplus
+        minhook
 )
 
 if(CRABELOADER_BUILD_IMGUI)
     target_link_libraries(${PROJECT_NAME}
         PRIVATE
+            imgui
             d3d11
             dxgi
             d3dcompiler
@@ -361,23 +488,47 @@ else()
     target_compile_options(test_vfs_override PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(test_input_remap
+    tests/cpp/test_input_remap.cpp
+    src/presentation/input_remap.cpp
+)
+target_include_directories(test_input_remap PRIVATE
+    include
+)
+if(MSVC)
+    target_compile_options(test_input_remap PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_input_remap PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(test_http_redirect
+    tests/cpp/test_http_redirect.cpp
+    src/infrastructure/http_redirect_rules.cpp
+)
+target_include_directories(test_http_redirect PRIVATE
+    include
+)
+if(MSVC)
+    target_compile_options(test_http_redirect PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_http_redirect PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(test_draw_primitives
     tests/cpp/test_draw_primitives.cpp
     src/presentation/draw_buffer.cpp
     src/presentation/pad_state.cpp
-    include/imgui/imgui.cpp
-    include/imgui/imgui_draw.cpp
-    include/imgui/imgui_tables.cpp
-    include/imgui/imgui_widgets.cpp
 )
 target_include_directories(test_draw_primitives PRIVATE
     include
-    include/imgui
 )
 target_compile_definitions(test_draw_primitives PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
     _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_draw_primitives PRIVATE
+    imgui
 )
 if(MSVC)
     target_compile_options(test_draw_primitives PRIVATE /utf-8)
@@ -451,11 +602,13 @@ set(CRABE_INSTALLER_CORE_SOURCES
     src/installer/game_installer.cpp
     src/installer/mods_readme.cpp
     src/installer/steam_locator.cpp
+    src/shared/loader_marker.cpp
 )
 
 add_executable(test_installer
     tests/cpp/test_installer.cpp
     ${CRABE_INSTALLER_CORE_SOURCES}
+    src/infrastructure/loader_instance.cpp
 )
 target_include_directories(test_installer PRIVATE
     include
@@ -473,6 +626,84 @@ else()
     target_compile_options(test_installer PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# test_asi_plugins loads three real plugins built here: asi_probe starts and drives the plugin API,
+# asi_probe_refuses returns FALSE from DllMain, asi_probe_init_crash faults in CrabePluginInit.
+foreach(probe IN ITEMS asi_probe asi_probe_refuses asi_probe_init_crash)
+    add_library(${probe} SHARED tests/cpp/asi_probe.cpp)
+    target_include_directories(${probe} PRIVATE include)
+    set_target_properties(${probe} PROPERTIES SUFFIX ".asi" PREFIX "")
+    if(probe STREQUAL "asi_probe_refuses")
+        target_compile_definitions(${probe} PRIVATE CRABE_ASI_PROBE_REFUSES=1)
+    elseif(probe STREQUAL "asi_probe_init_crash")
+        target_compile_definitions(${probe} PRIVATE CRABE_ASI_PROBE_INIT_CRASHES=1)
+    endif()
+endforeach()
+
+# test_build_info checks the label this very build was stamped with.
+add_executable(test_build_info
+    tests/cpp/test_build_info.cpp
+    "${CRABE_BUILD_STAMP_DIR}/build_stamp.cpp"
+    src/shared/version.cpp
+)
+add_dependencies(test_build_info crabe_build_stamp)
+target_include_directories(test_build_info PRIVATE include)
+if(MSVC)
+    target_compile_options(test_build_info PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_build_info PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# test_bootstrap starts a probe as CrabeLoader.asi the way the bootstrap dinput8.dll does,
+# and checks every outcome it reports: started, missing, refused, crashed.
+add_executable(test_bootstrap
+    tests/cpp/test_bootstrap.cpp
+    src/bootstrap/load_loader.cpp
+    src/shared/loader_marker.cpp
+)
+add_dependencies(test_bootstrap asi_probe asi_probe_refuses asi_probe_init_crash)
+target_include_directories(test_bootstrap PRIVATE include)
+target_compile_definitions(test_bootstrap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(MSVC)
+    target_compile_options(test_bootstrap PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_bootstrap PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(test_asi_plugins
+    tests/cpp/test_asi_plugins.cpp
+    src/domain/asi_plugins.cpp
+    src/domain/config.cpp
+    src/domain/mod_manifest.cpp
+    src/domain/mod_id.cpp
+    src/domain/semver.cpp
+    src/infrastructure/asi_loader.cpp
+    src/application/plugin_api.cpp
+    src/shared/loader_marker.cpp
+    src/shared/logger.cpp
+    src/shared/version.cpp
+)
+add_dependencies(test_asi_plugins asi_probe asi_probe_refuses asi_probe_init_crash)
+target_include_directories(test_asi_plugins PRIVATE
+    include
+    include/domain
+    include/shared
+    src
+)
+target_compile_definitions(test_asi_plugins PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+)
+target_link_libraries(test_asi_plugins PRIVATE
+    nlohmann_json::nlohmann_json
+    tomlplusplus::tomlplusplus
+)
+if(MSVC)
+    target_compile_options(test_asi_plugins PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(test_asi_plugins PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 if(CRABELOADER_BUILD_INSTALLER)
     set(CRABE_INSTALLER_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/installer")
     set(CRABE_INSTALLER_EMBED OFF)
@@ -488,12 +719,12 @@ if(CRABELOADER_BUILD_INSTALLER)
     if(CRABE_INSTALLER_EMBED)
         file(GENERATE
             OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
-            CONTENT "101 RCDATA \"$<TARGET_FILE:${PROJECT_NAME}>\"\n"
+            CONTENT "101 RCDATA \"$<TARGET_FILE:${PROJECT_NAME}>\"\n102 RCDATA \"$<TARGET_FILE:CrabeBootstrap>\"\n"
         )
     else()
         file(GENERATE
             OUTPUT "${CRABE_INSTALLER_GEN_DIR}/$<CONFIG>/payload.rc"
-            CONTENT "/* no embedded payload: the installer looks for bink2w32.dll beside itself */\n"
+            CONTENT "/* no embedded payload: the installer looks for CrabeLoader.asi and dinput8.dll beside itself */\n"
         )
     endif()
 
@@ -523,10 +754,10 @@ if(CRABELOADER_BUILD_INSTALLER)
     endif()
 
     if(CRABE_INSTALLER_EMBED)
-        add_dependencies(CrabeInstaller ${PROJECT_NAME})
+        add_dependencies(CrabeInstaller ${PROJECT_NAME} CrabeBootstrap)
         add_custom_command(TARGET CrabeInstaller PRE_BUILD
             COMMAND ${CMAKE_COMMAND} -E touch "${CRABE_INSTALLER_GEN_DIR}/installer.rc"
-            COMMENT "Refreshing the embedded bink2w32.dll"
+            COMMENT "Refreshing the embedded CrabeLoader.asi and dinput8.dll"
         )
     endif()
 endif()
@@ -593,6 +824,35 @@ else()
     target_compile_options(update_probe PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# test_portal_write -- offline checks of the figure progression read/write path.
+add_executable(test_portal_write
+    tests/cpp/test_portal_write.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_protocol.cpp
+)
+target_include_directories(test_portal_write PRIVATE include src)
+target_compile_definitions(test_portal_write PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    target_compile_options(test_portal_write PRIVATE /W4 /utf-8)
+endif()
+
+# portal_probe -- runs the physical portal worker out of the game (hardware bring-up).
+add_executable(portal_probe
+    tests/cpp/portal_probe.cpp
+    src/infrastructure/portal/portal_crypto.cpp
+    src/infrastructure/portal/portal_protocol.cpp
+    src/infrastructure/portal/portal_transports.cpp
+    src/infrastructure/portal/portal_transport_gip.cpp
+    src/infrastructure/portal/usb_device.cpp
+    src/infrastructure/portal/portal_worker.cpp
+    src/shared/logger.cpp
+)
+target_include_directories(portal_probe PRIVATE include src)
+target_compile_definitions(portal_probe PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    target_compile_options(portal_probe PRIVATE /W4 /utf-8)
+endif()
+
 # ---------------------------------------------------------------------------
 # crabe_lua -- standalone Lua 5.1.5 interpreter used to execute the Lua API
 # test suite (tests/lua/run_tests.lua) offline without requiring the game.
@@ -633,10 +893,16 @@ endif()
 
 enable_testing()
 add_test(NAME test_vfs_override COMMAND test_vfs_override)
+add_test(NAME test_input_remap COMMAND test_input_remap)
 add_test(NAME test_draw_primitives COMMAND test_draw_primitives)
 add_test(NAME test_telemetry COMMAND test_telemetry)
 add_test(NAME test_update_checker COMMAND test_update_checker)
 add_test(NAME test_installer COMMAND test_installer)
+add_test(NAME test_build_info COMMAND test_build_info)
+add_test(NAME test_bootstrap COMMAND test_bootstrap $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>
+    $<TARGET_FILE:asi_probe_init_crash>)
+add_test(NAME test_asi_plugins COMMAND test_asi_plugins $<TARGET_FILE:asi_probe> $<TARGET_FILE:asi_probe_refuses>
+    $<TARGET_FILE:asi_probe_init_crash>)
 add_test(NAME crabe_fate COMMAND crabe_fate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)

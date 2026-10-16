@@ -23,16 +23,13 @@ public:
 
     static EngineKinematics& get();
 
-    /// Eye position of `playerId`'s current camera, the free camera while it runs.
-    /// std::nullopt when the build lacks the entry points, the player has no camera, or the read faulted.
+    // Eye position of the specified player camera, or free camera if active.
     [[nodiscard]] std::optional<Position> cameraEye(int playerId);
 
-    /// World position of the actor behind `actorHandle`, read as KinematicStateGetActualPosition does.
-    /// std::nullopt when the build lacks the entry points, the handle names no kinematic actor, or the read faulted.
+    // Returns world position of the actor behind the given handle.
     [[nodiscard]] std::optional<Position> actorPosition(std::uint32_t actorHandle);
 
-    /// Places the actor behind `actorHandle` at `position` through the engine's own setter.
-    /// False when the build lacks the entry points, the handle names no kinematic actor, or the call faulted.
+    // Places the actor behind the given handle at the specified position.
     [[nodiscard]] bool placeActor(std::uint32_t actorHandle, const Position& position);
 
 private:

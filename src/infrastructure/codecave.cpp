@@ -19,16 +19,11 @@
 
 namespace {
 
-    // A relative jmp is 5 bytes, so a site has to give up at least that much.
     constexpr size_t kJmpLength = 5;
-
-    // Nothing here needs a big cave; refuse anything that looks like a mistake
-    // rather than allocating it.
     constexpr size_t kMaxStolen = 32;
     constexpr size_t kMaxBody = 256;
 
-    // Writes `E9 rel32` at `at`, jumping to `target`. rel32 is measured from
-    // the end of the instruction, hence the -5.
+    // Writes a 5-byte relative jump (0xE9) targeting the destination address.
     void writeJump(uint8_t* at, uintptr_t from, uintptr_t target)
     {
         auto delta = static_cast<int32_t>(target - (from + kJmpLength));
@@ -102,8 +97,6 @@ bool CodeCave::install(uintptr_t site, const std::vector<uint8_t>& body, size_t 
     offset += stolenLength;
     writeJump(cave + offset, reinterpret_cast<uintptr_t>(cave + offset), site + stolenLength);
 
-    // The site keeps its original length: jmp first, NOP padding after, so the
-    // instruction boundary the rest of the function branches to stays put.
     std::vector<uint8_t> patch(stolenLength, 0x90);
     writeJump(patch.data(), site, reinterpret_cast<uintptr_t>(cave));
 

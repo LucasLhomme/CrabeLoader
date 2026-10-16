@@ -13,27 +13,26 @@
 
 #include <filesystem>
 
-// The modding API CrabeLoader exposes to mods: the `Crabe` namespace
 namespace crabe::lua_runtime {
-    // How usable a given lua_State is. The process runs more than one: the
-    // first the loader sees belongs to the Slang shader compiler, and the
-    // earliest states of any kind are seen before luaopen_base has filled _G.
+
     enum class StateKind {
-        Unusable,   // no base library yet (`type`, `pairs`... still nil)
-        NotTheGame, // base library is up, but none of the game's natives are
-        Game,       // the script state the API and the mods belong in
+        Unusable,
+        NotTheGame,
+        Game,
     };
 
+    // Classifies usability and type of given Lua state.
     StateKind classifyState(void* L);
 
-    // Runs every api/*.lua in filename order (dependency order). A failing
-    // module is logged and skipped, not fatal to the rest.
+    // Runs every api/*.lua in filename dependency order.
     bool injectAll(void* L);
+
+    // Returns path to Lua API directory.
     std::filesystem::path apiFolder();
 
-    // Registers the real C++ natives. Must run after injectAll (needs the
-    // Crabe table) and before onLoadmods (mods expect natives in place).
+    // Registers C++ native functions into the Lua state.
     bool registerNatives(void* L);
-}
+
+} // namespace crabe::lua_runtime
 
 #endif /* !LUA_RUNTIME_HPP_ */

@@ -23,21 +23,12 @@ namespace {
 
     using crabe::infrastructure::script_natives::bytesAt;
 
-    // RealmManager_LoadSkyDomeInZone, measured on di3-gold-steam-1.0 (rva 0x6934C0), __cdecl
-    // with the script frame as its only argument:
-    //   +0x18  mov ecx, [esp+0x1C]        -- the frame
-    //   +0x1E  call ScriptFrame::PopString
-    //   +0x23  mov ecx, [g_realmManager]  -- then clears the skies and loads the named realm
     constexpr const char* kNative = "RealmManager_LoadSkyDomeInZone";
     constexpr const char* kSymbol = "Script_RealmManager_LoadSkyDomeInZone";
     constexpr std::uintptr_t kFrameLoadOffset = 0x18;
     constexpr std::uintptr_t kPopCallOffset = 0x1E;
     constexpr std::uintptr_t kManagerLoadOffset = 0x23;
 
-    // ScriptFrame::PopString (rva 0x332140) reads the frame this way:
-    //   mov edx, [ecx+0x20]; mov eax, [edx]; dec eax; mov [edx], eax   -- *frame->top -= 1
-    //   mov ecx, [ecx+0x0C]; mov edx, [ecx]; mov ecx, [edx]            -- ***frame->values
-    //   cmp dword ptr [ecx+eax*8], 2                                   -- 8-byte slot, 2 = string
     constexpr std::uint8_t kPopStringPrologue[] = {
         0x8B, 0x51, 0x20, 0x8B, 0x02, 0x48, 0x89, 0x02, 0x8B, 0x49, 0x0C,
         0x8B, 0x11, 0x8B, 0x0A, 0x83, 0x3C, 0xC1, 0x02,
@@ -49,7 +40,6 @@ namespace {
         const char* text;
     };
 
-    // Only the two fields PopString reads; the rest of a real frame is never touched.
     struct ScriptFrame {
         std::uint8_t unused0[0x0C];
         ScriptValue*** values;

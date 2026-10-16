@@ -31,6 +31,7 @@ namespace crabe::domain {
         InvalidTag,
     };
 
+    // Returns a readable description of a release parse error.
     [[nodiscard]] std::string_view describe(ReleaseParseError error) noexcept;
 
     struct ReleaseInfo {
@@ -40,28 +41,33 @@ namespace crabe::domain {
         bool prerelease{false};
     };
 
-    // Reads the body GitHub returns for releases/latest. Only tag_name, draft and prerelease
-    // are used; the page the player is sent to is fixed above, never taken from the response.
+    // Parses a GitHub release response payload into ReleaseInfo.
     [[nodiscard]] std::expected<ReleaseInfo, ReleaseParseError> parseLatestRelease(std::string_view body);
 
-    // True when the release is published, stable, and strictly newer than the running build.
+    // Returns true if the release is published, stable, and newer than current.
     [[nodiscard]] bool isUpdateAvailable(const SemVer& current, const ReleaseInfo& latest) noexcept;
 
     class IReleaseSource {
     public:
         virtual ~IReleaseSource() = default;
+
+        // Fetches the latest release payload string from GitHub.
         [[nodiscard]] virtual std::expected<std::string, std::string> fetchLatestRelease() = 0;
     };
 
     class IUpdatePrompt {
     public:
         virtual ~IUpdatePrompt() = default;
+
+        // Prompts the user to update to the newer release.
         [[nodiscard]] virtual bool askToUpdate(std::string_view currentVersion, std::string_view latestVersion) = 0;
     };
 
     class IUrlOpener {
     public:
         virtual ~IUrlOpener() = default;
+
+        // Opens the specified URL in the system browser.
         [[nodiscard]] virtual bool open(std::string_view url) = 0;
     };
 

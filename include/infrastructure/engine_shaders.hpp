@@ -25,32 +25,20 @@ struct ShaderEntry {
 };
 #pragma pack(pop)
 
-/**
- * @brief Manages the shader lookup fallback hook in the host engine.
- *
- * Shipped material bundles (.mtb) from console patches (e.g. PS4 1.06) can reference
- * newer shader hashes not present in the PC Gold Edition DirectX 11 shader archive.
- * When the engine looks up a missing CRC in its internal sorted shader table, it normally
- * executes an assertion followed by an int 3 (EXCEPTION_BREAKPOINT).
- *
- * EngineShaders intercepts the lookup function (Shader_LookupCrc at 0x4509D0 in PC Steam 1.0),
- * performs the binary search, and if the CRC is absent, assigns a valid fallback shader
- * (e.g. error.shd or the default shader) and logs a warning instead of terminating.
- */
 class EngineShaders final {
 public:
     static EngineShaders& get();
 
-    /// Resolves the shader lookup entry point and installs the hook.
+    // Resolves the shader lookup entry point and installs the hook.
     void initialize();
 
-    /// Uninstalls the hook.
+    // Uninstalls the hook.
     void uninitialize();
 
-    /// Whether the hook is actively installed.
+    // Whether the hook is actively installed.
     [[nodiscard]] bool isHooked() const noexcept;
 
-    /// Number of missing shader lookups that were caught and substituted with a fallback.
+    // Number of missing shader lookups that were caught and substituted with a fallback.
     [[nodiscard]] std::uint32_t fallbackCount() const noexcept;
 
 private:

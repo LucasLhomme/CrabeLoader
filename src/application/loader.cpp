@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <windows.h>
 
 #include "application/loader.hpp"
@@ -26,19 +27,29 @@
 #include "application/update_launcher.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/crash_reporter.hpp"
+#include "infrastructure/engine_asset_loader.hpp"
 #include "infrastructure/engine_free_camera.hpp"
+#include "infrastructure/engine_gateway.hpp"
 #include "infrastructure/engine_meridian.hpp"
+#include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
+#include "infrastructure/engine_startup.hpp"
+#include "infrastructure/http_redirect.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
-#include "infrastructure/memory.hpp"
+#include "infrastructure/patch/patch_borderless.hpp"
+#include "infrastructure/patch/patch_keybind.hpp"
+#include "infrastructure/patch/patch_resolution.hpp"
+#include "presentation/dinput_hook.hpp"
 #include "presentation/input_hook.hpp"
+#include "presentation/input_remap.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
 #include "infrastructure/vfs_hook.hpp"
 #if CRABELOADER_WITH_MULTIPLAYER
 #include "application/multiplayer/multiplayer_manager.hpp"
 #endif
+#include "infrastructure/portal/portal_service.hpp"
 #include "presentation/render_hook.hpp"
 #include "domain/config.hpp"
 #include "domain/game_profile.hpp"
@@ -77,11 +88,7 @@ namespace {
         return std::string(buffer, len);
     }
 
-    // Resolves a config-file key name to a virtual key, falling back to
-    // `fallback` (the current hardcoded default) both when [keybinds]
-    // carries no override at all and when it carries one this loader does
-    // not recognise -- either way the user sees the behaviour they had
-    // before crabe.toml existed, not an unbound key.
+    // Resolves a config-file key name to a virtual key, falling back on error.
     int resolveKeybind(const std::string& configuredName, int fallback, const char* which)
     {
         if (configuredName.empty())
@@ -96,8 +103,7 @@ namespace {
         return fallback;
     }
 
-    // debug/info/warning/error, case-insensitive; anything else is reported
-    // and the level is left unchanged rather than guessed at.
+    // Sets logger level from configuration string.
     void applyConfiguredLogLevel(const std::string& configuredLevel)
     {
         std::string lower = configuredLevel;
@@ -141,9 +147,6 @@ void Loader::onLuaState(void *L)
     _luaState = L;
     _modsLoaded = true;
     crabe::shared::Logger::getInstance().debug("Loader: Lua state INJECTED.");
-
-    // API/mods NOT loaded here: this fires before luaopen_base fills _G, so
-    // anything injected now would fail. Deferred to ensureRuntimeReady().
 }
 
 bool Loader::isInjected()
@@ -254,8 +257,6 @@ void Loader::drainRemoteCommandFile(void* L)
         return;
     _lastRemoteCommandProbe = now;
 
-    // Derived once: current_path() is a syscall, and this runs 4x/s for the
-    // life of the process against a file that usually is not there.
     static const std::filesystem::path kPath =
         std::filesystem::current_path() / "crabe_remote_cmd.txt";
 
@@ -286,13 +287,13 @@ void Loader::runTicks(void* L)
     if (!_runtimeReady)
         return;
 
-    // Per state, not once globally: this runs inside L's own pcall, so L is the
-    // one state it is safe to reload from here -- and every other live state
-    // asks the same question on its own thread. See domain/reload_generation.hpp.
     if (crabe::domain::ModManager::get().needsReload(L)) {
         crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
         crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(std::filesystem::current_path() / "mods");
         crabe::domain::ModManager::get().reloadAllMods(L);
+        crabe::infrastructure::patch::PatchResolution::apply(L);
+        crabe::infrastructure::patch::PatchBorderless::apply(L);
+        crabe::infrastructure::patch::PatchKeybind::apply(L);
     }
 
     constexpr auto kInterval = std::chrono::milliseconds(16);
@@ -305,11 +306,6 @@ void Loader::runTicks(void* L)
     _lastTick = now;
     double dt = std::chrono::duration<double>(elapsed).count();
 
-    // Named, not breadcrumbed. This runs 60 times a second: a crumb per tick
-    // would fill the 64-slot ring with one second of "tick" and push out the
-    // events that actually say what led to the crash. setActiveHook costs a
-    // bounded memcpy into this thread's slot and is overwritten rather than
-    // accumulated, which is exactly what a hot path wants.
     {
         const crabe::infrastructure::ScopedHook scopedHook("Loader::callTick");
         crabe::infrastructure::LuaCall::get().callTick(L, dt);
@@ -319,8 +315,11 @@ void Loader::runTicks(void* L)
     drainPendingKeybindCalls(L);
     drainRemoteCommandFile(L);
     drainPendingSnippets(L);
+    drainPluginSnippets(L);
     drainLuaOutput(L);
     drainQuarantineReport(L);
+
+    crabe::infrastructure::portal::PortalService::Instance().Update();
 
     crabe::infrastructure::CrashHandler::runGuarded([L]() {
         crabe::domain::ModManager::get().dispatchDraw(L);
@@ -338,12 +337,35 @@ void Loader::drainPendingKeyEvents(void* L)
         pending.swap(_pendingKeyEvents);
     }
 
-    // The second argument tells a held key's auto-repeat apart from a press:
-    // scrolling wants the repeats, an action must run once per press.
     for (const PendingKeyEvent& event : pending) {
         crabe::infrastructure::LuaCall::get().runSnippet(L, std::format(
             "if Crabe and Crabe.Events and Crabe.Events.emit then Crabe.Events.emit('keyDown', {}, {}) end",
             event.virtualKey, event.isRepeat ? "true" : "false"));
+    }
+}
+
+// Queues Lua from a native plugin; nothing runs until the next tick on the script thread.
+void Loader::queuePluginSnippet(const std::string& owner, std::string code)
+{
+    std::lock_guard<std::mutex> lock(_pluginSnippetQueueMutex);
+    _pendingPluginSnippets.emplace_back(owner, std::move(code));
+}
+
+// Runs the Lua chunks plugins queued since the last tick, logging only the ones that fail.
+void Loader::drainPluginSnippets(void* L)
+{
+    std::vector<std::pair<std::string, std::string>> pending;
+    {
+        std::lock_guard<std::mutex> lock(_pluginSnippetQueueMutex);
+        if (_pendingPluginSnippets.empty())
+            return;
+        pending.swap(_pendingPluginSnippets);
+    }
+
+    for (const auto& [owner, code] : pending) {
+        std::string result;
+        if (!crabe::infrastructure::LuaCall::get().runSnippet(L, code, result))
+            crabe::shared::Logger::getInstance().error("PluginApi: Lua from {} failed: {}", owner, result);
     }
 }
 
@@ -377,10 +399,6 @@ void Loader::ensureRuntimeReady(void* L)
     if (!L)
         return;
 
-    // Nothing observes lua_close, and the game opens a new state at the
-    // address of one it just closed (seen on a world load). A known address is
-    // only trusted while it still looks like the state it was: an injected one
-    // keeps its Crabe global, a rejected one still lacks the game's natives.
     if (isGameState(L)) {
         if (crabe::infrastructure::LuaCall::get().hasGlobal(L, "Crabe"))
             return;
@@ -403,8 +421,6 @@ void Loader::ensureRuntimeReady(void* L)
     crabe::lua_runtime::StateKind kind = crabe::lua_runtime::classifyState(L);
     if (kind != crabe::lua_runtime::StateKind::Game) {
         if (kind == crabe::lua_runtime::StateKind::NotTheGame) {
-            // It answered, and it has no game natives -- that verdict is final,
-            // so stop re-probing this state four times a second forever.
             _rejectedStates.insert(L);
 
             if (!_sawForeignState) {
@@ -419,17 +435,19 @@ void Loader::ensureRuntimeReady(void* L)
     _initializedStates.insert(L);
     _luaState = L;
 
-    // A capture belongs to the state that asked for it. The game closes the
-    // old state on a world load without telling anyone, so a menu left open
-    // would otherwise keep Escape, Enter and the pad away from the game.
     setCapturedKeys({});
     crabe::presentation::InputHook::get().setCaptured(false);
+    crabe::presentation::InputRemap::get().clearAll();
 
     crabe::shared::Logger::getInstance().info("Loader: game Lua state 0x{:X} ready, injecting the API ({} state(s) so far).",
                             reinterpret_cast<uintptr_t>(L), _initializedStates.size());
 
     crabe::lua_runtime::injectAll(L);
     crabe::lua_runtime::registerNatives(L);
+
+    crabe::infrastructure::patch::PatchResolution::apply(L);
+    crabe::infrastructure::patch::PatchBorderless::apply(L);
+    crabe::infrastructure::patch::PatchKeybind::apply(L);
 
     if (!_characterInjectionScript.empty()) {
         crabe::shared::Logger::getInstance().info("Loader: injecting character definitions into Lua state ({} bytes).",
@@ -465,13 +483,7 @@ void Loader::drainLuaOutput(void* L)
     }
 }
 
-// Polls Crabe.Quarantine.report() (src/api/02c_quarantine.lua) at a slow,
-// fixed interval -- this is diagnostic bookkeeping, not per-frame state, so
-// it does not need drainLuaOutput's 100ms cadence. Runs on the script thread
-// inside runTicks, same as every other Lua call here (Invariant I3): the
-// counting itself already happened in Lua, at the actual dispatch sites, the
-// only place with per-callback granularity (see 02c_quarantine.lua's own
-// header comment for why that split is where it is). This is purely readout.
+// Polls quarantine report at a fixed interval on the script thread.
 void Loader::drainQuarantineReport(void* L)
 {
     constexpr auto kInterval = std::chrono::milliseconds(1000);
@@ -486,18 +498,13 @@ void Loader::drainQuarantineReport(void* L)
             L, "return Crabe.Quarantine and Crabe.Quarantine.report() or ''", report))
         return;
 
-    // Derived once, not on every poll: current_path() is a syscall (see
-    // drainRemoteCommandFile above for the same reasoning at a faster cadence).
     static const std::filesystem::path kGameRoot = std::filesystem::current_path();
 
     crabe::domain::QuarantineSnapshot snapshot = crabe::domain::QuarantineSnapshot::parseReport(report);
     crabe::domain::Config::active().updateQuarantineSnapshot(kGameRoot, snapshot);
 }
 
-// Binds the two keys the loader has always had, reading their virtual-key
-// codes from crabe.toml's [keybinds] (Config::active()) with VK_F4 / VK_INSERT
-// as the defaults -- so a user with no config, or one that predates T11,
-// sees no change at all.
+// Binds default keybinds from configuration.
 void Loader::registerDefaultKeybinds()
 {
     const crabe::domain::Config& config = crabe::domain::Config::active();
@@ -540,14 +547,25 @@ void Loader::onKeyEvent(int virtualKey, bool isDown, bool isRepeat)
     }
 }
 
+// Configures HTTP redirect rules and hooks WinHTTP if rules exist.
+static void installHttpRedirects(const crabe::domain::Config& config)
+{
+    auto& logger = crabe::shared::Logger::getInstance();
+    crabe::infrastructure::HttpRedirectRules rules;
+    for (const auto& [host, url] : config.httpRedirects()) {
+        if (auto added = rules.add(host, url); !added)
+            logger.error("Loader: crabe.toml [http.redirect] \"{}\": {}; rule ignored.", host, added.error());
+        else
+            logger.info("Loader: crabe.toml [http.redirect] {} -> {}", host, url);
+    }
+    if (!rules.empty() && !crabe::infrastructure::HttpRedirect::get().initialize(std::move(rules)))
+        logger.error("Loader: [http.redirect] is configured but WinHTTP could not be hooked.");
+}
+
 bool Loader::initialize()
 {
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
 
-    // Loaded first: registerDefaultKeybinds (below) reads [keybinds] from
-    // it, and everything else in this function that can be config-driven
-    // (log level, multiplayer) reads it too. current_path() is the game
-    // root -- the same base discoverAndLoadMods() resolves "mods" against.
     crabe::domain::Config::initializeActive(std::filesystem::current_path());
     const crabe::domain::Config& config = crabe::domain::Config::active();
 
@@ -569,17 +587,12 @@ bool Loader::initialize()
 
     auto base =reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
 
-    // Which build is this? Everything below turns on the answer. The
-    // detection itself is cached, so MemoryPatcher -- which runs from
-    // DllMain, before this thread exists -- and this call see one answer.
     const crabe::domain::GameProfile* profile = crabe::domain::activeProfile();
 
     loadOverridesFromDisk();
     loadCharactersFromDisk();
     const crabe::lua_symbols::Resolution resolution = crabe::lua_symbols::resolveAll(base, profile);
 
-    // Three outcomes, and only three: the build is one we measured, or it is
-    // not but every address was found anyway, or it is not and one was missed.
     const crabe::domain::LoadDecision decision =
         crabe::domain::decideLoad(profile != nullptr, resolution.allResolved());
 
@@ -601,6 +614,8 @@ bool Loader::initialize()
         logger.error("========================================================================");
         return false;
     }
+
+    installHttpRedirects(config);
 
     if (decision == crabe::domain::LoadDecision::Degraded) {
         const crabe::domain::PeIdentity identity = crabe::domain::runningGameIdentity();
@@ -628,23 +643,25 @@ bool Loader::initialize()
         logger.info("Loader: initialized (degraded, no profile).");
     registerDefaultKeybinds();
 
+    if (config.skipStartupLogos() && !crabe::infrastructure::EngineStartup::get().skipLogos())
+        logger.warning("Loader: skipLogos is set in crabe.toml but the startup logos could not be skipped.");
+
     if (!crabe::presentation::RenderHook::get().initialize()) {
         logger.warning("Loader: failed to initialize the render hook (overlay disabled).");
     }
 
     crabe::presentation::InputHook::get().initialize();
+    crabe::presentation::DirectInputHook::get().initialize();
     crabe::infrastructure::MessageHook::get().initialize();
     crabe::infrastructure::EngineFreeCamera::get().initialize();
+    crabe::infrastructure::EngineGateway::get().initialize();
     crabe::infrastructure::EngineMeridian::get().initialize();
     crabe::infrastructure::EngineShaders::get().initialize();
     crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
     crabe::infrastructure::VfsHook::get().initialize();
+    crabe::infrastructure::EngineAssetLoader::get().initialize();
+    crabe::infrastructure::portal::PortalService::Instance().Initialize();
 
-    // Two independent gates, and both must open. The config gate is the
-    // player's stated preference; the profile gate is a safety property --
-    // the multiplayer patches are known by address only, so applying them to
-    // a build we did not measure corrupts code. Report whichever one closed,
-    // so the log says something actionable rather than just "disabled".
 #if !CRABELOADER_WITH_MULTIPLAYER
     logger.info("Loader: this build has no multiplayer (its sources were not present at compile time).");
 #else
@@ -664,15 +681,21 @@ bool Loader::initialize()
 
 void Loader::uninitialize()
 {
+    crabe::infrastructure::portal::PortalService::Instance().Shutdown();
 #if CRABELOADER_WITH_MULTIPLAYER
     crabe::multiplayer::application::MultiplayerManager::getInstance().uninitialize();
 #endif
+    crabe::infrastructure::HttpRedirect::get().uninitialize();
+    crabe::infrastructure::EngineAssetLoader::get().uninitialize();
     crabe::infrastructure::VfsHook::get().uninitialize();
     crabe::infrastructure::VfsOverrideManager::get().clear();
     crabe::presentation::InputHook::get().uninitialize();
+    crabe::presentation::DirectInputHook::get().uninitialize();
     crabe::infrastructure::EngineFreeCamera::get().uninitialize();
+    crabe::infrastructure::EngineGateway::get().uninitialize();
     crabe::infrastructure::EngineMeridian::get().uninitialize();
     crabe::infrastructure::EngineShaders::get().uninitialize();
+    crabe::infrastructure::EngineResolution::get().uninitialize();
     crabe::infrastructure::MessageHook::get().uninitialize();
     crabe::presentation::RenderHook::get().uninitialize();
     crabe::infrastructure::LuaCall::get().uninitialize();

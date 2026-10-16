@@ -20,9 +20,7 @@ class EngineSky final {
 public:
     static EngineSky& get();
 
-    /// Clears the loaded skies and loads the realm `realmName` ("tbx_ala_skydome"), as the
-    /// script native does. False when the build lacks the native or the call faulted (no
-    /// world loaded, for one). Script thread only.
+    // Clears loaded skies and loads the specified sky realm dome. Script thread only.
     [[nodiscard]] bool loadSkyDome(const std::string& realmName);
 
 private:

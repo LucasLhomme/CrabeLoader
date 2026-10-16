@@ -18,6 +18,7 @@ namespace Crabe::Domain {
 
     namespace {
 
+        // Extracts a string value for the specified key from minimal JSON.
         std::string extractValue(std::string_view json, std::string_view key)
         {
             std::string needle = "\"" + std::string(key) + "\"";
@@ -44,6 +45,7 @@ namespace Crabe::Domain {
 
     ModManifest::ModManifest() = default;
 
+    // Parses a basic manifest from the given path.
     ModManifest::ModManifest(const std::filesystem::path& manifestPath)
     {
         std::ifstream file(manifestPath);
@@ -62,31 +64,37 @@ namespace Crabe::Domain {
         _valid = !_name.empty() || !_entry.empty();
     }
 
+    // Returns whether the manifest has valid minimal fields.
     bool ModManifest::isValid() const
     {
         return _valid;
     }
 
+    // Returns the declared name of the mod.
     const std::string& ModManifest::getName() const
     {
         return _name;
     }
 
+    // Returns the declared version of the mod.
     const std::string& ModManifest::getVersion() const
     {
         return _version;
     }
 
+    // Returns the minimum loader version required by the mod.
     const std::string& ModManifest::getMinLoaderVersion() const
     {
         return _minLoaderVersion;
     }
 
+    // Returns the custom entry script if declared.
     const std::string& ModManifest::getEntry() const
     {
         return _entry;
     }
 
+    // Checks whether the mod is compatible with the current loader version.
     bool ModManifest::isCompatible() const
     {
         if (_minLoaderVersion.empty())

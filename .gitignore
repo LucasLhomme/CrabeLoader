@@ -6,9 +6,11 @@ tools/*
 !tools/embed_api.py
 !tools/embed_api_def.py
 !tools/check_headers.py
+!tools/build_stamp.cmake
 herald-report.txt
 mods/*
 !mods/_template/
+!mods/tick_demo.lua
 # The reference character mod ships with the loader: the worked example of
 # exposeCharacter, documented by its own README.
 !mods/crabe_heroes/
@@ -17,15 +19,8 @@ backups/
 decypted/*
 include/application/embedded_api.hpp
 include/cli/embedded_api_def.hpp
+AUDIT.md
 AUDIT_*.md
 DEVLOG_*.md
 telemetry_report.json
-
-# Multiplayer is work in progress and stays out of the repository for now.
-# CMake builds it only where these sources exist (CRABELOADER_WITH_MULTIPLAYER).
-include/application/multiplayer/
-include/domain/multiplayer/
-include/infrastructure/multiplayer/
-src/application/multiplayer/
-src/infrastructure/multiplayer/
-src/api/29_multiplayer.lua
+embedded_api_def.hpp

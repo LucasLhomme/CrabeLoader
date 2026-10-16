@@ -10,8 +10,12 @@
 
 #include "infrastructure/vfs_hook.hpp"
 
+#include <algorithm>
+#include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
@@ -41,13 +45,39 @@ using FindFirstFileExWFn = HANDLE(WINAPI*)(
 
 thread_local bool t_reentrancyGuard = false;
 
+constexpr std::uint32_t kMaxTraceLines = 4000;
+std::atomic<bool> g_traceTextures{false};
+std::atomic<std::uint32_t> g_traceLines{0};
+
+// Logs a texture-looking request and whether a mod override served it; a no-op unless tracing is on.
+void traceTexture(const char* scope, std::string_view requested, bool redirected)
+{
+    if (!g_traceTextures.load(std::memory_order_relaxed))
+        return;
+
+    std::string lowered(requested);
+    std::ranges::transform(lowered, lowered.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lowered.find(".tbody") == std::string::npos && lowered.find("textures") == std::string::npos)
+        return;
+
+    if (g_traceLines.fetch_add(1, std::memory_order_relaxed) >= kMaxTraceLines)
+        return;
+
+    crabe::shared::Logger::getInstance().info("VfsTrace: {} '{}' -> {}", scope, requested,
+                                              redirected ? "mod override" : "passthrough");
+}
+
 struct ReentrancyScope final {
+    // Acquires the thread-local reentrancy lock.
     ReentrancyScope() noexcept { t_reentrancyGuard = true; }
+    // Releases the thread-local reentrancy lock.
     ~ReentrancyScope() noexcept { t_reentrancyGuard = false; }
     ReentrancyScope(const ReentrancyScope&) = delete;
     ReentrancyScope& operator=(const ReentrancyScope&) = delete;
 };
 
+// Converts a wide character string to a UTF-8 string.
 std::string wideToUtf8(LPCWSTR wideStr)
 {
     if (!wideStr || wideStr[0] == L'\0')
@@ -75,7 +105,9 @@ Result redirectAnsi(LPCSTR path, Result failure, const Call& call, const char* s
 
     bool executed = CrashHandler::runGuarded([&]() {
         std::filesystem::path overridePath;
-        if (VfsOverrideManager::get().resolve(path, overridePath))
+        const bool redirected = VfsOverrideManager::get().resolve(path, overridePath);
+        traceTexture(scope, path, redirected);
+        if (redirected)
             result = call(overridePath.string().c_str());
         else
             result = call(path);
@@ -99,7 +131,9 @@ Result redirectWide(LPCWSTR path, Result failure, const Call& call, const char* 
     bool executed = CrashHandler::runGuarded([&]() {
         std::string narrowName = wideToUtf8(path);
         std::filesystem::path overridePath;
-        if (!narrowName.empty() && VfsOverrideManager::get().resolve(narrowName, overridePath))
+        const bool redirected = !narrowName.empty() && VfsOverrideManager::get().resolve(narrowName, overridePath);
+        traceTexture(scope, narrowName, redirected);
+        if (redirected)
             result = call(overridePath.c_str());
         else
             result = call(path);
@@ -112,12 +146,14 @@ Result redirectWide(LPCWSTR path, Result failure, const Call& call, const char* 
 
 } // namespace
 
+// Returns the singleton instance of VfsHook.
 VfsHook& VfsHook::get() noexcept
 {
     static VfsHook instance;
     return instance;
 }
 
+// Installs the Win32 filesystem API hooks.
 bool VfsHook::initialize()
 {
     if (_initialized)
@@ -167,6 +203,7 @@ bool VfsHook::initialize()
     return true;
 }
 
+// Uninstalls all active Win32 filesystem hooks.
 void VfsHook::uninitialize()
 {
     if (!_initialized)
@@ -183,11 +220,19 @@ void VfsHook::uninitialize()
     crabe::shared::Logger::getInstance().info("VfsHook: Win32 file detours uninstalled.");
 }
 
+// Checks whether the filesystem hooks are currently installed.
 bool VfsHook::isHooked() const noexcept
 {
     return _initialized;
 }
 
+// Enables or disables diagnostic texture file tracing.
+void VfsHook::setTraceTextures(bool enabled) noexcept
+{
+    g_traceTextures.store(enabled, std::memory_order_relaxed);
+}
+
+// Intercepts CreateFileA to redirect paths to active mod overrides.
 HANDLE WINAPI VfsHook::hkCreateFileA(
     LPCSTR lpFileName,
     DWORD dwDesiredAccess,
@@ -207,6 +252,7 @@ HANDLE WINAPI VfsHook::hkCreateFileA(
     }, "VfsHook::hkCreateFileA");
 }
 
+// Intercepts CreateFileW to redirect paths to active mod overrides.
 HANDLE WINAPI VfsHook::hkCreateFileW(
     LPCWSTR lpFileName,
     DWORD dwDesiredAccess,
@@ -226,6 +272,7 @@ HANDLE WINAPI VfsHook::hkCreateFileW(
     }, "VfsHook::hkCreateFileW");
 }
 
+// Intercepts GetFileAttributesA to resolve attributes from mod overrides.
 DWORD WINAPI VfsHook::hkGetFileAttributesA(LPCSTR lpFileName)
 {
     auto orig = reinterpret_cast<GetFileAttributesAFn>(get()._hookGetFileAttributesA.getOriginal());
@@ -237,6 +284,7 @@ DWORD WINAPI VfsHook::hkGetFileAttributesA(LPCSTR lpFileName)
     }, "VfsHook::hkGetFileAttributesA");
 }
 
+// Intercepts GetFileAttributesExA to resolve extended attributes from mod overrides.
 BOOL WINAPI VfsHook::hkGetFileAttributesExA(
     LPCSTR lpFileName,
     GET_FILEEX_INFO_LEVELS fInfoLevelId,
@@ -251,6 +299,7 @@ BOOL WINAPI VfsHook::hkGetFileAttributesExA(
     }, "VfsHook::hkGetFileAttributesExA");
 }
 
+// Intercepts FindFirstFileA to redirect searches to mod overrides.
 HANDLE WINAPI VfsHook::hkFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 {
     auto orig = reinterpret_cast<FindFirstFileAFn>(get()._hookFindFirstFileA.getOriginal());
@@ -262,6 +311,7 @@ HANDLE WINAPI VfsHook::hkFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lp
     }, "VfsHook::hkFindFirstFileA");
 }
 
+// Intercepts FindFirstFileExA to redirect searches to mod overrides.
 HANDLE WINAPI VfsHook::hkFindFirstFileExA(
     LPCSTR lpFileName,
     FINDEX_INFO_LEVELS fInfoLevelId,
@@ -279,6 +329,7 @@ HANDLE WINAPI VfsHook::hkFindFirstFileExA(
     }, "VfsHook::hkFindFirstFileExA");
 }
 
+// Intercepts FindFirstFileExW to redirect searches to mod overrides.
 HANDLE WINAPI VfsHook::hkFindFirstFileExW(
     LPCWSTR lpFileName,
     FINDEX_INFO_LEVELS fInfoLevelId,

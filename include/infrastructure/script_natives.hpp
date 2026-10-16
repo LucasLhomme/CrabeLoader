@@ -16,16 +16,16 @@
 
 namespace crabe::infrastructure::script_natives {
 
-/// The handler registered under `name`: the `push imm32` right before `push "name"`. 0 when absent.
+// Finds the handler registered under name, returning its address or 0 if absent.
 [[nodiscard]] std::uintptr_t find(const char* name);
 
-/// Whether the bytes at `address` are readable and equal `expected`.
+// Checks whether the bytes at address are readable and match expected.
 [[nodiscard]] bool bytesAt(std::uintptr_t address, std::initializer_list<std::uint8_t> expected);
 
-/// Whether `address` is where the active game profile measured `symbol`. True without a
-/// profile (an unknown build is checked by its bytes alone), false for an unmeasured symbol.
+// Validates whether address matches the game profile RVA for the given symbol.
 [[nodiscard]] bool matchesProfile(std::uintptr_t base, const char* symbol, std::uintptr_t address);
 
+// Reads a value of type T from the specified memory address.
 template <typename T>
 [[nodiscard]] T readAt(std::uintptr_t address)
 {

@@ -26,35 +26,22 @@
 
 namespace {
 
-// Fixed key and IV, recovered from the shipped files and verified by
-// re-encrypting a whole gateway byte-for-byte (374 slot keys, 4651 strings,
-// 1383 numbers, zero mismatch). The fixed IV is what makes the cipher
-// deterministic, so identical plaintexts produce identical ciphertexts.
 constexpr std::array<uint8_t, 16> kKey = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
 };
 constexpr char kIv[17] = "0123456789012345";
 
-// Plaintext type tags used by the game.
 constexpr uint8_t kTagNumber = 1;
 constexpr uint8_t kTagString = 2;
 
-// _G key the slot table is stored under, and the byte sequence that identifies
-// the gateway chunk. Identical across gateway.lua and its _in3/_mba/_moa/_dor
-// siblings.
 constexpr std::array<uint8_t, 16> kContainerKey = {
     0x37, 0x53, 0xf1, 0xa7, 0xa1, 0x82, 0xe5, 0xe0,
     0xd9, 0x4a, 0x11, 0x5d, 0xdc, 0x34, 0x3f, 0xac
 };
 
-// sku_id window. The game's own rows sit in 1000001-1000029, 1000100-1000129
-// and 1000302-1000338, and the Breeze mod takes 1000300/1000301, so this range
-// cannot collide with either.
 constexpr uint32_t kSkuBase = 1000340;
 constexpr uint32_t kSkuSpan = 660;
-
-/* ---------------------------------------------------------------- AES-128 */
 
 const uint8_t kSbox[256] = {
     0x63,0x7C,0x77,0x7B,0xF2,0x6B,0x6F,0xC5,0x30,0x01,0x67,0x2B,0xFE,0xD7,0xAB,0x76,
@@ -76,15 +63,13 @@ const uint8_t kSbox[256] = {
 };
 const uint8_t kRcon[10] = {0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36};
 
-// Doubling in GF(2^8): a shift, then the field's reduction polynomial when
-// the high bit carried out.
+// Doubles in GF(2^8).
 uint8_t xtime(uint8_t a)
 {
     return static_cast<uint8_t>((a << 1) ^ ((a & 0x80) ? 0x1B : 0x00));
 }
 
-// Multiplication in GF(2^8), by doubling and adding. Only used for the small
-// MixColumns constants, so the loop is short.
+// Multiplies in GF(2^8).
 uint8_t mul(uint8_t a, uint8_t b)
 {
     uint8_t r = 0;
@@ -99,8 +84,7 @@ uint8_t mul(uint8_t a, uint8_t b)
 
 using RoundKeys = std::array<std::array<uint8_t, 16>, 11>;
 
-// FIPS-197 key schedule: 44 words derived from the 128-bit key, regrouped as
-// eleven round keys.
+// Expands 128-bit key into round keys.
 RoundKeys expandKey()
 {
     uint8_t w[44][4];
@@ -130,15 +114,14 @@ RoundKeys expandKey()
     return rk;
 }
 
-// The schedule, expanded once. The key never varies, so neither does this.
+// Returns cached round keys.
 const RoundKeys& roundKeys()
 {
     static const RoundKeys rk = expandKey();
     return rk;
 }
 
-// One AES-128 block, encrypted in place. Encryption only -- nothing here ever
-// needs to read a slot back.
+// Encrypts one 16-byte block in place.
 void encryptBlock(uint8_t s[16])
 {
     const RoundKeys& rk = roundKeys();
@@ -150,7 +133,6 @@ void encryptBlock(uint8_t s[16])
         for (int i = 0; i < 16; ++i)
             s[i] = kSbox[s[i]];
 
-        // ShiftRows on the column-major state of FIPS-197.
         uint8_t t[16];
         for (int i = 0; i < 16; ++i)
             t[i] = s[(i + (i % 4) * 4) % 16];
@@ -172,8 +154,7 @@ void encryptBlock(uint8_t s[16])
     }
 }
 
-// PKCS7-pad, then CBC-chain from the fixed IV. That fixed IV is what makes the
-// output reproducible: the same plaintext always encrypts to the same bytes.
+// Encrypts plaintext using AES-128-CBC with PKCS7 padding.
 std::string aesCbcPkcs7(const std::string& plain)
 {
     size_t pad = 16 - (plain.size() % 16);
@@ -197,7 +178,7 @@ std::string aesCbcPkcs7(const std::string& plain)
     return out;
 }
 
-// Encrypt one value behind its type tag, which is the form the game stores.
+// Encrypts payload prefixed with a type tag.
 std::string tagged(uint8_t tag, const void* payload, size_t len)
 {
     std::string plain;
@@ -217,15 +198,11 @@ std::string encryptString(const std::string& value)
 
 std::string encryptNumber(double value)
 {
-    // Numbers are stored as little-endian IEEE-754 doubles. Every target this
-    // builds for is little-endian x86, so the in-memory layout is already right.
     return tagged(kTagNumber, &value, sizeof(value));
 }
 
 std::string luaLiteral(const std::string& bytes)
 {
-    // Printable ASCII passes through so the generated chunk stays readable in a
-    // log; everything else becomes a padded decimal escape.
     std::string out;
     out.reserve(bytes.size() * 4 + 2);
     out.push_back('"');
@@ -248,9 +225,6 @@ std::string luaLiteral(const std::string& bytes)
 
 std::string allocateSku(const std::string& name)
 {
-    // Multiply-and-add hash, kept free of bitwise operators so the Lua side can
-    // mirror it exactly (Lua 5.1 has no XOR). Values stay well inside a double's
-    // exact-integer range, so both languages agree bit for bit.
     uint64_t h = 0;
     for (unsigned char c : name)
         h = (h * 31 + c) % 2147483648ULL;
@@ -261,7 +235,7 @@ std::string allocateSku(const std::string& name)
 
 namespace {
 
-// Name as the ActorList and the catalog compare it: case-insensitively.
+// Returns lowercase copy of string.
 std::string lowered(std::string s)
 {
     std::ranges::transform(s, s.begin(),
@@ -269,7 +243,7 @@ std::string lowered(std::string s)
     return s;
 }
 
-// First declaration of each Name, in order; a later one is reported and dropped.
+// Returns unique entries by name, recording duplicate warnings.
 std::vector<Entry> firstDeclarations(std::vector<Entry> entries, std::vector<std::string>& issues)
 {
     std::vector<Entry> unique;
@@ -285,7 +259,7 @@ std::vector<Entry> firstDeclarations(std::vector<Entry> entries, std::vector<std
     return unique;
 }
 
-// The modder's own sku_id, unless another mod character already holds it.
+// Claims explicit SKU if not already taken.
 std::optional<std::string> claimExplicit(const Entry& entry, std::set<std::string>& taken,
                                          std::vector<std::string>& issues)
 {
@@ -297,7 +271,7 @@ std::optional<std::string> claimExplicit(const Entry& entry, std::set<std::strin
     return std::nullopt;
 }
 
-// The id derived from Name, moved up by one inside the mod range until free.
+// Derives and claims free SKU within mod range.
 std::optional<std::string> claimDerived(const Entry& entry, std::set<std::string>& taken,
                                         std::vector<std::string>& issues)
 {
@@ -352,9 +326,6 @@ const std::string& containerKey()
 
 std::vector<Entry> parseExposedCharacters(const std::string& luaSource)
 {
-    // A scan, not a Lua parse: this runs before any Lua state exists, and only
-    // has to recognise the flat table the API documents.
-    // Supports both exposeCharacter({...}) and idiomatic exposeCharacter{...}.
     static const std::regex kExpose(R"rx(exposeCharacter\s*(?:\(\s*)?\{([^}]*)\})rx");
     static const std::regex kName(R"rx([Nn]ame\s*=\s*["']([^"'\r\n]+)["'])rx");
     static const std::regex kSku(R"rx(sku_id\s*=\s*["']([^"'\r\n]+)["'])rx");
@@ -392,8 +363,6 @@ std::string buildSkuTableLua(const std::vector<Entry>& entries)
     if (entries.empty())
         return {};
 
-    // Runs in the front-end state, where the API is already loaded -- but
-    // guard anyway so the chunk cannot fail on an unexpected load order.
     std::string lua = "Crabe = Crabe or {}\n"
                       "Crabe.VirtualReader = Crabe.VirtualReader or {}\n"
                       "Crabe.VirtualReader._skus = {\n";
@@ -410,9 +379,7 @@ std::string buildSkuTableLua(const std::vector<Entry>& entries)
     return lua;
 }
 
-// Every field but `name` is constant across the shipped avatar slots. The slot
-// key is the entry's sku_id, and an existing slot -- a shipped figure's -- is
-// never overwritten.
+// Builds Lua code to inject avatar slots into live registry.
 std::string buildInjectionLua(const std::vector<Entry>& entries)
 {
     if (entries.empty())
@@ -526,7 +493,6 @@ std::vector<Entry> parseManifestCharacters(const std::string& jsonSource, const 
             }
         }
     } catch (...) {
-        // No unhandled exceptions across module boundaries
     }
     return out;
 }

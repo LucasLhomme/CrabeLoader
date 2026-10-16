@@ -8,24 +8,6 @@
 ** Authors: @LucasLhomme
 */
 
-// The Win32 half of infrastructure/minhook_backend.hpp, and the one place the
-// loader's process-wide hook registry is built.
-//
-// MinHook's own vocabulary does not line up one-to-one with HookError, and the
-// mapping below is where that is reconciled. Two mismatches are worth knowing
-// before reading it:
-//
-//  * MH_ERROR_UNSUPPORTED_FUNCTION is MinHook's single answer for "no
-//    trampoline could be built", whether that is because an instruction could
-//    not be decoded or because the function is shorter than a jmp. It maps to
-//    InstructionBoundaryUnresolvable, which means NotEnoughSpaceForJump is only
-//    ever produced by a backend that can tell the two apart.
-//  * MinHook reports nothing that corresponds to TargetTooFarForRel32, and on
-//    Win32/x86 it cannot: a rel32 displacement spans the whole address space.
-//
-// Every branch logs MH_StatusToString's own text as well as the mapped error,
-// so nothing is lost to the translation.
-
 #include "infrastructure/minhook_backend.hpp"
 
 #include "infrastructure/code_cave.hpp"
@@ -39,10 +21,9 @@ namespace crabe::infrastructure {
 
     namespace {
 
-        // The longest x86 instruction, so measureStolenBytes' decode of the
-        // instruction straddling the fifth byte cannot read unmapped memory.
         constexpr std::size_t kMaxInstructionLength = 15;
 
+        // Translates a MinHook status code into a typed HookError.
         HookError translate(MH_STATUS status) noexcept
         {
             switch (status) {
@@ -60,24 +41,16 @@ namespace crabe::infrastructure {
 
                 case MH_ERROR_ALREADY_CREATED:
                 case MH_ERROR_ENABLED:
-                    // The registry refuses an overlapping install before it
-                    // gets here, so reaching this means MinHook holds a hook
-                    // the registry does not know about -- something installed
-                    // outside the registry, which is exactly the situation it
-                    // exists to end.
                     return HookError::AlreadyHookedBy;
 
                 default:
-                    // Includes MH_ERROR_NOT_INITIALIZED and MH_UNKNOWN. No
-                    // trampoline came back and MinHook will not say why in
-                    // terms this enum has a word for; the logged status string
-                    // carries the detail.
                     return HookError::TrampolineAllocationFailed;
             }
         }
 
     } // namespace
 
+    // Initializes the MinHook library subsystem.
     MinHookBackend::MinHookBackend()
     {
         const MH_STATUS status = MH_Initialize();
@@ -89,8 +62,10 @@ namespace crabe::infrastructure {
         }
     }
 
+    // Destroys the MinHook backend.
     MinHookBackend::~MinHookBackend() = default;
 
+    // Creates and enables a MinHook detour at the specified target address.
     std::expected<void*, HookError> MinHookBackend::patch(std::uintptr_t target, void* detour,
                                                          void** original)
     {
@@ -109,22 +84,23 @@ namespace crabe::infrastructure {
             return std::unexpected(translate(status));
         }
 
+        if (original != nullptr)
+            *original = trampoline;
+
         status = MH_EnableHook(source);
         if (status != MH_OK) {
             logger.error("MinHookBackend: MH_EnableHook failed at 0x{:X}: {}.",
                          target, MH_StatusToString(status));
-            // Created but not enabled leaves MinHook holding a record that
-            // would make the next install there fail with ALREADY_CREATED, so
-            // take it back out before reporting.
             MH_RemoveHook(source);
+            if (original != nullptr)
+                *original = nullptr;
             return std::unexpected(translate(status));
         }
 
-        if (original != nullptr)
-            *original = trampoline;
         return trampoline;
     }
 
+    // Disables and removes a MinHook detour at the specified target address.
     bool MinHookBackend::unpatch(std::uintptr_t target)
     {
         if (!_initialised)
@@ -132,8 +108,6 @@ namespace crabe::infrastructure {
 
         void* const source = reinterpret_cast<void*>(target);
 
-        // Disable first: MH_RemoveHook on an enabled hook works, but doing it
-        // in two steps means the bytes are already back when the record goes.
         const MH_STATUS disabled = MH_DisableHook(source);
         const MH_STATUS removed = MH_RemoveHook(source);
 
@@ -146,6 +120,7 @@ namespace crabe::infrastructure {
         return true;
     }
 
+    // Measures the number of bytes overwritten by a 5-byte jump at the target.
     std::size_t MinHookBackend::measureStolenBytes(std::uintptr_t target)
     {
         if (target == 0)
@@ -165,23 +140,7 @@ namespace crabe::infrastructure {
         return measured;
     }
 
-    // Both are deliberately immortal, and that is load-bearing rather than
-    // laziness.
-    //
-    // A Hook lives as a member of another singleton -- RenderHook's,
-    // LuaCall's, MessageHook's -- and calls remove() from its own destructor
-    // at process exit. Those singletons are constructed *before* this one,
-    // because constructing them is what leads to the first install() that
-    // gets here, so static destruction order tears this registry down
-    // *first*. A Hook destructor running afterwards would then lock a mutex
-    // that no longer exists.
-    //
-    // So neither object is ever destroyed. Nothing is lost by it. MinHook's
-    // trampoline pages are already leaked on purpose (see ~MinHookBackend),
-    // a process on its way out does not care whether its own code is still
-    // patched, and unpatching at that point would race whatever thread is
-    // still executing inside a trampoline -- which is precisely the race
-    // ~MinHookBackend refuses to take.
+    // Returns the process-wide hook registry singleton.
     HookRegistry& coreRegistry()
     {
         static MinHookBackend* backend = std::make_unique<MinHookBackend>().release();

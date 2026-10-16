@@ -23,18 +23,21 @@ namespace crabe::cli {
 
     namespace {
 
+        // Extracts the root table name from a dotted identifier path.
         [[nodiscard]] std::string rootOf(const std::string& dottedPath)
         {
             const std::size_t dot = dottedPath.find('.');
             return (dot == std::string::npos) ? dottedPath : dottedPath.substr(0, dot);
         }
 
+        // Returns the final segment after the last dot in a path.
         [[nodiscard]] std::string_view lastSegment(std::string_view dottedPath)
         {
             const std::size_t dot = dottedPath.rfind('.');
             return (dot == std::string_view::npos) ? dottedPath : dottedPath.substr(dot + 1);
         }
 
+        // Reads an entire file into memory as a string.
         [[nodiscard]] std::expected<std::string, std::string> readFile(const std::filesystem::path& path)
         {
             std::ifstream in(path, std::ios::binary);
@@ -47,6 +50,7 @@ namespace crabe::cli {
 
     } // namespace
 
+    // Parses an EmmyLua API definitions file in crabe_api.def.lua's shape.
     std::expected<ApiSurface, std::string> parseApiSurface(std::string_view text,
                                                             const std::filesystem::path& origin)
     {
@@ -69,7 +73,7 @@ namespace crabe::cli {
                 if (std::regex_search(lineStr, match, functionDecl)) {
                     std::string path = match[1].str();
                     const std::string root = rootOf(path);
-                    if (root != path) // only multi-segment paths name a root
+                    if (root != path)
                         surface.roots.insert(root);
                     surface.callables.insert(std::move(path));
                 }
@@ -89,6 +93,7 @@ namespace crabe::cli {
         return surface;
     }
 
+    // Scans files for API calls and flags near-miss typos against the known surface.
     CheckApiReport checkApi(const ApiSurface& surface, const std::vector<std::filesystem::path>& luaFiles)
     {
         CheckApiReport report;
@@ -118,7 +123,7 @@ namespace crabe::cli {
 
             for (const CallSite& site : findCallSites(*source, rootsToCheck)) {
                 if (surface.callables.contains(site.path))
-                    continue; // exact match: known good
+                    continue;
 
                 const std::string siteRoot = rootOf(site.path);
                 const std::size_t maxAllowed = lastSegment(site.path).size() <= 3 ? 1 : 2;
@@ -127,7 +132,7 @@ namespace crabe::cli {
                 std::size_t bestDistance = std::string::npos;
                 for (const std::string& candidate : surface.callables) {
                     if (rootOf(candidate) != siteRoot)
-                        continue; // never suggest across roots
+                        continue;
 
                     const std::size_t distance = editDistance(site.path, candidate);
                     if (distance < bestDistance) {
@@ -136,9 +141,6 @@ namespace crabe::cli {
                     }
                 }
 
-                // A near-miss, not an exhaustive membership check -- see
-                // check_api.hpp for why crabe_api.def.lua cannot be treated
-                // as a complete listing of everything under Crabe/Game.
                 if (bestDistance != std::string::npos && bestDistance > 0 && bestDistance <= maxAllowed)
                     report.flagged.push_back(FlaggedCall{ file, site.line, site.column, site.path, best });
             }
@@ -147,11 +149,13 @@ namespace crabe::cli {
         return report;
     }
 
+    // Returns 0 if clean, or 2 if any call was flagged.
     int CheckApiReport::exitCode() const noexcept
     {
         return flagged.empty() ? 0 : 2;
     }
 
+    // Formats and prints the check report to the given stream.
     void printHuman(const CheckApiReport& report, std::ostream& out)
     {
         out << "check-api: " << report.scannedFiles.size() << " file(s) scanned against "
@@ -175,6 +179,7 @@ namespace crabe::cli {
 
     namespace {
 
+        // Recursively collects all .lua files under the given target path.
         [[nodiscard]] std::vector<std::filesystem::path> collectLuaFiles(const std::filesystem::path& target)
         {
             std::vector<std::filesystem::path> files;
@@ -193,6 +198,7 @@ namespace crabe::cli {
 
     } // namespace
 
+    // Parses command line arguments and runs the API check workflow.
     int runCheckApi(std::span<const std::string> args, std::ostream& out, std::ostream& err)
     {
         std::filesystem::path target;

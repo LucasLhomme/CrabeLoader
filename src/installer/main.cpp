@@ -25,6 +25,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <tlhelp32.h>
 
 #include "installer/game_installer.hpp"
 #include "installer/steam_locator.hpp"
@@ -42,7 +43,8 @@ namespace {
     constexpr int kExitInstalled = 0;
     constexpr int kExitFailed = 1;
     constexpr int kExitCancelled = 2;
-    constexpr WORD kPayloadResourceId = 101;
+    constexpr WORD kLoaderResourceId = 101;
+    constexpr WORD kBootstrapResourceId = 102;
 
     struct Texts {
         std::wstring_view title;
@@ -51,8 +53,10 @@ namespace {
         std::wstring_view notGameFolder;
         std::wstring_view installed;
         std::wstring_view updated;
-        std::wstring_view proxyUnrecognized;
-        std::wstring_view proxyMissing;
+        std::wstring_view migrated;
+        std::wstring_view bootstrapSlotTaken;
+        std::wstring_view loaderSlotTaken;
+        std::wstring_view legacyOriginalMissing;
         std::wstring_view cannotWrite;
         std::wstring_view payloadInvalid;
         std::wstring_view ioFailure;
@@ -69,11 +73,18 @@ namespace {
         L"Lancez le jeu pour commencer.",
         L"CrabeLoader a été mis à jour vers la version {} dans :\n\n{}\n\n"
         L"Vos mods et votre configuration n'ont pas été touchés.",
-        L"Le fichier bink2w32.dll de ce dossier n'est pas celui du jeu, et CrabeLoader n'y est pas déjà installé.\n\n"
+        L"\n\nCrabeLoader s'installe désormais sous le nom CrabeLoader.asi, démarré par un petit dinput8.dll : "
+        L"le fichier bink2w32.dll d'origine du jeu a été remis à sa place.",
+        L"Un fichier dinput8.dll qui n'est pas CrabeLoader se trouve déjà dans ce dossier "
+        L"(souvent un chargeur de plugins .asi).\n\n"
         L"Aucun fichier n'a été modifié.\n\n"
-        L"Dans Steam : clic droit sur le jeu > Propriétés > Fichiers installés > "
-        L"Vérifier l'intégrité des fichiers, puis relancez cet installeur.",
-        L"Le fichier bink2w32.dll est introuvable dans ce dossier.\n\n"
+        L"Si c'est un chargeur de plugins .asi, copiez simplement CrabeLoader.asi à côté du jeu : il le démarrera. "
+        L"Sinon, déplacez ou supprimez ce dinput8.dll, puis relancez cet installeur.",
+        L"Un fichier CrabeLoader.asi qui n'est pas CrabeLoader se trouve déjà dans ce dossier.\n\n"
+        L"Aucun fichier n'a été modifié.\n\n"
+        L"Déplacez ou supprimez ce fichier, puis relancez cet installeur.",
+        L"Le fichier bink2w32.dll de ce dossier est une ancienne version de CrabeLoader, et l'original du jeu "
+        L"(bink2w32_orig.dll) a disparu.\n\n"
         L"Aucun fichier n'a été modifié.\n\n"
         L"Dans Steam : clic droit sur le jeu > Propriétés > Fichiers installés > "
         L"Vérifier l'intégrité des fichiers, puis relancez cet installeur.",
@@ -81,7 +92,7 @@ namespace {
         L"Fermez Disney Infinity 3.0 s'il est lancé. Si le jeu est dans un dossier protégé, relancez l'installeur "
         L"en administrateur (clic droit > Exécuter en tant qu'administrateur).\n\n"
         L"Aucun fichier du jeu n'a été perdu.\n\nDétail : {}",
-        L"Cet installeur est incomplet : la DLL de CrabeLoader n'est pas incluse.\n\n"
+        L"Cet installeur est incomplet : CrabeLoader.asi ou dinput8.dll n'est pas inclus.\n\n"
         L"Téléchargez-le de nouveau depuis la page des versions.\n\nDétail : {}",
         L"L'installation a échoué.\n\nLes fichiers du jeu ont été remis dans leur état d'origine.\n\nDétail : {}",
     };
@@ -97,11 +108,17 @@ namespace {
         L"Start the game to begin.",
         L"CrabeLoader was updated to version {} in:\n\n{}\n\n"
         L"Your mods and your configuration were not touched.",
-        L"The bink2w32.dll in this folder is not the game's own, and CrabeLoader is not already installed.\n\n"
+        L"\n\nCrabeLoader now installs as CrabeLoader.asi, started by a small dinput8.dll: the game's own "
+        L"bink2w32.dll was put back in place.",
+        L"A dinput8.dll that is not CrabeLoader is already in this folder (often an .asi plugin loader).\n\n"
         L"No file was changed.\n\n"
-        L"In Steam: right-click the game > Properties > Installed Files > Verify integrity of game files, "
-        L"then run this installer again.",
-        L"bink2w32.dll was not found in this folder.\n\n"
+        L"If it is an .asi plugin loader, just copy CrabeLoader.asi next to the game: it will start it. "
+        L"Otherwise move or delete that dinput8.dll, then run this installer again.",
+        L"A CrabeLoader.asi that is not CrabeLoader is already in this folder.\n\n"
+        L"No file was changed.\n\n"
+        L"Move or delete that file, then run this installer again.",
+        L"The bink2w32.dll in this folder is an old CrabeLoader, and the game's original (bink2w32_orig.dll) "
+        L"is gone.\n\n"
         L"No file was changed.\n\n"
         L"In Steam: right-click the game > Properties > Installed Files > Verify integrity of game files, "
         L"then run this installer again.",
@@ -109,14 +126,15 @@ namespace {
         L"Close Disney Infinity 3.0 if it is running. If the game is in a protected folder, run the installer "
         L"as administrator (right-click > Run as administrator).\n\n"
         L"No game file was lost.\n\nDetails: {}",
-        L"This installer is incomplete: the CrabeLoader DLL is not included.\n\n"
+        L"This installer is incomplete: CrabeLoader.asi or dinput8.dll is not included.\n\n"
         L"Download it again from the releases page.\n\nDetails: {}",
         L"The installation failed.\n\nThe game files were put back as they were.\n\nDetails: {}",
     };
 
     struct Options {
         std::optional<std::filesystem::path> gameDir;
-        std::optional<std::filesystem::path> payloadFile;
+        std::optional<std::filesystem::path> loaderFile;
+        std::optional<std::filesystem::path> bootstrapFile;
         bool quiet{false};
         bool help{false};
         bool valid{true};
@@ -199,8 +217,10 @@ namespace {
                 options.help = true;
             } else if (arg == L"--game-dir" && i + 1 < count) {
                 options.gameDir = std::filesystem::path(argv.get()[++i]);
-            } else if (arg == L"--payload" && i + 1 < count) {
-                options.payloadFile = std::filesystem::path(argv.get()[++i]);
+            } else if ((arg == L"--loader" || arg == L"--payload") && i + 1 < count) {
+                options.loaderFile = std::filesystem::path(argv.get()[++i]);
+            } else if (arg == L"--bootstrap" && i + 1 < count) {
+                options.bootstrapFile = std::filesystem::path(argv.get()[++i]);
             } else {
                 options.valid = false;
             }
@@ -229,9 +249,9 @@ namespace {
         return bytes;
     }
 
-    [[nodiscard]] std::optional<std::vector<std::byte>> readEmbeddedPayload()
+    [[nodiscard]] std::optional<std::vector<std::byte>> readEmbeddedPayload(WORD resourceId)
     {
-        HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(kPayloadResourceId), RT_RCDATA);
+        HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(resourceId), RT_RCDATA);
         if (!resource)
             return std::nullopt;
         HGLOBAL loaded = LoadResource(nullptr, resource);
@@ -252,13 +272,44 @@ namespace {
         return std::filesystem::path(path).parent_path();
     }
 
-    [[nodiscard]] std::optional<std::vector<std::byte>> loadPayload(const Options& options)
+    struct Payloads {
+        std::vector<std::byte> loader;
+        std::vector<std::byte> bootstrap;
+    };
+
+    [[nodiscard]] std::optional<std::vector<std::byte>> loadOne(const std::optional<std::filesystem::path>& override,
+                                                                WORD resourceId, std::string_view fileName)
     {
-        if (options.payloadFile)
-            return readFileBytes(*options.payloadFile);
-        if (auto embedded = readEmbeddedPayload())
+        if (override)
+            return readFileBytes(*override);
+        if (auto embedded = readEmbeddedPayload(resourceId))
             return embedded;
-        return readFileBytes(executableDirectory() / std::string(kProxyName));
+        return readFileBytes(executableDirectory() / std::string(fileName));
+    }
+
+    [[nodiscard]] std::optional<Payloads> loadPayloads(const Options& options)
+    {
+        auto loader = loadOne(options.loaderFile, kLoaderResourceId, kLoaderName);
+        auto bootstrap = loadOne(options.bootstrapFile, kBootstrapResourceId, kBootstrapName);
+        if (!loader || !bootstrap)
+            return std::nullopt;
+        return Payloads{std::move(*loader), std::move(*bootstrap)};
+    }
+
+    /// Whether the game is running: Windows lets a loaded DLL be renamed, so an install would half-apply
+    /// until the next launch. Refusing up front keeps the result plain.
+    [[nodiscard]] bool isGameRunning()
+    {
+        const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE)
+            return false;
+        PROCESSENTRY32W entry{};
+        entry.dwSize = sizeof(entry);
+        bool running = false;
+        for (BOOL more = Process32FirstW(snapshot, &entry); more && !running; more = Process32NextW(snapshot, &entry))
+            running = _wcsicmp(entry.szExeFile, L"DisneyInfinity3.exe") == 0;
+        CloseHandle(snapshot);
+        return running;
     }
 
     [[nodiscard]] std::optional<std::filesystem::path> pickFolder(const Texts& texts,
@@ -302,10 +353,12 @@ namespace {
     [[nodiscard]] std::wstring_view failureText(const Texts& texts, InstallErrorCode code) noexcept
     {
         switch (code) {
-        case InstallErrorCode::ProxyUnrecognized:
-            return texts.proxyUnrecognized;
-        case InstallErrorCode::ProxyMissing:
-            return texts.proxyMissing;
+        case InstallErrorCode::BootstrapSlotTaken:
+            return texts.bootstrapSlotTaken;
+        case InstallErrorCode::LoaderSlotTaken:
+            return texts.loaderSlotTaken;
+        case InstallErrorCode::LegacyOriginalMissing:
+            return texts.legacyOriginalMissing;
         case InstallErrorCode::FileInUse:
         case InstallErrorCode::AccessDenied:
             return texts.cannotWrite;
@@ -340,9 +393,10 @@ namespace {
     {
         const Texts& texts = chooseTexts();
 
-        const auto payload = loadPayload(options);
-        if (!payload) {
-            show(options, texts, formatText(texts.payloadInvalid, std::wstring(L"bink2w32.dll")), MB_OK | MB_ICONERROR, IDOK);
+        const auto payloads = loadPayloads(options);
+        if (!payloads) {
+            show(options, texts, formatText(texts.payloadInvalid, std::wstring(L"CrabeLoader.asi, dinput8.dll")),
+                 MB_OK | MB_ICONERROR, IDOK);
             return kExitFailed;
         }
 
@@ -360,7 +414,13 @@ namespace {
                 continue;
             }
 
-            const auto report = installer.install(*payload);
+            if (isGameRunning()) {
+                show(options, texts, formatText(texts.cannotWrite, std::wstring(L"Disney Infinity 3.0 is running")),
+                     MB_OK | MB_ICONWARNING, IDOK);
+                return kExitFailed;
+            }
+
+            const auto report = installer.install(InstallPayload{payloads->loader, payloads->bootstrap});
             if (!report) {
                 show(options, texts, formatText(failureText(texts, report.error().code), widen(report.error().detail)),
                      MB_OK | MB_ICONERROR, IDOK);
@@ -369,7 +429,10 @@ namespace {
 
             const std::wstring version = widen(crabe::version::String);
             const std::wstring_view done = report->performed == Plan::Update ? texts.updated : texts.installed;
-            show(options, texts, formatText(done, version, folder->wstring()), MB_OK | MB_ICONINFORMATION, IDOK);
+            std::wstring message = formatText(done, version, folder->wstring());
+            if (report->legacyOriginalRestored)
+                message += texts.migrated;
+            show(options, texts, message, MB_OK | MB_ICONINFORMATION, IDOK);
             return kExitInstalled;
         }
     }
@@ -381,10 +444,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     const Options options = parseOptions();
     if (options.help || !options.valid) {
         const std::wstring usage =
-            L"CrabeInstaller [--game-dir <folder>] [--quiet] [--payload <bink2w32.dll>]\n\n"
-            L"--game-dir  skip the folder dialog and use this folder\n"
-            L"--quiet     show no window; the exit code tells the result (0 ok, 1 failed, 2 cancelled)\n"
-            L"--payload   install this DLL instead of the bundled one";
+            L"CrabeInstaller [--game-dir <folder>] [--quiet] [--loader <CrabeLoader.asi>] [--bootstrap <dinput8.dll>]\n\n"
+            L"--game-dir   skip the folder dialog and use this folder\n"
+            L"--quiet      show no window; the exit code tells the result (0 ok, 1 failed, 2 cancelled)\n"
+            L"--loader     install this CrabeLoader.asi instead of the bundled one (--payload is the old name)\n"
+            L"--bootstrap  install this dinput8.dll instead of the bundled one";
         MessageBoxW(nullptr, usage.c_str(), L"CrabeInstaller", MB_OK | MB_ICONINFORMATION);
         return options.valid ? kExitInstalled : kExitFailed;
     }

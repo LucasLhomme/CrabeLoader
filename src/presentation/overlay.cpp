@@ -18,20 +18,23 @@
 #include "infrastructure/vfs_override_manager.hpp"
 #include "infrastructure/vfs_hook.hpp"
 #include "shared/logger.hpp"
-#include "shared/version.hpp"
+#include "shared/build_info.hpp"
 
 namespace crabe::presentation {
 
+// Constructs the Overlay instance and initializes ImGui context.
 Overlay::Overlay()
 {
     initialize();
 }
 
+// Destructs the Overlay instance and destroys ImGui context.
 Overlay::~Overlay()
 {
     uninitialize();
 }
 
+// Sets the default window position and size for the overlay window.
 void Overlay::defaultSettings()
 {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -44,6 +47,7 @@ void Overlay::defaultSettings()
     ImGui::SetNextWindowSize(ImVec2(420.0f, 320.0f), ImGuiCond_FirstUseEver);
 }
 
+// Checks whether a given log severity level is enabled in the console filters.
 bool Overlay::isLevelVisible(crabe::shared::LogLevel level) const
 {
     switch (level) {
@@ -55,6 +59,7 @@ bool Overlay::isLevelVisible(crabe::shared::LogLevel level) const
     }
 }
 
+// Renders the overlay console tab, showing filtered logs and input submission.
 void Overlay::drawConsoleTab()
 {
     ImGui::Checkbox("Debug", &_showDebug); ImGui::SameLine();
@@ -86,14 +91,13 @@ void Overlay::drawConsoleTab()
     ImGui::PopItemWidth();
 }
 
-// Trimming, the "> {}" echo and the "=expr" -> "return tostring(expr)"
-// rewrite all live in crabe::application::Loader::queueConsoleSnippet now, shared with
-// crabe::application::Loader::drainRemoteCommandFile so both entry points behave identically.
+// Forwards the typed console command snippet to the Loader queue.
 void Overlay::submitConsoleInput()
 {
     crabe::application::Loader::get().queueConsoleSnippet(_consoleInputBuffer);
 }
 
+// Renders the VFS diagnostic tab showing redirection stats and active overrides.
 void Overlay::drawVfsTab()
 {
     using crabe::infrastructure::VfsOverrideManager;
@@ -133,16 +137,18 @@ void Overlay::drawVfsTab()
     ImGui::EndChild();
 }
 
+// Renders the main ImGui overlay window with tabbed diagnostics.
 void Overlay::renderOverlay()
 {
     Overlay::defaultSettings();
 
-    std::string title = std::format("CrabeLoader v{} Overlay", crabe::version::String);
+    std::string title = std::format("CrabeLoader v{} Overlay###CrabeLoaderOverlay", crabe::build::label());
     ImGui::Begin(title.c_str());
 
     if (ImGui::BeginTabBar("MainTabBar")) {
         if (ImGui::BeginTabItem("Main")) {
-            ImGui::Text("CrabeLoader v%s (Built: %s)", crabe::version::String.data(), crabe::version::BuildDate.data());
+            ImGui::Text("CrabeLoader v%s", crabe::build::label().data());
+            ImGui::Text("Built %s, commit %s", crabe::build::time().data(), crabe::build::commit().data());
             ImGui::Separator();
             ImGui::Text("Press F5 to toggle the In-Game Mod Menu.");
             ImGui::EndTabItem();
@@ -163,8 +169,6 @@ void Overlay::renderOverlay()
 
 namespace {
 
-    // Latin-1 plus the punctuation, arrows and geometric shapes menus use for
-    // bullets, chevrons and the infinity sign. Must outlive the atlas build.
     constexpr ImWchar kUiGlyphRanges[] = {
         0x0020, 0x00FF,
         0x2000, 0x206F,
@@ -202,6 +206,7 @@ void Overlay::loadFonts(ImGuiIO& io)
     addSystemFont(io, "seguibl.ttf", 52.0f);
 }
 
+// Initializes ImGui context settings, dark styling, and fonts.
 void Overlay::initialize()
 {
     IMGUI_CHECKVERSION();
@@ -210,8 +215,8 @@ void Overlay::initialize()
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
-    io.IniFilename = nullptr; // Do not litter game root with imgui.ini
-    io.LogFilename = nullptr; // Do not litter game root with imgui_log.txt
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
 
     ImGui::StyleColorsDark();
     loadFonts(io);
@@ -224,10 +229,12 @@ void Overlay::initialize()
     style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 }
 
+// Destroys the ImGui context.
 void Overlay::uninitialize()
 {
     ImGui::DestroyContext();
 }
 
 } // namespace crabe::presentation
+
 

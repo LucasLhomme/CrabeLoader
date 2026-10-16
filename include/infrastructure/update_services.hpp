@@ -19,21 +19,21 @@
 
 namespace crabe::infrastructure {
 
-    // GET https://api.github.com/.../releases/latest with short timeouts and a capped body.
     class WinHttpReleaseSource final : public domain::IReleaseSource {
     public:
+        // Fetches latest release JSON metadata from GitHub via WinHTTP.
         [[nodiscard]] std::expected<std::string, std::string> fetchLatestRelease() override;
     };
 
-    // A native Yes/No box shown above the game, in French or English by the Windows UI language.
     class MessageBoxUpdatePrompt final : public domain::IUpdatePrompt {
     public:
+        // Displays a native update confirmation message box.
         [[nodiscard]] bool askToUpdate(std::string_view currentVersion, std::string_view latestVersion) override;
     };
 
-    // Opens an https URL in the default browser; anything else is refused.
     class ShellUrlOpener final : public domain::IUrlOpener {
     public:
+        // Opens an HTTPS URL in the default web browser.
         [[nodiscard]] bool open(std::string_view url) override;
     };
 

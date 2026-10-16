@@ -28,28 +28,28 @@ using crabe::presentation::DrawCommand;
 using crabe::presentation::DrawOp;
 using crabe::presentation::WidgetResult;
 
-/// Records `command` and reports what the render thread measured for it on the
-/// previous frame, leaving `out` untouched when the widget is new.
+// Records `command` and reports what the render thread measured for it on the
+// previous frame, leaving `out` untouched when the widget is new.
 bool recordAndRead(DrawCommand command, WidgetResult& out)
 {
     std::uint32_t id = DrawBuffer::get().record(std::move(command));
     return DrawBuffer::get().tryResult(id, out);
 }
 
-/// Records `command` without reading any state back.
+// Records `command` without reading any state back.
 void recordOnly(DrawCommand command)
 {
     DrawBuffer::get().record(std::move(command));
 }
 
-/// Reads argument `idx` as a string, or an empty string when absent.
+// Reads argument `idx` as a string, or an empty string when absent.
 std::string argText(void* L, int idx)
 {
     const char* value = crabe::infrastructure::LuaCall::get().argToString(L, idx);
     return value ? std::string(value) : std::string();
 }
 
-/// Queues an ImGui window and pushes its visibility and close-button state.
+// Queues an ImGui window and pushes its visibility and close-button state.
 int __cdecl luaBegin(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -77,7 +77,7 @@ int __cdecl luaBegin(void* L)
     return 2;
 }
 
-/// Queues the end of the current ImGui window.
+// Queues the end of the current ImGui window.
 int __cdecl luaEnd(void* L)
 {
     (void)L;
@@ -87,7 +87,7 @@ int __cdecl luaEnd(void* L)
     return 0;
 }
 
-/// Queues unformatted text in the current ImGui window.
+// Queues unformatted text in the current ImGui window.
 int __cdecl luaText(void* L)
 {
     DrawCommand command;
@@ -97,7 +97,7 @@ int __cdecl luaText(void* L)
     return 0;
 }
 
-/// Queues colored text using RGBA float components.
+// Queues colored text using RGBA float components.
 int __cdecl luaTextColored(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -112,7 +112,7 @@ int __cdecl luaTextColored(void* L)
     return 0;
 }
 
-/// Queues greyed-out text, used for hints and empty-state messages.
+// Queues greyed-out text, used for hints and empty-state messages.
 int __cdecl luaTextDisabled(void* L)
 {
     DrawCommand command;
@@ -122,7 +122,7 @@ int __cdecl luaTextDisabled(void* L)
     return 0;
 }
 
-/// Queues a selectable row and pushes whether it was clicked.
+// Queues a selectable row and pushes whether it was clicked.
 int __cdecl luaSelectable(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -138,7 +138,7 @@ int __cdecl luaSelectable(void* L)
     return 1;
 }
 
-/// Queues a scroll so that the previous row is brought into view.
+// Queues a scroll so that the previous row is brought into view.
 int __cdecl luaSetScrollHereY(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -149,7 +149,7 @@ int __cdecl luaSetScrollHereY(void* L)
     return 0;
 }
 
-/// Queues a button and pushes whether it was clicked on the previous frame.
+// Queues a button and pushes whether it was clicked on the previous frame.
 int __cdecl luaButton(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -165,7 +165,7 @@ int __cdecl luaButton(void* L)
     return 1;
 }
 
-/// Queues a checkbox and pushes its state, defaulting to the supplied value.
+// Queues a checkbox and pushes its state, defaulting to the supplied value.
 int __cdecl luaCheckbox(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -183,7 +183,7 @@ int __cdecl luaCheckbox(void* L)
     return 1;
 }
 
-/// Queues a float slider and pushes its value, defaulting to the supplied one.
+// Queues a float slider and pushes its value, defaulting to the supplied one.
 int __cdecl luaSliderFloat(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -203,7 +203,7 @@ int __cdecl luaSliderFloat(void* L)
     return 1;
 }
 
-/// Queues an integer slider and pushes its value, defaulting to the supplied one.
+// Queues an integer slider and pushes its value, defaulting to the supplied one.
 int __cdecl luaSliderInt(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -223,7 +223,7 @@ int __cdecl luaSliderInt(void* L)
     return 1;
 }
 
-/// Queues a text input and pushes its buffer plus a changed flag.
+// Queues a text input and pushes its buffer plus a changed flag.
 int __cdecl luaInputText(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -249,7 +249,7 @@ int __cdecl luaInputText(void* L)
     return 2;
 }
 
-/// Queues placement of the next widget on the current line.
+// Queues placement of the next widget on the current line.
 int __cdecl luaSameLine(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -261,7 +261,7 @@ int __cdecl luaSameLine(void* L)
     return 0;
 }
 
-/// Queues a horizontal separator line.
+// Queues a horizontal separator line.
 int __cdecl luaSeparator(void* L)
 {
     (void)L;
@@ -271,7 +271,7 @@ int __cdecl luaSeparator(void* L)
     return 0;
 }
 
-/// Queues vertical spacing before the next widget.
+// Queues vertical spacing before the next widget.
 int __cdecl luaSpacing(void* L)
 {
     (void)L;
@@ -281,7 +281,7 @@ int __cdecl luaSpacing(void* L)
     return 0;
 }
 
-/// Queues a scrolling child region and pushes its visibility.
+// Queues a scrolling child region and pushes its visibility.
 int __cdecl luaBeginChild(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -300,7 +300,7 @@ int __cdecl luaBeginChild(void* L)
     return 1;
 }
 
-/// Queues the end of the current scrolling child region.
+// Queues the end of the current scrolling child region.
 int __cdecl luaEndChild(void* L)
 {
     (void)L;
@@ -310,7 +310,7 @@ int __cdecl luaEndChild(void* L)
     return 0;
 }
 
-/// Queues a tab bar and pushes whether it was opened.
+// Queues a tab bar and pushes whether it was opened.
 int __cdecl luaBeginTabBar(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -324,7 +324,7 @@ int __cdecl luaBeginTabBar(void* L)
     return 1;
 }
 
-/// Queues the end of the current tab bar.
+// Queues the end of the current tab bar.
 int __cdecl luaEndTabBar(void* L)
 {
     (void)L;
@@ -334,8 +334,7 @@ int __cdecl luaEndTabBar(void* L)
     return 0;
 }
 
-/// Queues a tab and pushes whether it is the selected one. A tab never seen
-/// before reports unselected, so its body starts being recorded one frame later.
+// Queues a tab and pushes whether it is the selected one.
 int __cdecl luaBeginTabItem(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -349,7 +348,7 @@ int __cdecl luaBeginTabItem(void* L)
     return 1;
 }
 
-/// Queues the end of the current tab.
+// Queues the end of the current tab.
 int __cdecl luaEndTabItem(void* L)
 {
     (void)L;
@@ -359,7 +358,7 @@ int __cdecl luaEndTabItem(void* L)
     return 0;
 }
 
-/// Queues the position of the next created window.
+// Queues the position of the next created window.
 int __cdecl luaSetNextWindowPos(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -372,7 +371,7 @@ int __cdecl luaSetNextWindowPos(void* L)
     return 0;
 }
 
-/// Queues the size of the next created window.
+// Queues the size of the next created window.
 int __cdecl luaSetNextWindowSize(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -385,7 +384,7 @@ int __cdecl luaSetNextWindowSize(void* L)
     return 0;
 }
 
-/// Queues a click test against the previously queued widget.
+// Queues a click test against the previously queued widget.
 int __cdecl luaIsItemClicked(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -399,7 +398,7 @@ int __cdecl luaIsItemClicked(void* L)
     return 1;
 }
 
-/// Reads argument `idx` as a packed 0xAABBGGRR colour, the layout ImGui uses.
+// Reads argument `idx` as a packed 0xAABBGGRR colour, the layout ImGui uses.
 std::uint32_t argColor(void* L, int idx)
 {
     double value = crabe::infrastructure::LuaCall::get().argToNumber(L, idx, 0.0);
@@ -410,12 +409,13 @@ std::uint32_t argColor(void* L, int idx)
     return static_cast<std::uint32_t>(static_cast<std::int64_t>(value));
 }
 
+// Reads argument `idx` as a float number, or returns fallback.
 float argFloat(void* L, int idx, double fallback = 0.0)
 {
     return static_cast<float>(crabe::infrastructure::LuaCall::get().argToNumber(L, idx, fallback));
 }
 
-/// Queues keyboard focus for the next widget, or `offset` widgets further on.
+// Queues keyboard focus for the next widget, or `offset` widgets further on.
 int __cdecl luaSetKeyboardFocusHere(void* L)
 {
     DrawCommand command;
@@ -425,8 +425,8 @@ int __cdecl luaSetKeyboardFocusHere(void* L)
     return 0;
 }
 
-/// DrawRect(x, y, w, h, color [, rounding [, thickness]]): filled, or an
-/// outline when thickness is above zero. Drawn behind every ImGui window.
+// DrawRect(x, y, w, h, color [, rounding [, thickness]]): filled, or an
+// outline when thickness is above zero. Drawn behind every ImGui window.
 int __cdecl luaDrawRect(void* L)
 {
     DrawCommand command;
@@ -442,8 +442,8 @@ int __cdecl luaDrawRect(void* L)
     return 0;
 }
 
-/// DrawGradient(x, y, w, h, colorA, colorB [, horizontal]): colorA at the top
-/// (or the left edge when horizontal) fading into colorB.
+// DrawGradient(x, y, w, h, colorA, colorB [, horizontal]): colorA at the top
+// (or the left edge when horizontal) fading into colorB.
 int __cdecl luaDrawGradient(void* L)
 {
     DrawCommand command;
@@ -459,7 +459,7 @@ int __cdecl luaDrawGradient(void* L)
     return 0;
 }
 
-/// DrawLine(x1, y1, x2, y2, color [, thickness]).
+// DrawLine(x1, y1, x2, y2, color [, thickness]).
 int __cdecl luaDrawLine(void* L)
 {
     DrawCommand command;
@@ -474,7 +474,7 @@ int __cdecl luaDrawLine(void* L)
     return 0;
 }
 
-/// DrawCircle(x, y, radius, color [, thickness]): filled unless thickness > 0.
+// DrawCircle(x, y, radius, color [, thickness]): filled unless thickness > 0.
 int __cdecl luaDrawCircle(void* L)
 {
     DrawCommand command;
@@ -488,8 +488,8 @@ int __cdecl luaDrawCircle(void* L)
     return 0;
 }
 
-/// DrawText(x, y, text, color [, size [, font [, align [, width [, shadow]]]]]).
-/// font: 0 default, 1 body, 2 display. align: 0 left, 1 centre, 2 right inside width.
+// DrawText(x, y, text, color [, size [, font [, align [, width [, shadow]]]]]).
+// font: 0 default, 1 body, 2 display. align: 0 left, 1 centre, 2 right inside width.
 int __cdecl luaDrawText(void* L)
 {
     DrawCommand command;
@@ -507,9 +507,9 @@ int __cdecl luaDrawText(void* L)
     return 0;
 }
 
-/// DrawImage(path, x, y, w, h [, tint]): an image file (PNG, JPEG, BMP...) read
-/// from a path relative to the game folder, stretched over the box. The tint is
-/// a packed colour multiplied into every pixel; white, the default, leaves it as is.
+// DrawImage(path, x, y, w, h [, tint]): an image file (PNG, JPEG, BMP...) read
+// from a path relative to the game folder, stretched over the box. The tint is
+// a packed colour multiplied into every pixel; white, the default, leaves it as is.
 int __cdecl luaDrawImage(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -525,7 +525,7 @@ int __cdecl luaDrawImage(void* L)
     return 0;
 }
 
-/// Pushes the width and height the render thread saw last frame (0, 0 before it ran).
+// Pushes the width and height the render thread saw last frame (0, 0 before it ran).
 int __cdecl luaGetDisplaySize(void* L)
 {
     crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
@@ -539,7 +539,7 @@ int __cdecl luaGetDisplaySize(void* L)
 
 }
 
-/// Registers all ImGui bindings to global ImGui and Crabe.ImGui tables.
+// Registers all ImGui bindings to global ImGui and Crabe.ImGui tables.
 void ImGuiBindings::registerBindings(void* L)
 {
     if (!L) {

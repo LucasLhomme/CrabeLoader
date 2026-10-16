@@ -1,0 +1,95 @@
+---
+title: CrabeLoader
+description: The open-source mod loader and runtime for Disney Infinity 3.0 Gold Edition on PC. Lua mods, native .asi plugins, and no game file changed.
+template: splash
+editUrl: false
+hero:
+  title: CrabeLoader
+  tagline: The open-source mod loader for Disney Infinity 3.0 Gold Edition on PC. Write mods in Lua, ship native plugins, and never modify a game file.
+  image:
+    file: ../../assets/crab.svg
+  actions:
+    - text: Get started
+      link: start/installation/
+      icon: right-arrow
+    - text: Write your first mod
+      link: guides/mod-development/
+      icon: pencil
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/LucasLhomme/CrabeLoader
+      icon: external
+      variant: minimal
+    - text: Buy Me a Coffee
+      link: https://buymeacoffee.com/crabecrabe
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+
+## Two files next to the game
+
+<Steps>
+
+1. **Run `CrabeInstaller.exe`**, or copy `dinput8.dll` and `CrabeLoader.asi` next to `DisneyInfinity3.exe`. Nothing in the game folder is renamed or overwritten.
+
+2. **Drop mods into `mods/`.** A single `.lua` file is already a mod; a folder with a `mod.json` can bundle scripts, characters, skill trees, textures and a native plugin.
+
+3. **Launch the game.** `Insert` opens the CrabeLoader overlay, `F4` reloads every mod from disk, and `loader.log` says exactly what loaded and why.
+
+</Steps>
+
+## A mod is a few lines of Lua
+
+```lua title="mods/hello.lua"
+Crabe.Mod.register({
+    name = "Hello",
+    onInit = function()
+        Crabe.write("Hello from my first mod!")
+        Crabe.Input.bindKey(0x75, function() -- F6
+            Crabe.write("F6 pressed")
+        end)
+    end,
+})
+```
+
+Save the file, press `F4` in game, and the line appears in the overlay. The [Lua API reference](lua-api/) lists every function a mod can call.
+
+## What it gives you
+
+<CardGrid>
+  <Card title="Sandboxed Lua mods" icon="seti:lua">
+    Each mod runs in its own environment. A callback that keeps failing is quarantined instead of
+    crashing the game, and `F4` reloads everything in place.
+  </Card>
+  <Card title="Native .asi plugins" icon="puzzle">
+    32-bit plugins load before the game's own code, each one checked first. A small C API lets them
+    log, hook, run Lua and share values with mods.
+  </Card>
+  <Card title="Characters and skill trees" icon="star">
+    Expose hidden figures, add characters with their own catalog entry, and patch or replace
+    progression trees.
+  </Card>
+  <Card title="Textures and assets" icon="document">
+    The virtual file system serves loose files from a mod's folder in place of the game's archives,
+    so two mods never fight over the same zip.
+  </Card>
+  <Card title="Disney Infinity base" icon="random">
+    Use a physical base from Lua, light its LEDs, and give every figure its own progression, as on
+    console.
+  </Card>
+  <Card title="Crash reports that point somewhere" icon="warning">
+    Native faults are trapped and written up with the running mod, the active hook and a minidump,
+    and every build carries a label that says exactly which one it was.
+  </Card>
+</CardGrid>
+
+## Find your way
+
+<CardGrid>
+  <LinkCard title="I want to play with mods" description="Install CrabeLoader, add mods, and change its settings." href="start/installation/" />
+  <LinkCard title="I write Lua mods" description="Manifests, lifecycle hooks, ImGui menus, events and the full Lua API." href="guides/mod-development/" />
+  <LinkCard title="I write native plugins" description="Where .asi plugins load from, and the C plugin SDK." href="guides/asi-plugins/" />
+  <LinkCard title="I work on CrabeLoader itself" description="Architecture rules, building from source, tests and the PR checklist." href="contributing/guide/" />
+</CardGrid>

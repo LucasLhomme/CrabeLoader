@@ -6,22 +6,9 @@
 --
 -- Authors: @LucasLhomme
 
--- Avatar identity and progression for the character currently being played --
--- its handle, sku, level and the routes that swap it.
---
--- Distinct from Crabe.VirtualReader (12_virtualreader.lua), which edits the
--- character-select catalog before the game freezes it. This one acts on the
--- live player, from the game's own Lua state. Life, death, respawn and control
--- locking live next door in 11b_avatar_state.lua.
---
--- Everything here raises on failure rather than returning a status. Callers
--- that need to survive an error -- the mod menu, for one -- already wrap
--- handlers; a second layer of pcall in every caller only hides which native
--- was missing.
-
 Game = Game or {}
 
--- Shared with 11b_avatar_state.lua, which has no local copy of its own.
+-- Resolves player ID, defaulting to host player if not provided.
 function Game.ResolvePlayerId(playerId)
     if playerId ~= nil then return playerId end
     if type(Players_GetHostPlayerID) ~= "function" then
@@ -34,9 +21,7 @@ local function hostPlayer(playerId)
     return Game.ResolvePlayerId(playerId)
 end
 
--- The engine reports SkuId as a string in some builds and a number in others.
--- Match whatever the current character uses rather than guess: the loadout and
--- respawn natives compare by value and silently no-op on a type mismatch.
+-- Coerces SKU to match current character's SKU type (string or number).
 function Game.CoerceSku(sku, playerId)
     if type(VirtualReaderPC_GetCurrentCharacter) ~= "function" then
         return sku
@@ -54,10 +39,7 @@ local function coerceSku(sku, playerId)
     return Game.CoerceSku(sku, playerId)
 end
 
--- The actor handle of a player's avatar -- what the tool, feat and customize
--- screens pass on to the Actor_*/Agent_* natives. Confirmed by pausemenu.lua:43
--- and a dozen siblings. Place_GetAvatarHandle exists at runtime too but has no
--- call site anywhere, so its argument shape is a guess and it is not used here.
+-- Returns the actor handle of the player avatar.
 function Game.GetAvatarHandle(playerId)
     playerId = hostPlayer(playerId)
 
@@ -67,12 +49,7 @@ function Game.GetAvatarHandle(playerId)
     return Players.GetAvatarFromPlayerId(playerId)
 end
 
--- sku_id of the character currently played, as a number, or nil.
---
--- Three routes, best-confirmed first. VirtualReaderPC_GetCurrentCharacter is
--- per-player; VirtualReader_GetCurrentAvatarSku takes no argument at all
--- (revive.lua:39) so it only ever answers for the local avatar; UI_GetAvatarSKU
--- has no call site in the shipped scripts and is the last resort.
+-- Returns the SKU id of the played avatar as a number, or nil.
 function Game.GetAvatarSku(playerId)
     playerId = hostPlayer(playerId)
 
@@ -96,10 +73,7 @@ function Game.GetAvatarSku(playerId)
     return nil
 end
 
--- Level of the character with this sku. The native takes a SKU and not a
--- player number, as the call site at virtualreaderdata.lua line 3241 shows.
--- A wrongly shaped version is generated in 10_game.lua; this file loads
--- afterwards and replaces it. Defaults to the character being played.
+-- Returns the level of the avatar with the specified SKU.
 function Game.GetAvatarLevel(sku, playerId)
     sku = tonumber(sku) or Game.GetAvatarSku(playerId)
     if not sku then
@@ -111,11 +85,7 @@ function Game.GetAvatarLevel(sku, playerId)
     return Players_GetAvatarLevel(sku)
 end
 
--- Two level-up natives, both (playerNum, skuId), both confirmed:
---   "players"   Players_AvatarLevelUp         upsell.lua:151
---   "skilltree" VirtualReaderPC_AvatarLevelUp skilltreegrid_in3.lua:596 -- the
---               one behind the skill tree's own paid Level Up button.
--- Neither takes a count, so repeat the call to gain several levels.
+-- Levels up the avatar via "players" or "skilltree" route.
 function Game.LevelUpAvatar(playerId, sku, route)
     playerId = hostPlayer(playerId)
     sku = tonumber(sku) or Game.GetAvatarSku(playerId)
@@ -139,10 +109,44 @@ function Game.LevelUpAvatar(playerId, sku, route)
     return sku
 end
 
--- Sets progression outright instead of stepping it. One argument only --
--- virtualreader_in3.lua:1042 calls Players_SetAvatarProgression(level) with no
--- player and no sku, so it lands on whatever avatar the engine holds current
--- and cannot be aimed at a second player.
+-- Sets the current avatar to an absolute level from 0 to 20, down as well as up.
+-- Experience is untouched, so the next experience gained can level the avatar back up.
+function Game.SetAvatarLevel(level, playerId)
+    if type(Crabe._avatarSetLevel) ~= "function" then
+        error("Game.SetAvatarLevel: this loader has no avatar level native", 2)
+    end
+    level = tonumber(level)
+    if not level or level < 0 or level > 20 then
+        error("Game.SetAvatarLevel: level must be a number from 0 to 20", 2)
+    end
+
+    playerId = hostPlayer(playerId)
+    local sku = Game.GetAvatarSku(playerId)
+    if not sku then
+        error("Game.SetAvatarLevel: could not resolve the current avatar's sku_id", 2)
+    end
+    return Crabe._avatarSetLevel(playerId, sku, math.floor(level))
+end
+
+-- Returns the unspent skill points of the avatar, or nil when the skill tree data is unavailable.
+function Game.GetSkillPoints(playerId)
+    if type(UI_GetItemArgumentsForPlayer) ~= "function" then
+        error("Game.GetSkillPoints: UI_GetItemArgumentsForPlayer is not available in this Lua state", 2)
+    end
+    return tonumber(UI_GetItemArgumentsForPlayer("SkillTree_IN3", hostPlayer(playerId), "skillpoints"))
+end
+
+-- Refunds every skill the avatar bought, without the Sparks cost the skill tree screen charges.
+-- The game allows two refunds per figure, so call it sparingly.
+function Game.RespecAvatar(playerId)
+    if type(UI_GetItemArgumentsForPlayer) ~= "function" then
+        error("Game.RespecAvatar: UI_GetItemArgumentsForPlayer is not available in this Lua state", 2)
+    end
+    UI_GetItemArgumentsForPlayer("SkillTree_IN3", hostPlayer(playerId), "PerformRespec", 0)
+    return true
+end
+
+-- Sets current avatar progression level directly.
 function Game.SetAvatarProgression(level)
     level = tonumber(level)
     if not level then
@@ -155,20 +159,12 @@ function Game.SetAvatarProgression(level)
     return level
 end
 
--- Swaps the played character. Two routes, because neither works everywhere:
---
---   "loadout"  VirtualReaderPC_SetCurrentCharacter + ActivateChanges -- the
---              path the game's own character grid takes.
---   "legacy"   Players_ForceAvatar + Players_ChangeAvatar -- fine in Toy Box,
---              but does not reload the model inside a Play Set.
---
--- Defaults to "loadout"; the caller picks when it has reason to.
+-- Swaps played character using "loadout" or "legacy" method.
 function Game.SetCharacter(sku, method, playerId)
     if sku == nil then
         error("Game.SetCharacter: a sku_id is required", 2)
     end
 
-    -- Support passing character name directly (e.g. "SOR_Sora", "Luke Skywalker")
     if type(sku) == "string" and not tonumber(sku) then
         local foundSku = nil
         if Crabe and Crabe.VirtualReader and Crabe.VirtualReader.skuForName then
@@ -201,7 +197,7 @@ function Game.SetCharacter(sku, method, playerId)
         end
 
         VirtualReaderPC_SetCurrentCharacter(coerceSku(sku, playerId))
-        VirtualReaderPC_ActivateChanges(playerId, true)   -- true = forceAvatarChange
+        VirtualReaderPC_ActivateChanges(playerId, true)
         return method
     end
 
@@ -220,8 +216,7 @@ function Game.SetCharacter(sku, method, playerId)
     error("Game.SetCharacter: unknown method '" .. tostring(method) .. "' (loadout or legacy)", 2)
 end
 
--- Name, sparks and play set of a player in one call: placetoyonslot.lua:50
--- destructures exactly these three, in this order.
+-- Returns avatar name, sparks, and playset name table.
 function Game.GetPlayerAvatarData(playerId)
     playerId = hostPlayer(playerId)
 
@@ -232,10 +227,7 @@ function Game.GetPlayerAvatarData(playerId)
     return { name = name, sparks = sparks, playsetName = playsetName }
 end
 
--- Refreshes the entitlement list the character grid filters on, and returns the
--- native's own success boolean (virtualreaderpc.lua:333). The flat
--- Players_GetAvatarEntitlements exists at runtime with no call site anywhere,
--- so its arity is unknown and it is deliberately not wrapped.
+-- Refreshes and returns the avatar entitlement list.
 function Game.GetAvatarEntitlements(playerId)
     playerId = hostPlayer(playerId)
 
@@ -245,9 +237,7 @@ function Game.GetAvatarEntitlements(playerId)
     return VirtualReaderPC_GetAvatarEntitlements(playerId)
 end
 
--- Core abilities of a progression tree. The argument is a ProgressionTree NAME,
--- not a sku and not a player: virtualreaderpc_coreabilities.lua:32 passes
--- self.characterInfo.ProgressionTree.
+-- Returns core abilities of the specified progression tree name.
 function Game.GetAvatarAbilities(progressionTree)
     if type(progressionTree) ~= "string" or progressionTree == "" then
         error("Game.GetAvatarAbilities: expected a ProgressionTree name (string)", 2)
@@ -258,10 +248,7 @@ function Game.GetAvatarAbilities(progressionTree)
     return VirtualReaderPC_GetAvatarAbilitiesByName(progressionTree)
 end
 
--- ProgressionTree name of the played character -- the argument
--- Game.GetAvatarAbilities wants. It only exists on the loadout's character
--- table (virtualreaderpc_coreabilities.lua reads characterInfo.ProgressionTree),
--- so there is nothing to fall back on when that screen never ran. nil then.
+-- Returns progression tree name of the current avatar, or nil.
 function Game.GetProgressionTree(playerId)
     playerId = hostPlayer(playerId)
 
@@ -273,10 +260,7 @@ function Game.GetProgressionTree(playerId)
     return current.ProgressionTree
 end
 
--- Everything the getters can say about one player, as { label, value } rows --
--- what the menu info screen renders. Each probe is behind a type check rather
--- than a pcall, so a native missing from this build drops its own line instead
--- of aborting the whole dump.
+-- Returns key-value information rows about the player avatar.
 function Game.GetAvatarInfo(playerId)
     playerId = hostPlayer(playerId)
 
@@ -293,7 +277,6 @@ function Game.GetAvatarInfo(playerId)
         row("niveau", Players_GetAvatarLevel(sku))
     end
     if sku and type(UI_GetAvatarVersion) == "function" then
-        -- Takes the sku, not the player (virtualreader_in3.lua:596).
         row("version", UI_GetAvatarVersion(sku))
     end
     if sku and type(Player_IsCharacterValid) == "function" then
@@ -321,118 +304,84 @@ function Game.GetAvatarInfo(playerId)
     return rows
 end
 
--- ---------------------------------------------------------------------------
--- Master Character Roster (official SKUs from virtualreaderdata.lua bytecode)
--- ---------------------------------------------------------------------------
-
 Game.CHARACTER_ROSTER = {
-    -- ----------------------------------------------------------------
-    -- Star Wars — verified against virtualreaderdata.lua sku_id fields
-    -- ----------------------------------------------------------------
     starwars = {
-        -- The Clone Wars
-        { name = "Anakin Skywalker",  sku = 1000200 },   -- TCW_Anakin
-        { name = "Obi-Wan Kenobi",    sku = 1000201 },   -- TCW_ObiWan
-        { name = "Yoda",              sku = 1000202 },   -- TCW_Yoda
-        { name = "Ahsoka Tano",       sku = 1000203 },   -- TCW_Ahsoka
-        { name = "Darth Maul",        sku = 1000204 },   -- TCW_DarthMaul
-        -- The Empire Strikes Back
-        { name = "Luke Skywalker",    sku = 1000206 },   -- EMP_Luke
-        { name = "Han Solo",          sku = 1000207 },   -- EMP_HanSolo
-        { name = "Princess Leia",     sku = 1000208 },   -- EMP_Leia
-        { name = "Chewbacca",         sku = 1000209 },   -- EMP_Chewbacca
-        { name = "Darth Vader",       sku = 1000210 },   -- EMP_DarthVader
-        { name = "Boba Fett",         sku = 1000211 },   -- EMP_BobaFett
-        -- Star Wars Rebels
-        { name = "Ezra Bridger",      sku = 1000212 },   -- REB_Ezra
-        { name = "Kanan Jarrus",      sku = 1000213 },   -- REB_Kanan
-        { name = "Sabine Wren",       sku = 1000214 },   -- REB_Sabine
-        { name = "Zeb Orrelios",      sku = 1000215 },   -- REB_Zeb
+        { name = "Anakin Skywalker",  sku = 1000200 },
+        { name = "Obi-Wan Kenobi",    sku = 1000201 },
+        { name = "Yoda",              sku = 1000202 },
+        { name = "Ahsoka Tano",       sku = 1000203 },
+        { name = "Darth Maul",        sku = 1000204 },
+        { name = "Luke Skywalker",    sku = 1000206 },
+        { name = "Han Solo",          sku = 1000207 },
+        { name = "Princess Leia",     sku = 1000208 },
+        { name = "Chewbacca",         sku = 1000209 },
+        { name = "Darth Vader",       sku = 1000210 },
+        { name = "Boba Fett",         sku = 1000211 },
+        { name = "Ezra Bridger",      sku = 1000212 },
+        { name = "Kanan Jarrus",      sku = 1000213 },
+        { name = "Sabine Wren",       sku = 1000214 },
+        { name = "Zeb Orrelios",      sku = 1000215 },
     },
-    -- ----------------------------------------------------------------
-    -- Marvel — verified against virtualreaderdata.lua sku_id fields
-    -- ----------------------------------------------------------------
     marvel = {
-        -- Avengers / Marvel 2
-        { name = "Captain America",         sku = 1000100 },  -- AVG_CaptainAmerica
-        { name = "Hulk",                    sku = 1000101 },  -- AVG_Hulk
-        { name = "Iron Man",                sku = 1000102 },  -- AVG_IronMan
-        { name = "Thor",                    sku = 1000103 },  -- AVG_Thor
-        -- Guardians of the Galaxy
-        { name = "Groot",                   sku = 1000104 },  -- GOG_Groot
-        { name = "Rocket Raccoon",          sku = 1000105 },  -- GOG_RocketRaccoon
-        { name = "Star-Lord",               sku = 1000106 },  -- GOG_StarLord
-        -- Spider-Man / Marvel 1
-        { name = "Spider-Man",              sku = 1000107 },  -- SPD_Spiderman
-        { name = "Nick Fury",               sku = 1000108 },  -- SPD_NickFury
-        { name = "Black Widow",             sku = 1000109 },  -- AVG_BlackWidow
-        { name = "Hawkeye",                 sku = 1000110 },  -- AVG_Hawkeye
-        { name = "Drax",                    sku = 1000111 },  -- GOG_Drax
-        { name = "Gamora",                  sku = 1000112 },  -- GOG_Gamora
-        { name = "Iron Fist",               sku = 1000113 },  -- SPD_IronFist
-        { name = "Nova",                    sku = 1000114 },  -- SPD_Nova
-        { name = "Venom",                   sku = 1000115 },  -- SPD_Venom
-        { name = "Ronan the Accuser",       sku = 1000125 },  -- GOG_Ronan
-        { name = "Green Goblin",            sku = 1000126 },  -- SPD_GreenGoblin
-        { name = "Loki",                    sku = 1000124 },  -- AVG_Loki
-        { name = "Falcon",                  sku = 1000127 },  -- AVG_Falcon
-        { name = "Yondu",                   sku = 1000128 },  -- GOG_Yondu
-        { name = "Jasmine",                 sku = 1000129 },  -- AL_Jasmine (mis-categorized in game, leaving as-is)
-        { name = "Black Suit Spider-Man",   sku = 1000134 },  -- SPD_Spiderman_Black
-        { name = "Vision",                  sku = 1000225 },  -- AVG_Vision
-        { name = "Ultron",                  sku = 1000226 },  -- AVG_Ultron
-        { name = "Ant-Man",                 sku = 1000227 },  -- AVG_Antman
-        { name = "Hulkbuster",              sku = 1000238 },  -- AVG_HulkBuster
+        { name = "Captain America",         sku = 1000100 },
+        { name = "Hulk",                    sku = 1000101 },
+        { name = "Iron Man",                sku = 1000102 },
+        { name = "Thor",                    sku = 1000103 },
+        { name = "Groot",                   sku = 1000104 },
+        { name = "Rocket Raccoon",          sku = 1000105 },
+        { name = "Star-Lord",               sku = 1000106 },
+        { name = "Spider-Man",              sku = 1000107 },
+        { name = "Nick Fury",               sku = 1000108 },
+        { name = "Black Widow",             sku = 1000109 },
+        { name = "Hawkeye",                 sku = 1000110 },
+        { name = "Drax",                    sku = 1000111 },
+        { name = "Gamora",                  sku = 1000112 },
+        { name = "Iron Fist",               sku = 1000113 },
+        { name = "Nova",                    sku = 1000114 },
+        { name = "Venom",                   sku = 1000115 },
+        { name = "Ronan the Accuser",       sku = 1000125 },
+        { name = "Green Goblin",            sku = 1000126 },
+        { name = "Loki",                    sku = 1000124 },
+        { name = "Falcon",                  sku = 1000127 },
+        { name = "Yondu",                   sku = 1000128 },
+        { name = "Jasmine",                 sku = 1000129 },
+        { name = "Black Suit Spider-Man",   sku = 1000134 },
+        { name = "Vision",                  sku = 1000225 },
+        { name = "Ultron",                  sku = 1000226 },
+        { name = "Ant-Man",                 sku = 1000227 },
+        { name = "Hulkbuster",              sku = 1000238 },
     },
-    -- ----------------------------------------------------------------
-    -- Disney & Pixar — verified against virtualreaderdata.lua sku_id fields
-    -- ----------------------------------------------------------------
     disney = {
-        -- Inside Out
-        { name = "Joy",               sku = 1000216 },   -- OUT_Joy
-        { name = "Anger",             sku = 1000217 },   -- OUT_Anger
-        { name = "Fear",              sku = 1000218 },   -- OUT_Fear
-        { name = "Sadness",           sku = 1000219 },   -- OUT_Sadness
-        { name = "Disgust",           sku = 1000220 },   -- OUT_Disgust
-        -- Toy Box Classic
-        { name = "Mickey Mouse",      sku = 1000221 },   -- TBX_ClassicMickey
-        { name = "Minnie Mouse",      sku = 1000222 },   -- TBX_Minnie
-        { name = "Mulan",             sku = 1000223 },   -- TBX_Mulan
-        { name = "Olaf",              sku = 1000224 },   -- FRO_Olaf
-        -- Tron
-        { name = "Sam Flynn",         sku = 1000150 },   -- TRN_Sam
-        { name = "Quorra",            sku = 1000151 },   -- TRN_Quorra
-        -- Aladdin
-        { name = "Aladdin",           sku = 1000117 },   -- AL_Aladdin
-        -- Lilo & Stitch
-        { name = "Stitch",            sku = 1000118 },   -- LAS_Stitch
-        -- Brave
-        { name = "Merida",            sku = 1000119 },   -- BRV_Merida
-        -- Tinker Bell
-        { name = "Tinker Bell",       sku = 1000120 },   -- TB_Tinkerbell
-        -- Maleficent
-        { name = "Maleficent",        sku = 1000121 },   -- MAL_Maleficent
-        -- Big Hero 6
-        { name = "Hiro Hamada",       sku = 1000122 },   -- BHS_Hiro
-        { name = "Baymax",            sku = 1000123 },   -- BHS_Baymax
-        -- Frozen
-        { name = "Anna",              sku = 1000024 },   -- FRO_Anna
-        { name = "Elsa",              sku = 1000025 },   -- FRO_Elsa
-        -- Tangled
-        { name = "Rapunzel",          sku = 1000023 },   -- TAN_Rapunzel
-        -- Toy Box Mickey
-        { name = "Mickey (TB 1.0)",   sku = 1000021 },   -- TB_MickeyMouse
-        -- Nightmare Before Christmas
-        { name = "Jack Skellington",  sku = 1000022 },   -- NBC_JackSkellington
-        -- The Good Dinosaur
-        { name = "Spot",              sku = 1000235 },   -- DNO_Spot
-        -- Zootopia
-        { name = "Nick Wilde",        sku = 1000236 },   -- TBX_NickWilde
-        { name = "Judy Hopps",        sku = 1000237 },   -- TBX_JudyHopps
+        { name = "Joy",               sku = 1000216 },
+        { name = "Anger",             sku = 1000217 },
+        { name = "Fear",              sku = 1000218 },
+        { name = "Sadness",           sku = 1000219 },
+        { name = "Disgust",           sku = 1000220 },
+        { name = "Mickey Mouse",      sku = 1000221 },
+        { name = "Minnie Mouse",      sku = 1000222 },
+        { name = "Mulan",             sku = 1000223 },
+        { name = "Olaf",              sku = 1000224 },
+        { name = "Sam Flynn",         sku = 1000150 },
+        { name = "Quorra",            sku = 1000151 },
+        { name = "Aladdin",           sku = 1000117 },
+        { name = "Stitch",            sku = 1000118 },
+        { name = "Merida",            sku = 1000119 },
+        { name = "Tinker Bell",       sku = 1000120 },
+        { name = "Maleficent",        sku = 1000121 },
+        { name = "Hiro Hamada",       sku = 1000122 },
+        { name = "Baymax",            sku = 1000123 },
+        { name = "Anna",              sku = 1000024 },
+        { name = "Elsa",              sku = 1000025 },
+        { name = "Rapunzel",          sku = 1000023 },
+        { name = "Mickey (TB 1.0)",   sku = 1000021 },
+        { name = "Jack Skellington",  sku = 1000022 },
+        { name = "Spot",              sku = 1000235 },
+        { name = "Nick Wilde",        sku = 1000236 },
+        { name = "Judy Hopps",        sku = 1000237 },
     },
 }
 
-
+-- Returns characters list filtered by franchise or modded roster.
 function Game.ListCharacters(franchise)
     if franchise then
         local f = string.lower(franchise)
@@ -461,4 +410,3 @@ function Game.ListCharacters(franchise)
     end
     return all
 end
-

@@ -25,12 +25,9 @@ namespace crabe::infrastructure {
 
 namespace {
 
-    // kJmpLength and kMaxStolen live in the header: the measurement they
-    // constrain is a free function now, and the tests assert against them.
     constexpr size_t kMaxBody = 256;
 
-    // Writes `E9 rel32` at `at`, jumping to `target`. rel32 is measured from
-    // the end of the instruction, hence the -5.
+    // Writes a 5-byte relative jump (0xE9) targeting the destination address.
     void writeJump(uint8_t* at, uintptr_t from, uintptr_t target)
     {
         auto delta = static_cast<int32_t>(target - (from + kJmpLength));
@@ -141,8 +138,6 @@ bool CodeCave::install(uintptr_t site, const std::vector<uint8_t>& body, size_t 
     offset += stolenLength;
     writeJump(cave + offset, reinterpret_cast<uintptr_t>(cave + offset), site + stolenLength);
 
-    // The site keeps its original length: jmp first, NOP padding after, so the
-    // instruction boundary the rest of the function branches to stays put.
     std::vector<uint8_t> patch(stolenLength, 0x90);
     writeJump(patch.data(), site, reinterpret_cast<uintptr_t>(cave));
 

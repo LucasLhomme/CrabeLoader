@@ -25,20 +25,30 @@ namespace Crabe::Domain {
         bool isLoaded = false;
     };
 
-    // Manages discovered mods, sandboxed execution, drawing dispatch
-    // and hot reloading lifecycles.
     class ModManager {
     public:
+        // Returns the singleton instance of the mod manager.
         static ModManager& get();
 
+        // Discovers and loads mods from the given directory.
         void discoverAndLoadMods(void* L, const std::filesystem::path& modsFolder);
+
+        // Reloads all active mods in the given Lua state.
         void reloadAllMods(void* L);
+
+        // Dispatches the draw event across all loaded mods.
         void dispatchDraw(void* L);
 
+        // Returns true if a hot reload has been requested.
         [[nodiscard]] bool isHotReloadRequested() const noexcept;
+
+        // Requests a hot reload of all mods.
         void requestHotReload() noexcept;
 
+        // Returns the list of discovered mods.
         [[nodiscard]] const std::vector<Mod>& getMods() const noexcept;
+
+        // Returns the path to the mods directory.
         [[nodiscard]] const std::filesystem::path& getModsFolder() const noexcept;
 
     private:
@@ -47,8 +57,13 @@ namespace Crabe::Domain {
         ModManager(const ModManager&) = delete;
         ModManager& operator=(const ModManager&) = delete;
 
+        // Loads a single mod directory.
         void loadModDirectory(void* L, const std::filesystem::path& modPath);
+
+        // Loads a standalone .lua script.
         void loadStandaloneScript(void* L, const std::filesystem::path& scriptPath);
+
+        // Resolves the entry script for a mod directory.
         std::filesystem::path resolveEntryScript(
             const std::filesystem::path& modPath,
             const std::string& modName) const;

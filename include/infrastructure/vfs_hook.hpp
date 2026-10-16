@@ -16,21 +16,22 @@
 
 namespace crabe::infrastructure {
 
-/// Hooks Win32 file creation and existence queries to redirect game requests to loose mod assets.
-/// Existence queries matter for files that exist only inside a mod: the engine probes
-/// GetFileAttributes / FindFirstFile before opening, and would skip them otherwise.
 class VfsHook final {
 public:
+    // Returns the singleton instance of VfsHook.
     static VfsHook& get() noexcept;
 
-    /// Installs MinHook detours on CreateFile, GetFileAttributes and FindFirstFile in kernel32.dll.
+    // Installs Win32 filesystem interception hooks in kernel32.dll.
     bool initialize();
 
-    /// Uninstalls all active file system interception hooks.
+    // Uninstalls all active filesystem interception hooks.
     void uninitialize();
 
-    /// Returns whether file interception hooks are currently installed.
+    // Returns whether filesystem interception hooks are installed.
     [[nodiscard]] bool isHooked() const noexcept;
+
+    // Enables or disables logging for texture file resolution paths.
+    static void setTraceTextures(bool enabled) noexcept;
 
 private:
     VfsHook() = default;
@@ -39,6 +40,7 @@ private:
     VfsHook(const VfsHook&) = delete;
     VfsHook& operator=(const VfsHook&) = delete;
 
+    // Detour for CreateFileA.
     static HANDLE WINAPI hkCreateFileA(
         LPCSTR lpFileName,
         DWORD dwDesiredAccess,
@@ -48,6 +50,7 @@ private:
         DWORD dwFlagsAndAttributes,
         HANDLE hTemplateFile);
 
+    // Detour for CreateFileW.
     static HANDLE WINAPI hkCreateFileW(
         LPCWSTR lpFileName,
         DWORD dwDesiredAccess,
@@ -57,15 +60,19 @@ private:
         DWORD dwFlagsAndAttributes,
         HANDLE hTemplateFile);
 
+    // Detour for GetFileAttributesA.
     static DWORD WINAPI hkGetFileAttributesA(LPCSTR lpFileName);
 
+    // Detour for GetFileAttributesExA.
     static BOOL WINAPI hkGetFileAttributesExA(
         LPCSTR lpFileName,
         GET_FILEEX_INFO_LEVELS fInfoLevelId,
         LPVOID lpFileInformation);
 
+    // Detour for FindFirstFileA.
     static HANDLE WINAPI hkFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData);
 
+    // Detour for FindFirstFileExA.
     static HANDLE WINAPI hkFindFirstFileExA(
         LPCSTR lpFileName,
         FINDEX_INFO_LEVELS fInfoLevelId,
@@ -74,6 +81,7 @@ private:
         LPVOID lpSearchFilter,
         DWORD dwAdditionalFlags);
 
+    // Detour for FindFirstFileExW.
     static HANDLE WINAPI hkFindFirstFileExW(
         LPCWSTR lpFileName,
         FINDEX_INFO_LEVELS fInfoLevelId,

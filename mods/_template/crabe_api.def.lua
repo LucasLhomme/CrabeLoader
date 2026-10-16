@@ -30,6 +30,19 @@ function Crabe.SetWindowMode(mode) end
 ---@return "windowed"|"borderless"
 function Crabe.GetWindowMode() end
 
+--- Caps the game's frame rate and saves it to crabe.toml. 0 removes the cap.
+---@param fps number Frames per second, 0 = unlimited (clamped to 15..1000 otherwise).
+---@return number limit The cap now in effect.
+function Crabe.SetFrameLimit(fps) end
+
+--- Gets the current frame cap.
+---@return number limit Frames per second, 0 when unlimited.
+function Crabe.GetFrameLimit() end
+
+--- Gets the frames the game actually presents per second.
+---@return number fps 0 until the first measurement.
+function Crabe.GetRenderFps() end
+
 --- Returns the host player ID (defaults to 0 if not yet set).
 ---@param playerId? number Optional player ID fallback.
 ---@return number hostPlayerId

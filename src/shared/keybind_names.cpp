@@ -34,10 +34,6 @@ namespace crabe::shared {
             int code;
         };
 
-        // Every name is spelled the way a person would type it in crabe.toml;
-        // matching is case-insensitive (parseVirtualKeyName upper-cases
-        // before comparing). Covers the keys a mod menu / overlay toggle is
-        // realistically bound to -- not a full keyboard layout.
         constexpr std::array<NamedKey, 35> kNamedKeys = {{
             {"F1", VK_F1}, {"F2", VK_F2}, {"F3", VK_F3}, {"F4", VK_F4},
             {"F5", VK_F5}, {"F6", VK_F6}, {"F7", VK_F7}, {"F8", VK_F8},
@@ -58,10 +54,6 @@ namespace crabe::shared {
     {
         const std::string upper = toUpperAscii(name);
 
-        // A single letter or digit: 'A'-'Z' and '0'-'9' share their ASCII
-        // value with the matching VK_* constant -- a documented Win32
-        // guarantee (VK_0..VK_9 == '0'..'9', VK_A..VK_Z == 'A'..'Z'), not a
-        // coincidence being relied on by accident.
         if (upper.size() == 1) {
             const unsigned char c = static_cast<unsigned char>(upper[0]);
             if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))

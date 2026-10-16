@@ -7,32 +7,9 @@
 **
 ** Authors: @LucasLhomme
 */
-
-// The Win32 half of infrastructure/crash_reporter.hpp.
-//
-// Read the header first: it holds the filter policy and the reasoning behind
-// the no-allocation rule. What follows is how that rule is actually kept.
-//
-// Every buffer in this file is a file-scope object in .bss, constant
-// initialised, and therefore already paid for before the process is in
-// trouble. The handler calls no CRT function that can allocate, constructs no
-// std::string, formats nothing through <format>, and opens the report with
-// CreateFileA/WriteFile rather than std::ofstream. The module table is walked
-// out of the PEB rather than through Toolhelp or GetModuleHandleEx, because
-// both of the latter take the loader lock -- which the faulting thread may
-// already be holding, and which would then deadlock a process that was merely
-// crashing.
-//
-// Where the rule is NOT kept, and cannot be: MiniDumpWriteDump and DbgHelp
-// allocate inside themselves, and no argument this file passes changes that.
-// They are used anyway because a minidump and a symbolised frame are worth
-// more than the residual risk, and they are used *last* -- every line of the
-// text report is already flushed to disk before MiniDumpWriteDump is called,
-// so a deadlock or a fault inside DbgHelp costs the dump, never the report.
-
 #include "infrastructure/crash_reporter.hpp"
 #include "infrastructure/hook_registry.hpp"
-#include "shared/version.hpp"
+#include "shared/build_info.hpp"
 
 #include <windows.h>
 #include <dbghelp.h>
@@ -48,28 +25,15 @@ the register dump names EAX/EIP/EBP and the PEB is read from fs:[0x30]."
 #endif
 
 #if defined(_MSC_VER)
-// Stated here as well as in CMake so that any target compiling this
-// translation unit -- the loader, the test suite, the crash probe -- links
-// DbgHelp without each having to remember to.
 #pragma comment(lib, "dbghelp.lib")
 #endif
 
 namespace crabe::infrastructure {
 
-// ---------------------------------------------------------------------------
-// Pure half: the filter policy and the exception name table.
-// ---------------------------------------------------------------------------
-
 namespace {
 
-    // The two language-runtime exception codes. Both are a `throw`, not a
-    // fault: there is already a handler on the stack that expects them.
-    constexpr std::uint32_t kCppException = 0xE06D7363u; // 0xE0 + "msc"
-    constexpr std::uint32_t kClrException = 0xE0434352u; // 0xE0 + "CCR"
-
-    // The severity floor. NTSTATUS keeps severity in the top two bits: 00
-    // Success, 01 Informational, 10 Warning, 11 Error. Anything below
-    // 0x80000000 is one of the first two and is by definition not a fault.
+    constexpr std::uint32_t kCppException = 0xE06D7363u;
+    constexpr std::uint32_t kClrException = 0xE0434352u;
     constexpr std::uint32_t kFaultSeverityFloor = 0x80000000u;
 
 } // namespace
@@ -135,20 +99,9 @@ const char* exceptionName(std::uint32_t code) noexcept
     return "UNKNOWN";
 }
 
-// ---------------------------------------------------------------------------
-// BreadcrumbRing.
-// ---------------------------------------------------------------------------
-
 namespace {
 
-    // Copies `src` into `dst`, truncating to fit and always leaving a NUL
-    // inside the buffer.
-    //
-    // The terminator is written *before* the bytes on purpose. A crash handler
-    // on another thread can be reading this buffer while this runs; writing
-    // the NUL first means that at every instant the buffer holds a string that
-    // ends inside its own storage, so the reader sees a truncated label rather
-    // than running off the end of it.
+    // Copies source into destination, truncating to capacity and guaranteeing NUL termination.
     void copyLabel(char* dst, std::size_t capacity, std::string_view src) noexcept
     {
         if (!dst || capacity == 0)
@@ -203,8 +156,7 @@ std::uint32_t BreadcrumbRing::pushed() const noexcept
 
 namespace {
 
-    // Oldest-first index -> slot index. Unsigned wraparound makes this stay
-    // correct past 2^32 pushes because kCapacity is a power of two.
+    // Converts oldest-first index to slot index using unsigned ring arithmetic.
     std::size_t oldestFirstSlot(std::uint32_t pushedCount, std::size_t held,
                                 std::size_t index) noexcept
     {
@@ -240,10 +192,6 @@ void BreadcrumbRing::clear() noexcept
     _pushed.store(0, std::memory_order_relaxed);
 }
 
-// ---------------------------------------------------------------------------
-// Preallocated state. Everything below is .bss, filled at install time.
-// ---------------------------------------------------------------------------
-
 namespace {
 
     constexpr std::size_t kMaxThreadSlots = 16;
@@ -273,10 +221,6 @@ namespace {
         bool loaded{false};
     };
 
-    // The three PEB structures this file reads. Declared here rather than
-    // pulled from winternl.h because that header spells the fields we need as
-    // "Reserved", and a crash reporter that indexes into Reserved3 is a crash
-    // reporter nobody can check.
     struct UnicodeStringLite {
         USHORT length;
         USHORT maximumLength;
@@ -320,12 +264,6 @@ namespace {
     RegisteredMod g_mods[CrashReporter::kMaxRegisteredMods];
     std::atomic<std::size_t> g_modCount{0};
 
-    // Where the hook inventory is copied out of the registry's crash mirror at
-    // report time. File scope rather than a local for the same reason as
-    // everything else in here: a stack overflow is one of the faults this
-    // handler exists to survive, and eight kilobytes of locals is how it would
-    // fail to. Only ever touched by the one thread inside the handler, which
-    // g_inHandler already serialises.
     HookAttribution g_hookTable[kMaxAttributedHooks];
 
     BreadcrumbRing g_breadcrumbs;
@@ -347,8 +285,6 @@ namespace {
     std::atomic<bool> g_inHandler{false};
     std::atomic<std::size_t> g_reportsWritten{0};
 
-    // Deduplication between the vectored handler and the unhandled filter:
-    // both see the same fault, and one report for it is enough.
     std::atomic<std::uint32_t> g_lastCode{0};
     std::atomic<std::uintptr_t> g_lastAddress{0};
     std::atomic<std::uint32_t> g_lastThread{0};
@@ -356,17 +292,10 @@ namespace {
     void* g_vectoredHandle{nullptr};
     LPTOP_LEVEL_EXCEPTION_FILTER g_previousFilter{nullptr};
 
-    // Scratch DbgHelp and StackWalk state. File scope so that walking a stack
-    // costs the faulting thread almost no stack of its own -- which matters
-    // most for the one fault where there is none left, EXCEPTION_STACK_OVERFLOW.
     CONTEXT g_walkContext{};
     STACKFRAME64 g_walkFrame{};
     alignas(8) char g_symbolStorage[sizeof(SYMBOL_INFO) + kSymbolNameCapacity]{};
     IMAGEHLP_LINE64 g_lineInfo{};
-
-    // -----------------------------------------------------------------------
-    // A buffered file writer with no allocation and no iostreams.
-    // -----------------------------------------------------------------------
 
     class FileSink final {
     public:
@@ -399,8 +328,7 @@ namespace {
                 put(s[i]);
         }
 
-        // Left-justified in `width` columns, so the report's labels line up
-        // without a format string.
+        // Left-justified in width columns to align report labels.
         void column(const char* s, std::size_t width) noexcept
         {
             std::size_t written = 0;
@@ -421,8 +349,7 @@ namespace {
                 put(kDigits[(value >> (i * 4)) & 0xFu]);
         }
 
-        // Same, with no leading zeros -- for offsets, where "0x1C" reads
-        // better than "0x0000001C".
+        // Emits hexadecimal value without leading zeros.
         void hexCompact(std::uint32_t value) noexcept
         {
             static const char kDigits[] = "0123456789ABCDEF";
@@ -484,10 +411,6 @@ namespace {
 
     FileSink g_sink;
 
-    // -----------------------------------------------------------------------
-    // Thread slots.
-    // -----------------------------------------------------------------------
-
     ThreadSlot* findSlot(std::uint32_t threadId) noexcept
     {
         for (ThreadSlot& slot : g_threads) {
@@ -497,11 +420,7 @@ namespace {
         return nullptr;
     }
 
-    // Finds this thread's slot, taking a free one if it has none. Returns
-    // nullptr once kMaxThreadSlots distinct threads have used the context API,
-    // in which case the calls become no-ops: the loader has four threads, so
-    // running out means something unexpected is calling in and losing its
-    // labels is preferable to evicting a real one.
+    // Finds or claims a free thread slot for the current thread ID.
     ThreadSlot* claimSlot() noexcept
     {
         const std::uint32_t threadId = GetCurrentThreadId();
@@ -516,10 +435,6 @@ namespace {
         }
         return nullptr;
     }
-
-    // -----------------------------------------------------------------------
-    // Modules, read straight out of the PEB.
-    // -----------------------------------------------------------------------
 
     void narrowName(char* destination, std::size_t capacity,
                     const UnicodeStringLite& source) noexcept
@@ -569,23 +484,12 @@ namespace {
         g_moduleCount.store(count, std::memory_order_release);
     }
 
-    // The list is walked without the loader lock, which is the point -- taking
-    // it is what would deadlock. The cost is that a module being loaded or
-    // unloaded at the instant of the crash can leave a torn link, so the walk
-    // is fenced.
-    //
-    // A faulting walk leaves the published count at its previous value while
-    // g_modules holds a prefix of the new walk. That is deliberately the
-    // failure mode chosen: the in-memory-order list is stable at the front, so
-    // a prefix of it names the same modules the old snapshot did, whereas
-    // zeroing the count first would turn a torn walk into a report where every
-    // frame resolves to no module at all.
+    // Safely snapshots modules without taking loader lock.
     void snapshotModules() noexcept
     {
         __try {
             snapshotModulesUnguarded();
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            // Keep the previous snapshot.
         }
     }
 
@@ -600,10 +504,7 @@ namespace {
         return nullptr;
     }
 
-    // The only way an address is ever printed. There is deliberately no path
-    // through this function that emits a bare absolute address: an address in
-    // no known module still gets a "<no-module>+" prefix, so a reader is never
-    // handed a number that looks comparable across launches when it is not.
+    // Writes formatted module-relative or raw address to the sink.
     void writeAddress(FileSink& sink, std::uintptr_t address) noexcept
     {
         const ModuleEntry* module = findModule(address);
@@ -616,10 +517,6 @@ namespace {
         sink.text("<no-module>+0x");
         sink.hex(static_cast<std::uint32_t>(address), 8);
     }
-
-    // -----------------------------------------------------------------------
-    // The report.
-    // -----------------------------------------------------------------------
 
     void writeStamp(FileSink& sink, const SYSTEMTIME& now) noexcept
     {
@@ -636,8 +533,7 @@ namespace {
         sink.dec(now.wSecond, 2);
     }
 
-    // Appends "\\crash-YYYYMMDD-HHMMSS[-n].<extension>" to the report
-    // directory, into the caller's preallocated buffer.
+    // Formats a timestamped crash report file path into destination buffer.
     void buildPath(char* destination, const char* extension, const SYSTEMTIME& now,
                    std::size_t ordinal) noexcept
     {
@@ -683,8 +579,6 @@ namespace {
             sink.put('=');
             sink.hex(value, 8);
         };
-        // Segment registers are 16 bit. Printing eight digits for them would
-        // suggest four that do not exist.
         const auto segment = [&](const char* name, DWORD value) noexcept {
             sink.text(name);
             sink.put('=');
@@ -854,11 +748,7 @@ namespace {
         }
     }
 
-    // The hook inventory, read from the registry's lock-free mirror rather than
-    // from HookRegistry itself. HookRegistry::hooks() and findCovering() both
-    // allocate and both take the registry's mutex -- which the faulting thread
-    // may be holding right now -- so neither can be called from here. See
-    // crashAttribution() in infrastructure/hook_registry.hpp.
+    // Writes registered hooks from the lock-free crash mirror.
     void writeHooks(FileSink& sink) noexcept
     {
         const std::size_t count = crashAttributionTable(g_hookTable, kMaxAttributedHooks);
@@ -936,15 +826,13 @@ namespace {
         sink.text("=== CrabeLoader crash report ===");
         sink.line();
 
-        // All three are constexpr std::string_view over string literals, so
-        // data() is NUL terminated and reading them costs nothing.
         sink.column("Loader", 14);
         sink.text(": v");
-        sink.text(crabe::version::String.data());
+        sink.text(crabe::build::label().data());
         sink.text(" (built ");
-        sink.text(crabe::version::BuildDate.data());
-        sink.put(' ');
-        sink.text(crabe::version::BuildTime.data());
+        sink.text(crabe::build::time().data());
+        sink.text(", commit ");
+        sink.text(crabe::build::commit().data());
         sink.put(')');
         sink.line();
 
@@ -1006,14 +894,6 @@ namespace {
         writeAddress(sink, reinterpret_cast<std::uintptr_t>(record.ExceptionAddress));
         sink.line();
 
-        // Whose hook the faulting address is inside, if any. This is the line
-        // that turns "it died at bink2w32+0x1234" into "it died in a hook mod X
-        // installed", which is the whole reason the registry records owners.
-        //
-        // Only the bytes the patch overwrote are covered, not the detour body:
-        // a fault inside the detour function itself reports that function's own
-        // module+RVA and is attributed by the Active hook line under Loader
-        // context below instead.
         HookAttribution covering{};
         if (crashAttribution(reinterpret_cast<std::uintptr_t>(record.ExceptionAddress), covering)) {
             sink.column("In hook", 14);
@@ -1097,8 +977,6 @@ namespace {
         sink.text("=== end of report ===");
         sink.line();
 
-        // Flushed and closed before the minidump is attempted, so that a
-        // failure inside DbgHelp cannot cost the report.
         sink.close();
     }
 
@@ -1148,9 +1026,6 @@ namespace {
         if (alreadyReported(record))
             return;
 
-        // Re-entrancy: if the handler itself faults, the nested call lands
-        // here and turns straight round, so the process dies of its original
-        // fault instead of looping inside the reporter.
         if (g_inHandler.exchange(true, std::memory_order_acq_rel))
             return;
 
@@ -1175,7 +1050,6 @@ namespace {
         __try {
             writeMinidump(pointers);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            // A dump is a bonus; the report above is the deliverable.
         }
 
         g_reportsWritten.fetch_add(1, std::memory_order_acq_rel);
@@ -1193,20 +1067,11 @@ namespace {
 
         reportNow(pointers, "vectored handler (priority 1)");
 
-        // Always CONTINUE_SEARCH. The reporter observes; it never decides
-        // whether the process lives. CrashHandler::runGuarded's __except sits
-        // further down the chain and must still get its chance to recover a
-        // faulting mod, and an unhandled fault must still reach the OS so the
-        // player gets the behaviour they would have got without the loader.
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
     LONG WINAPI unhandledFilter(EXCEPTION_POINTERS* pointers) noexcept
     {
-        // The secondary net. If the game replaced the vectored chain, unloaded
-        // us from it, or the fault arrived by a route a VEH does not see, this
-        // still writes the report -- and alreadyReported() keeps it from
-        // writing a second copy of one the VEH has already handled.
         if (pointers && pointers->ExceptionRecord &&
             classifyException(pointers->ExceptionRecord->ExceptionCode,
                               IsDebuggerPresent() != FALSE) == FilterDecision::Report) {
@@ -1220,10 +1085,6 @@ namespace {
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// CrashReporter.
-// ---------------------------------------------------------------------------
-
 bool CrashReporter::install(const char* reportDirectory) noexcept
 {
     if (g_installed.load(std::memory_order_acquire))
@@ -1231,9 +1092,6 @@ bool CrashReporter::install(const char* reportDirectory) noexcept
 
     copyLabel(g_reportDirectory, MAX_PATH, reportDirectory ? reportDirectory : ".");
 
-    // Trailing separators would produce "dir\\\\crash-...", and a mixed
-    // "C:/a/b\\crash-...", which is valid but reads as a defect in a report
-    // somebody is about to paste into a bug tracker.
     std::size_t length = std::strlen(g_reportDirectory);
     while (length > 1 && (g_reportDirectory[length - 1] == '\\' ||
                           g_reportDirectory[length - 1] == '/')) {
@@ -1244,8 +1102,6 @@ bool CrashReporter::install(const char* reportDirectory) noexcept
             g_reportDirectory[i] = '\\';
     }
 
-    // One level under a directory that already exists (the game root), so a
-    // single CreateDirectoryA is enough. ALREADY_EXISTS is success.
     CreateDirectoryA(g_reportDirectory, nullptr);
 
     GetModuleFileNameA(nullptr, g_processPath, MAX_PATH);
@@ -1253,9 +1109,6 @@ bool CrashReporter::install(const char* reportDirectory) noexcept
 
     snapshotModules();
 
-    // Priority 1: first in the chain, and unlike SetUnhandledExceptionFilter
-    // a later AddVectoredExceptionHandler by the game cannot displace it --
-    // at worst it queues behind us.
     g_vectoredHandle = AddVectoredExceptionHandler(1, &vectoredHandler);
     g_previousFilter = SetUnhandledExceptionFilter(&unhandledFilter);
 
@@ -1273,8 +1126,6 @@ void CrashReporter::completeInstall() noexcept
     if (SymInitialize(GetCurrentProcess(), nullptr, TRUE))
         g_symbolsReady.store(true, std::memory_order_release);
 
-    // Modules keep arriving after DllMain; refresh so the snapshot the handler
-    // falls back to is not the one from the first few milliseconds.
     snapshotModules();
 }
 
@@ -1333,10 +1184,6 @@ void CrashReporter::declareThreadRole(ThreadRole role) noexcept
     if (!slot)
         return;
 
-    // First declaration wins. In this game the message pump and Present can
-    // land on the same thread, and both hkPresent and hkWndProc declare on
-    // their first call; letting the later one overwrite would make the
-    // recorded role depend on which happened to run first that launch.
     std::uint8_t unknown = static_cast<std::uint8_t>(ThreadRole::Unknown);
     slot->role.compare_exchange_strong(unknown, static_cast<std::uint8_t>(role),
                                        std::memory_order_acq_rel);

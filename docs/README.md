@@ -1,6 +1,6 @@
-# CrabeLoader v1.0.0 Documentation
+# CrabeLoader v1.1.0 Documentation
 
-Welcome to the documentation repository for **CrabeLoader v1.0.0** — the decoupled, high-performance modloader and engine platform for *Disney Infinity 3.0: Gold Edition (PC)*.
+Welcome to the documentation repository for **CrabeLoader v1.1.0** — the decoupled, high-performance modloader and engine platform for *Disney Infinity 3.0: Gold Edition (PC)*.
 
 
 ---
@@ -12,6 +12,7 @@ A dedicated suite of structured guides in plain English explaining every modding
 * **[Mod Development Guide](guides/mods.md)** — Lifecycle hooks (`onInit`, `onUpdate`, `onDraw`, `onShutdown`), sandboxing, Dear ImGui UI creation, memory patching (`Crabe.Memory.patchBytes`, `Crabe.Hooks.installCodeCave`), and live hot-reloading (`F4`).
 * **[Skill Tree Modding Guide](guides/skilltrees.md)** — How character progression works in the engine, writing `.patch` chunk modifications and `.lua` full source overrides, structure of `SkillTree.Nodes` and `CharacterStats`.
 * **[Character & Figurine Guide](guides/characters.md)** — The 5-stage actor resolution pipeline (`SKU -> AvatarData -> Name -> ActorList -> DNA`), adding cosmetic variants (`addCharacter`), exposing standalone unreleased heroes (`exposeCharacter`, e.g. Mace Windu, Thanos), and SKU numbering ranges.
+* **[Native `.asi` Plugins](guides/asi_plugins.md)** — Where native 32-bit `.asi` plugins load from and when, `[plugins]` in `crabe.toml`, `Crabe.Plugins`, and the C plugin API (`include/sdk/crabe_plugin.h`) for logging, hooks, Lua and values shared with mods.
 * **[Guides Overview](guides/README.md)** — Summary index of all modding guides.
 
 ### 2. Getting Started
@@ -23,3 +24,11 @@ A dedicated suite of structured guides in plain English explaining every modding
 
 ### 4. Architectural Invariants & Blueprint
 * **[Architecture Blueprint (Long-Term Reference)](ARCHITECTURE_BLUEPRINT.md)** — Invariant rules, the 4-layer architecture model, decision flowchart ("where does my code belong?"), and the Definition of Done (DoD).
+
+---
+
+## Support & Sponsor
+
+If you find this project helpful and want to support ongoing tools and mods:
+
+? **[Buy Me a Coffee](https://buymeacoffee.com/crabecrabe)** (uymeacoffee.com/crabecrabe)

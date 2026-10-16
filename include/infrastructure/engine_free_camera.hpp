@@ -23,23 +23,17 @@ class EngineFreeCamera final {
 public:
     static EngineFreeCamera& get();
 
-    /// Resolves the entry points and hooks CreateFreeCameras. Must run before the first
-    /// world load, or that world's free camera is bound to a property set that is gone.
+    // Resolves entry points and hooks CreateFreeCameras before first world load.
     void initialize();
     void uninitialize();
 
-    /// Advances the engine free-camera state for `playerId` and returns whether it is now on.
-    /// `skipNoControl` turns a second call into "off" rather than "on without control".
-    /// std::nullopt when this build does not carry the entry points or the call faulted.
+    // Advances the engine free-camera state for the specified player and returns new state.
     [[nodiscard]] std::optional<bool> toggle(int playerId, bool skipNoControl);
 
-    /// Whether `playerId`'s current camera is the engine free camera, read from the
-    /// engine rather than remembered. std::nullopt when the player has no camera scene
-    /// (front end, mid-load) or the read faulted.
+    // Returns whether the player's active camera is currently the engine free camera.
     [[nodiscard]] std::optional<bool> isActive(int playerId) const;
 
-    /// Counts the camera-scene sets the engine has built, one per world load. A free
-    /// camera switched on under an older value died with the world it was flying in.
+    // Returns the camera scene generation counter incremented per world load.
     [[nodiscard]] std::uint32_t sceneGeneration() const;
 
 private:
@@ -47,13 +41,10 @@ private:
 
     bool resolve();
 
-    /// Players::InitializeScenes rebuilds the camera-property-set manager on every world
-    /// load, and its ids start over at 1. Only DeleteFreeCameras clears the free-camera id,
-    /// and a world change never calls it, so the stale id would name one of the new world's
-    /// own sets. Clearing it here makes the engine create a real free-camera set again.
+    // Hook on CreateFreeCameras to clear stale camera property set IDs.
     static void __fastcall hkCreateFreeCameras(void* scenes, void* edx);
 
-    /// Name of `playerId`'s current camera, for the post-activation check.
+    // Returns the name of the specified player's current camera.
     [[nodiscard]] const char* currentCameraName(int playerId) const;
 
     bool _attempted{false};

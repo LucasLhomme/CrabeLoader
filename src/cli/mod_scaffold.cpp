@@ -19,6 +19,7 @@ namespace crabe::cli {
 
     namespace {
 
+        // Returns the final segment after the last dot in an identifier.
         [[nodiscard]] std::string_view idLastSegment(std::string_view id)
         {
             const std::size_t lastDot = id.rfind('.');
@@ -48,10 +49,7 @@ namespace crabe::cli {
             return name.empty() ? std::string(id) : name;
         }
 
-        // Escapes backslash, double quote, newline and tab -- enough for
-        // embedding arbitrary --name text inside both a JSON string
-        // (mod.json) and a double-quoted Lua string literal (main.lua,
-        // i18n/en.toml), which use the same escape sequences for these.
+        // Escapes backslash, double quote, newline and tab for JSON and Lua strings.
         [[nodiscard]] std::string quoteEscape(std::string_view text)
         {
             std::string out;
@@ -79,6 +77,7 @@ namespace crabe::cli {
 
     } // namespace
 
+    // Parses command line arguments into scaffold options.
     std::expected<ScaffoldOptions, std::string> parseNewModArgs(std::span<const std::string> args)
     {
         ScaffoldOptions options;
@@ -120,6 +119,7 @@ namespace crabe::cli {
         return options;
     }
 
+    // Builds all scaffold file contents in memory without modifying the filesystem.
     std::expected<std::vector<ScaffoldFile>, std::string> buildScaffold(const ScaffoldOptions& options)
     {
         if (const auto ok = crabe::domain::validateModId(options.id); !ok) {
@@ -203,7 +203,7 @@ namespace crabe::cli {
                 "\n"
                 "## Installing\n"
                 "\n"
-                "Drop this folder into your game's `mods/` directory, next to `bink2w32.dll`.\n"
+                "Drop this folder into your game's `mods/` directory, next to `dinput8.dll`.\n"
                 "Press **F4** in-game to hot-reload after making changes.\n"
                 "\n"
                 "## Developing\n"
@@ -233,6 +233,7 @@ namespace crabe::cli {
         return files;
     }
 
+    // Writes the scaffold files to the target directory, refusing to overwrite non-empty directories.
     std::expected<void, std::string> writeScaffold(const ScaffoldOptions& options,
                                                     const std::vector<ScaffoldFile>& files)
     {
@@ -264,6 +265,7 @@ namespace crabe::cli {
         return {};
     }
 
+    // Runs the new-mod command, returning 0 on success or 1 on failure.
     int runNewMod(std::span<const std::string> args, std::ostream& out, std::ostream& err)
     {
         const auto options = parseNewModArgs(args);

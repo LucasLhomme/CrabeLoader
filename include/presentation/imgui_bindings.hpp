@@ -17,7 +17,7 @@ class ImGuiBindings final {
 public:
     ImGuiBindings() = delete;
 
-    /// Registers Dear ImGui functions to Lua table ImGui and Crabe.ImGui.
+    // Registers Dear ImGui functions to Lua tables ImGui and Crabe.ImGui.
     static void registerBindings(void* L);
 };
 

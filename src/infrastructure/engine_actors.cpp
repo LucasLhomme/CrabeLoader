@@ -1,7 +1,7 @@
 /*
 ** CrabeLoader
 ** File description:
-** Implements actor creation, state bit manipulation and area damage through Script VM natives.
+** Implements actor creation, states, area damage and move speed through Script VM natives.
 ** Resolves CreateActor and DamageRadius pointers dynamically from script native entry points.
 ** Does not rely on Toy Box placer or Rumpus editor, operating directly through engine memory.
 **
@@ -21,16 +21,6 @@ namespace {
 
     using crabe::infrastructure::script_natives::bytesAt;
     using crabe::infrastructure::script_natives::readAt;
-
-    // Script_CreateFromInitString, measured on di3-gold-steam-1.0 (rva 0x35A3F0):
-    //   +0x44  lea ecx, [esp+0x1C]          -- the ParameterSet on the stack
-    //   +0x48  call ParameterSet::ParameterSet(const char* initString)
-    //   +0x59  push 3                         -- creatorFlags (CreateMaster | CreateProxy)
-    //   +0x5E  push 2                         -- PositionSource
-    //   +0x78  call CActorCreator::CreateActor(ParameterSet&, Vector3CRef, float heading, ...)
-    //   +0x7F  add esp, 0x30                  -- __cdecl, twelve arguments
-    //   +0x9F  lea ecx, [esp+0x18]
-    //   +0xAB  call ParameterSet::~ParameterSet()
     constexpr const char* kCreateNative = "CreateFromInitString";
     constexpr const char* kCreateSymbol = "Script_CreateFromInitString";
     constexpr std::uintptr_t kConstructLeaOffset = 0x44;
@@ -42,29 +32,13 @@ namespace {
     constexpr std::uintptr_t kDestructLeaOffset = 0x9F;
     constexpr std::uintptr_t kDestructCallOffset = 0xAB;
 
-    // The arguments the script native passes, read from its pushes above.
     constexpr int kPositionSourceValues = 2;
     constexpr std::uint32_t kCreatorFlags = 3;
 
-    // CActor::m_agentHandle, as ScriptVM::Push(CActor*) reads it (rva 0x332258: mov eax, [eax+4]).
     constexpr std::uintptr_t kActorHandle = 0x04;
 
-    // The script native keeps its ParameterSet in a 16-byte stack slot; this
-    // buffer is larger and aligned in case a later build grows it.
     constexpr std::size_t kParameterSetStorage = 64;
 
-    // Script_AddActorStateByName (rva 0x30F9C0); RemoveActorStateByName (rva 0x30FA10) has
-    // the same shape with RemoveState in the last call:
-    //   +0x0D  mov ecx, [g_bitMaskManager]
-    //   +0x14  push "ActorState"
-    //   +0x19  call CustomBitMaskManager::GetBitMask(const char* category, const char* name)
-    //   +0x2B  movzx ecx, word [StateBitmaskData::s_dataType]
-    //   +0x37  call GetAgentData(AgentHandle, uint16 type)         -- __cdecl
-    //   +0x46  call StateBitmaskData::AddState(const CustomBitMask*) -- or RemoveState
-    // Script_TestActorStateByName (rva 0x30FAD0):
-    //   +0x42  call GetAgentData
-    //   +0x4E  mov eax, [eax+8]                                     -- the actor's state mask
-    //   +0x57  call CustomBitMaskManager::FilterAny(state, mask)     -- __cdecl, bool
     constexpr const char* kAddStateNative = "AddActorStateByName";
     constexpr const char* kAddStateSymbol = "Script_AddActorStateByName";
     constexpr const char* kRemoveStateNative = "RemoveActorStateByName";
@@ -82,15 +56,16 @@ namespace {
     constexpr std::uintptr_t kTestFilterOffset = 0x57;
     constexpr std::uintptr_t kStateDataMask = 0x08;
 
-    // Script_DamageRadiusExceptActor, measured on di3-gold-steam-1.0 (rva 0xF76330). It pops its
-    // arguments off the frame, then calls the engine:
-    //   +0x0B  mov ecx, esi ; +0x0D call ScriptFrame::PopActor       -- the actor to spare
-    //   +0x86  call ActorCommands::DamageRadius(const Vector3* center, float radius, float damage,
-    //              const char* damageType, CActor* source, CActor* owner, CActor* invincible,
-    //              callback, callbackData, bool useCylinder, float cylinderHeight)
-    //   +0x8B  add esp, 0x2C                                           -- __cdecl, eleven 4-byte slots
-    // ScriptFrame::PopActor (rva 0x3321B0) reads the frame like PopString does, then hands the
-    // slot's handle to CActor::FromHandle(int) (+0x24, __cdecl).
+    constexpr const char* kSpeedNative = "MovementSetCumulativeSpeedMultiplier";
+    constexpr const char* kSpeedSymbol = "Script_MovementSetCumulativeSpeedMultiplier";
+    constexpr std::uintptr_t kSpeedTypeOffset = 0x1F;
+    constexpr std::uintptr_t kSpeedGetAgentDataOffset = 0x2C;
+    constexpr std::uintptr_t kSpeedReadOffset = 0x39;
+    constexpr std::uintptr_t kSpeedScaleOffset = 0x3E;
+    constexpr std::uintptr_t kSpeedWriteOffset = 0x44;
+    constexpr std::uintptr_t kCumulativeSpeedField = 0x78;
+    constexpr float kMaxSpeedScale = 20.0f;
+
     constexpr const char* kDamageNative = "DamageRadiusExceptActor";
     constexpr const char* kDamageSymbol = "Script_DamageRadiusExceptActor";
     constexpr std::uintptr_t kDamagePopActorOffset = 0x0D;
@@ -100,7 +75,6 @@ namespace {
     constexpr std::uint8_t kPopActorPrologue[] = {
         0x8B, 0x51, 0x20, 0x8B, 0x02, 0x48, 0x89, 0x02, 0x8B, 0x49, 0x0C,
     };
-    // The engine's own scripts pass 1.0 as the cylinder height of a sphere query.
     constexpr float kCylinderHeight = 1.0f;
 
     using ConstructFn = void*(__thiscall*)(void* self, const char* initString);
@@ -139,10 +113,11 @@ void EngineActors::resolveOnce()
     const bool create = resolveCreate(base);
     const bool states = resolveStates(base);
     const bool damage = resolveDamage(base);
-    crabe::shared::Logger::getInstance().info("EngineActors: actor creation {}, actor states {}, area damage {}.",
-                                              create ? "resolved" : "unavailable",
-                                              states ? "resolved" : "unavailable",
-                                              damage ? "resolved" : "unavailable");
+    const bool movement = resolveMovement(base);
+    crabe::shared::Logger::getInstance().info(
+        "EngineActors: actor creation {}, actor states {}, area damage {}, move speed {}.",
+        create ? "resolved" : "unavailable", states ? "resolved" : "unavailable",
+        damage ? "resolved" : "unavailable", movement ? "resolved" : "unavailable");
 }
 
 bool EngineActors::resolveCreate(std::uintptr_t base)
@@ -175,8 +150,7 @@ bool EngineActors::resolveCreate(std::uintptr_t base)
     return true;
 }
 
-// The three state natives must agree on the manager, the category, the data type
-// and GetAgentData; that agreement is checked, not assumed.
+// Resolves actor state native entry points and verifies consistency across natives.
 bool EngineActors::resolveStates(std::uintptr_t base)
 {
     auto& logger = crabe::shared::Logger::getInstance();
@@ -256,6 +230,33 @@ bool EngineActors::resolveDamage(std::uintptr_t base)
 
     _damageRadius = damage;
     _actorFromHandle = fromHandle;
+    return true;
+}
+
+bool EngineActors::resolveMovement(std::uintptr_t base)
+{
+    auto& logger = crabe::shared::Logger::getInstance();
+    const std::uintptr_t handler = script_natives::find(kSpeedNative);
+    if (!handler || !script_natives::matchesProfile(base, kSpeedSymbol, handler)) {
+        logger.error("EngineActors: native '{}' not found or off profile (rva 0x{:X}).",
+                     kSpeedNative, handler ? handler - base : 0);
+        return false;
+    }
+
+    const std::uintptr_t getAgentData = crabe::memory::resolveCall(handler + kSpeedGetAgentDataOffset);
+    if (!getAgentData
+        || !bytesAt(handler + kSpeedTypeOffset, { 0x0F, 0xB7, 0x0D })
+        || !bytesAt(handler + kSpeedGetAgentDataOffset, { 0xE8 })
+        || !bytesAt(handler + kSpeedReadOffset, { 0xF3, 0x0F, 0x10, 0x40, static_cast<std::uint8_t>(kCumulativeSpeedField) })
+        || !bytesAt(handler + kSpeedScaleOffset, { 0xF3, 0x0F, 0x59, 0x44, 0x24, 0x04 })
+        || !bytesAt(handler + kSpeedWriteOffset, { 0xF3, 0x0F, 0x11, 0x40, static_cast<std::uint8_t>(kCumulativeSpeedField) })) {
+        logger.error("EngineActors: '{}' at rva 0x{:X} does not have the measured shape; refusing.",
+                     kSpeedNative, handler - base);
+        return false;
+    }
+
+    _movementDataType = script_natives::readAt<std::uint32_t>(handler + kSpeedTypeOffset + 3);
+    _movementGetAgentData = getAgentData;
     return true;
 }
 
@@ -343,6 +344,45 @@ std::optional<bool> EngineActors::testActorState(std::uint32_t actorHandle, cons
             result = reinterpret_cast<FilterAnyFn>(_filterAny)(current, mask);
         },
         "EngineActors::testActorState");
+    return completed ? result : std::nullopt;
+}
+
+bool EngineActors::setMoveSpeedScale(std::uint32_t actorHandle, float factor)
+{
+    resolveOnce();
+    if (!_movementGetAgentData || !actorHandle || !(factor > 0.0f) || factor > kMaxSpeedScale)
+        return false;
+
+    bool applied = false;
+    const bool completed = CrashHandler::runGuarded(
+        [&] {
+            const std::uint32_t type = script_natives::readAt<std::uint16_t>(_movementDataType);
+            void* data = reinterpret_cast<GetAgentDataFn>(_movementGetAgentData)(actorHandle, type);
+            if (!data)
+                return;
+            *reinterpret_cast<float*>(reinterpret_cast<std::uintptr_t>(data) + kCumulativeSpeedField) = factor;
+            applied = true;
+        },
+        "EngineActors::setMoveSpeedScale");
+    return completed && applied;
+}
+
+std::optional<float> EngineActors::moveSpeedScale(std::uint32_t actorHandle)
+{
+    resolveOnce();
+    if (!_movementGetAgentData || !actorHandle)
+        return std::nullopt;
+
+    std::optional<float> result;
+    const bool completed = CrashHandler::runGuarded(
+        [&] {
+            const std::uint32_t type = script_natives::readAt<std::uint16_t>(_movementDataType);
+            void* data = reinterpret_cast<GetAgentDataFn>(_movementGetAgentData)(actorHandle, type);
+            if (!data)
+                return;
+            result = script_natives::readAt<float>(reinterpret_cast<std::uintptr_t>(data) + kCumulativeSpeedField);
+        },
+        "EngineActors::moveSpeedScale");
     return completed ? result : std::nullopt;
 }
 
