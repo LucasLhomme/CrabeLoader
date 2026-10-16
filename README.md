@@ -127,11 +127,12 @@ modèle (vue de face, T-pose, texture avec le filtre) et écrit dans le mod `<ac
 « Preview » montre le résultat. Expérimental : si la grille de sélection garde l'icône par défaut, le PNG reste
 utilisable tel quel.
 
-**Audit des animations.** Onglet Rig & Export, bouton « Audit all animations » (ou `python tools/audit.py modele.glb`) :
-chaque clip est joué image par image sur ton rig, et Creator indique pour chacun la part d'arêtes déformées de plus de
-2×, l'image la pire et les zones touchées (épaule, coude, main, jambe...). Les clips sont les mouvements procéduraux de
-Creator, pas les animations d'origine du jeu : c'est un test de résistance fidèle aux mouvements, pas une copie. Les
-doigts suivent désormais la main dans ces clips (avant, ils restaient en arrière et déchiraient les mains à l'écran).
+**Audit des animations (outil à part, hors Creator).** Glisse un modèle sur `Audit_Animations.bat` (base par défaut
+TCW_Anakin ; une autre en 2ᵉ argument). L'outil construit le rig, joue toutes les animations dessus et écrit dans
+`build\audit\<modèle>\` : `report.txt` (score statique + une ligne par animation : part d'arêtes déformées de plus de 2×,
+pire image, zones touchées), `report.json` et des images de la pire image des animations problématiques (arêtes
+étirées en rouge). Les clips sont les mouvements procéduraux de Creator, pas les animations d'origine du jeu. Les doigts
+suivent la main dans ces clips (avant, ils restaient en arrière et déchiraient les mains à l'écran).
 
 **Pastilles du squelette.** ✓ vert = proche des proportions de la base (y compris après un réglage manuel) ; ✎ bleu =
 réglé à la main mais encore éloigné de la base ; ⚠ = estimé ou trop différent.
@@ -232,6 +233,7 @@ Sans ouvrir l'interface (à lancer avec `.\.venv\Scripts\python.exe`) :
 | `tools\batch_check.py dossier [--base ACTOR \| --suggest] [--blender chemin]` | Place et rigge tous les modèles d'un dossier, affiche le score ; avec `--suggest`, essaie toutes les figures et donne les meilleures |
 | `tools\capture.py modele.glb [--base ACTOR] [--amount 1.0] [--out dossier]` | Construit le rig d'un modèle et enregistre des images en 3 vues (repos, bras levés, marche, avec les arêtes étirées en rouge) et `report.txt` dans `build\captures\` |
 | `Capturer_Modele.bat` | Même chose en glissant un modèle sur le fichier |
+| `Audit_Animations.bat` | Audit des animations d'un modèle (rapport + images), hors Creator |
 
 ## Jouer avec son personnage
 

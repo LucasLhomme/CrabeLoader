@@ -909,9 +909,6 @@ class MainWindow(ctk.CTk):
         ctk.CTkCheckBox(pose_box, text="Show stretched edges in red", variable=self.heat_var,
                         command=self.on_heat_toggle, font=ctk.CTkFont(size=11), checkbox_width=18,
                         checkbox_height=18).grid(row=4, column=0, sticky="w", pady=(2, 0))
-        self.audit_button = ctk.CTkButton(pose_box, text="Audit all animations (where does it stretch?)", height=26,
-                                          fg_color="#27272a", hover_color="#3f3f46", command=self.on_audit_animations)
-        self.audit_button.grid(row=5, column=0, sticky="ew", pady=(6, 0))
 
         ctk.CTkLabel(tab, text="Entity Type (Character, Enemy, Ally/NPC):", font=ctk.CTkFont(size=12)).grid(
             row=11, column=0, sticky="w")
@@ -1873,24 +1870,6 @@ class MainWindow(ctk.CTk):
             self.renderer.set_base_skeleton(None, None)
         self.renderer.set_heat_lines(stretched_segments(self.rig, self.pose, amount))
         self.renderer.request_render()
-
-    def on_audit_animations(self):
-        """Play every clip on the rig and report, per clip, the worst frame and the body regions that stretch."""
-        if not self.rig:
-            self.log("Build the rig first, then audit the animations.")
-            return
-        from src.core.animation_audit import audit_rig, summary
-        from src.core.animation_player import get_character_animation_clips
-        rig = self.rig
-        clips = get_character_animation_clips(rig.base)
-        self.log("Auditing the animations...")
-
-        def done(result, error):
-            self._set_busy(False)
-            if error:
-                return self._failed(error)
-            self.log(result)
-        self._run(lambda: summary(audit_rig(rig, clips)), done)
 
     def on_pose_amount(self, value):
         self.pose_amount_label.configure(text=f"Pose amount: {int(round(float(value) * 100))}%")
