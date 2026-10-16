@@ -41,5 +41,5 @@ Actions crée alors l'étiquette et la release.
 
 [Non publié]: https://github.com/Nabile01/DisneyCreator/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.3.0
-[0.2.0]: https://github.com/Nabile01/DisneyCreator/commit/6604230
-[0.1.0]: https://github.com/Nabile01/DisneyCreator/commit/6d8dc3a
+[0.2.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.2.0
+[0.1.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.1.0
