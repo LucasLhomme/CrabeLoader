@@ -26,3 +26,12 @@ def test_no_bleeding_from_background():
     mask[:, :32] = True
     out = np.asarray(gamelook.apply(Image.fromarray(arr), 0.8, mask)).astype(int)
     assert abs(out[30, 5, 0] - out[30, 30, 0]) < 8  # edge of the island keeps the island's colour
+
+
+def test_match_moves_brightness_towards_target():
+    arr = np.full((64, 64, 3), (60, 60, 60), np.uint8)
+    img = Image.fromarray(arr)
+    out = gamelook.apply(img, 0.0, None, 1.0, 0.5)
+    assert abs(gamelook.mean_luma(out) - 0.5) < 0.03
+    half = gamelook.apply(img, 0.0, None, 0.5, 0.5)
+    assert gamelook.mean_luma(img) < gamelook.mean_luma(half) < gamelook.mean_luma(out)

@@ -38,12 +38,54 @@ def _guided(guide, src, weight, r, eps):
     return _box(a * weight, r) / wsum * guide + _box(b * weight, r) / wsum
 
 
-def apply(image: Image.Image, strength: float, mask: np.ndarray | None = None) -> Image.Image:
-    """strength in 0..1. Returns a new RGB image of the same size."""
+def mean_luma(image: Image.Image, mask: np.ndarray | None = None) -> float:
+    """Average brightness (0-1) of the used texels, ignoring the near-black padding of an atlas."""
+    a = np.asarray(image.convert("RGB"), np.float32) / 255
+    y = (a * LUMA).sum(-1)
+    keep = y > 0.05
+    if mask is not None:
+        keep &= mask
+    return float(y[keep].mean()) if keep.any() else float(y.mean())
+
+
+def base_luma(images) -> float | None:
+    """Average brightness of a base figure's colour textures."""
+    values = [mean_luma(im) for im in images if im is not None]
+    return float(np.mean(values)) if values else None
+
+
+def _match(out: np.ndarray, mask, target: float, amount: float) -> np.ndarray:
+    """Gamma curve that moves the average brightness a fraction `amount` of the way to `target`."""
+    y = (out * LUMA).sum(-1)
+    keep = (y > 0.05) if mask is None else ((y > 0.05) & mask)
+    if not keep.any():
+        return out
+    cur = float(y[keep].mean())
+    goal = cur + amount * (target - cur)
+    lo, hi = 0.3, 3.0
+    for _ in range(24):
+        g = (lo + hi) / 2
+        if float((y[keep] ** g).mean()) > goal:
+            lo = g
+        else:
+            hi = g
+    return np.clip(out, 0, 1) ** ((lo + hi) / 2)
+
+
+def apply(image: Image.Image, strength: float, mask: np.ndarray | None = None,
+          match: float = 0.0, target: float | None = None) -> Image.Image:
+    """strength in 0..1 (softening, lift, saturation). match in 0..1 moves the average brightness towards `target`
+    (the base figure's). Returns a new RGB image of the same size."""
     image = image.convert("RGB")
-    if strength <= 0:
+    if strength <= 0 and not (match > 0 and target is not None):
         return image
     s = float(min(strength, 1.0))
+    if s <= 0:
+        a0 = np.asarray(image, np.float32) / 255
+        out = _match(a0, mask, target, float(min(match, 1.0)))
+        if mask is not None:
+            out = np.where(mask[..., None], out, a0)
+        return Image.fromarray((out * 255 + 0.5).astype(np.uint8))
     a = np.asarray(image, np.float32) / 255
     w = np.ones(a.shape[:2], np.float32) if mask is None else mask.astype(np.float32)
     r = max(2, round(a.shape[1] / 256))
@@ -58,6 +100,8 @@ def apply(image: Image.Image, strength: float, mask: np.ndarray | None = None) -
     y = (out * LUMA).sum(-1, keepdims=True)
     out = y + (out - y) * (1 + 0.8 * 0.7 * s)
     out = np.clip(out, 0, 1)
+    if match > 0 and target is not None:
+        out = _match(out, mask, target, float(min(match, 1.0)))
     if mask is not None:  # keep the background exactly as it was
         out = np.where(mask[..., None], out, a)
     return Image.fromarray((out * 255 + 0.5).astype(np.uint8))

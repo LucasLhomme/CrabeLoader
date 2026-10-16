@@ -52,6 +52,10 @@ class CharacterModel:
     """Per-vertex flag: parts left out of the model altogether."""
     look: float = 0.0
     """Game-look filter strength (0 = original texture)."""
+    match: float = 0.0
+    """How far (0-1) the average brightness is pulled towards the base figure's."""
+    match_target: float | None = None
+    """Average brightness of the base figure's texture."""
     _look_cache: tuple | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -73,14 +77,15 @@ class CharacterModel:
     @property
     def texture(self) -> Image.Image:
         """The texture that is shown and exported: the original, or filtered towards the game's look."""
-        if self.look <= 0:
+        use_match = self.match > 0 and self.match_target is not None
+        if self.look <= 0 and not use_match:
             return self.source.texture
-        key = round(self.look, 3)
+        key = (round(self.look, 3), round(self.match, 3), self.match_target if use_match else None)
         if self._look_cache is None or self._look_cache[0] != key:
             from src.core import gamelook
             tex = self.source.texture
             mask = gamelook.coverage(self.source.uvs, self.source.faces, tex.size)
-            self._look_cache = (key, gamelook.apply(tex, self.look, mask))
+            self._look_cache = (key, gamelook.apply(tex, self.look, mask, self.match, self.match_target))
         return self._look_cache[1]
 
     def vertices(self) -> np.ndarray:

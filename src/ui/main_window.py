@@ -435,6 +435,15 @@ class MainWindow(ctk.CTk):
         self.look_slider.bind("<ButtonRelease-1>", lambda _e: self.on_look(self.look_slider.get()))
         self._value_entry(look, 1, self.look_slider, self.on_look, "{:.2f}")
         self._on_look_drag(self.look_slider.get())
+        self.match_label = ctk.CTkLabel(look, text="", wraplength=330, justify="left", text_color=GREY,
+                                        font=ctk.CTkFont(size=11))
+        self.match_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.match_slider = ctk.CTkSlider(look, from_=0, to=1, command=self._on_match_drag)
+        self.match_slider.set(float(self.settings.get("match_brightness", 0.0)))
+        self.match_slider.grid(row=3, column=0, sticky="ew")
+        self.match_slider.bind("<ButtonRelease-1>", lambda _e: self.on_match(self.match_slider.get()))
+        self._value_entry(look, 3, self.match_slider, self.on_match, "{:.2f}")
+        self._on_match_drag(self.match_slider.get())
 
         icon_row = ctk.CTkFrame(tab, fg_color="transparent")
         icon_row.grid(row=r0 + 6, column=0, sticky="ew", pady=(10, 0))
@@ -1108,6 +1117,9 @@ class MainWindow(ctk.CTk):
             self._highlight_base()
             self.renderer.set_ghost(parts)
             self.renderer.show_ghost = self.ghost_var.get()
+            if self.model and self.model.match > 0:
+                self.model.match_target = self._base_brightness()
+                self.on_look(self.look_slider.get())
             self._show_base_rest(self.pose == "tpose")
             game_dir = Path(self.game_entry.get().strip()) if hasattr(self, "game_entry") and self.game_entry.get() else None
             self._refresh_moveset_clips()
@@ -1250,6 +1262,34 @@ class MainWindow(ctk.CTk):
         self._sync_entry(self.look_slider)
         self.look_label.configure(text=f"Game look (texture filter): {float(value):.2f}. Softens baked shading and "
                                        "noise, lifts shadows, boosts colours like the base characters. 0 = original.")
+
+    def _on_match_drag(self, value):
+        self._sync_entry(self.match_slider)
+        self.match_label.configure(text=f"Match the base figure's brightness: {float(value):.2f} "
+                                        "(0 = off, 1 = same average brightness as the base texture).")
+
+    def _base_brightness(self):
+        from src.core.gamelook import base_luma
+        parts = getattr(self, "base_parts", None) or []
+        seen, images = set(), []
+        for part in parts:
+            tex = part[3]
+            if tex is not None and id(tex) not in seen:
+                seen.add(id(tex))
+                images.append(tex)
+        return base_luma(images)
+
+    def on_match(self, value):
+        value = float(value)
+        self._on_match_drag(value)
+        self.settings.update(match_brightness=value)
+        if not self.model:
+            return
+        self.model.match = value
+        self.model.match_target = self._base_brightness()
+        if value > 0 and self.model.match_target is None:
+            self.log("Pick a base first: its texture gives the target brightness.")
+        self.on_look(self.look_slider.get())
 
     def on_look(self, value):
         """Apply the game-look filter to the texture shown and exported."""
@@ -1544,7 +1584,8 @@ class MainWindow(ctk.CTk):
             return
         source.report = list(notes) + list(source.report)
         placement = auto_placement(source, self.height_slider.get())
-        self.model = CharacterModel(source, placement, look=float(self.look_slider.get()))
+        self.model = CharacterModel(source, placement, look=float(self.look_slider.get()),
+                               match=float(self.match_slider.get()), match_target=self._base_brightness())
         self.model_info.configure(
             text=f"{Path(path).name}\n{len(source.vertices)} vertices, {len(source.faces)} triangles, "
                  f"texture {source.texture.width}×{source.texture.height}\n"

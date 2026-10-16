@@ -118,7 +118,8 @@ Blender (import Collada) le nettoie comme les autres formats.
 sont plus sombres, plus ternes et pleins d'ombres peintes ; les personnages du jeu sont clairs, saturés et lisses. Le
 filtre adoucit le bruit et les ombres cuites (filtre guidé qui préserve les contours), relève les ombres et ajoute de la
 saturation. Il ne travaille qu'à l'intérieur des îlots UV : aucune couleur ne bave depuis le fond. Le résultat
-s'affiche dans la vue 3D et est celui qui est exporté dans le jeu.
+s'affiche dans la vue 3D et est celui qui est exporté dans le jeu. Le second curseur « Match the base figure's
+brightness » rapproche la luminosité moyenne de celle de la texture de la base choisie (0 = désactivé).
 
 **Icône du personnage.** Case « Character icon » (onglet Modèle) : à l'installation, Creator photographie la tête du
 modèle (vue de face, T-pose, texture avec le filtre) et écrit dans le mod `<actor>_icon.png` plus la texture HUD
