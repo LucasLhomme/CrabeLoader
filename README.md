@@ -112,10 +112,6 @@ modèle ne tombent pas sur ceux de la base (4 doigts contre 3 chaînes, mains pl
 poing) froissent la main : la main rigide est donc le réglage par défaut. Une main de moins de 60 sommets reste toujours
 rigide. La pose **Fist** du sélecteur montre le résultat.
 
-**Épaules.** La pose du jeu a les bras baissés, le modèle arrive en T-pose : les bras tournent d'environ 80° à
-l'épaule. Cette rotation est faite en quaternions duaux (le volume de l'épaule est gardé, au lieu de s'écraser vers
-l'articulation), puis la jonction poitrine/bras est lissée : épaules plus rondes, moins de creux sous le bras.
-
 **Format `.dae` (COLLADA).** Creator le lit lui-même, sans Blender : géométrie, UV, textures (cherchées à côté du
 fichier), unité et axe vertical. Un modèle skinné est lu dans sa pose de repos. Avec la case de nettoyage cochée,
 Blender (import Collada) le nettoie comme les autres formats.

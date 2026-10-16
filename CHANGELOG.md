@@ -12,8 +12,6 @@ Actions crée alors l'étiquette et la release.
 - Aperçu en direct des filtres de texture (Game look, luminosité) sur le modèle et dans la fenêtre de l'atlas, avec
   une case « Show the original » pour comparer.
 ### Modifié
-- Passage T-pose → pose du jeu en quaternions duaux, puis lissage de la jonction poitrine/bras : épaules plus
-  rondes, moins de creux sous le bras.
 - Poids des doigts décochés par défaut (expérimental) : les prises du jeu froissaient les mains ; une main de moins
   de 60 sommets reste toujours rigide.
 - Filtre de texture environ 2,5× plus rapide en pleine résolution (filtre guidé rapide), calculé en arrière-plan.
