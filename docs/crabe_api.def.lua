@@ -327,6 +327,14 @@ function Crabe.Input.isKeyDown(vk) end
 ---@param captured boolean
 function Crabe.Input.capturePad(captured) end
 
+--- Clears the input remaps of one device, or of every device when none is given.
+---@param device number? Crabe.Input.DEVICE.KEYBOARD, MOUSE or PAD.
+function Crabe.Input.clearRemap(device) end
+
+--- Reports what is currently taken from the game: DirectInput capture, active remaps and captured virtual keys.
+---@return {directInputCaptured: boolean, remapActive: boolean, capturedKeys: number}? status
+function Crabe.Input.status() end
+
 --------------------------------------------------------------------------------
 -- Crabe.ImGui: Dear ImGui Rendering Primitives
 --------------------------------------------------------------------------------
@@ -670,6 +678,44 @@ function Game.GetLocalPlayer() end
 ---@param player number
 ---@param health number
 function Game.SetPlayerHealth(player, health) end
+
+--- Sets an actor's movement speed multiplier; 1.0 is normal and 20.0 the ceiling. Scales only that actor, not the game clock.
+---@param handle number Actor handle, e.g. from Game.GetAvatarHandle().
+---@param factor number
+---@return boolean applied
+function Game.SetActorSpeedScale(handle, factor) end
+
+--- Returns an actor's movement speed multiplier, or nil when it cannot be read.
+---@param handle number
+---@return number? factor
+function Game.ActorSpeedScale(handle) end
+
+--- Sets the current avatar to an absolute level from 0 to 20, down as well as up. Experience is untouched.
+---@param level number
+---@param playerId number? Defaults to the host player.
+---@return number? level The level the game reports afterwards.
+function Game.SetAvatarLevel(level, playerId) end
+
+--- Returns the unspent skill points of the avatar, or nil when the skill tree data is unavailable.
+---@param playerId number?
+---@return number? points
+function Game.GetSkillPoints(playerId) end
+
+--- Refunds every skill the avatar bought, free. The game allows two refunds per figure.
+---@param playerId number?
+---@return boolean ok
+function Game.RespecAvatar(playerId) end
+
+--- Returns true when the Play Set has a saved game the engine can resume.
+---@param playset string Play Set name, e.g. "InsideOut" or "Empire".
+---@return boolean
+function Game.CanContinuePlayset(playset) end
+
+--- Resumes the Play Set's saved game where it was saved, skipping the character screen. The engine picks the zone itself.
+---@param playset string
+---@param zone string? Ignored by the engine; kept for the call's shape.
+---@return string playset
+function Game.ContinuePlayset(playset, zone) end
 
 --- Changes the active player avatar to the specified SKU ID.
 ---@param skuId number
