@@ -6,6 +6,10 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Ajouté
+- Aperçu en direct de l'épaisseur des membres dans la vue 3D, avant la construction du rig.
+### Corrigé
+- Texte de suggestion de l'épaisseur caché derrière le bouton « Match the base ».
 
 ## [0.3.0] - 2026-10-16
 ### Ajouté

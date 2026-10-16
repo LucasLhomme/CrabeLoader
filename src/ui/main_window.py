@@ -525,13 +525,21 @@ class MainWindow(ctk.CTk):
             slider.grid(row=2 + 2 * i, column=0, sticky="ew")
             self._value_entry(limbs, 1 + 2 * i, slider, lambda v, k=key: self.on_limb(k, v), "{:.2f}")
             self.limb_sliders[key] = (slider, label, text)
-        self.limb_hint = ctk.CTkLabel(limbs, text="", font=ctk.CTkFont(size=10), text_color=GREY, wraplength=330,
+        self.limb_hint = ctk.CTkLabel(limbs, text="", font=ctk.CTkFont(size=10), text_color=GREY, wraplength=320,
                                       justify="left")
-        self.limb_hint.grid(row=5, column=0, sticky="w")
-        ctk.CTkButton(limbs, text="Match the base", width=110, height=24, fg_color="#27272a", hover_color="#3f3f46",
-                      command=self.on_limb_match).grid(row=5, column=1, sticky="e")
+        ctk.CTkButton(limbs, text="Match the base", height=24, fg_color="#27272a", hover_color="#3f3f46",
+                      command=self.on_limb_match).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self.limb_hint.grid(row=6, column=0, columnspan=2, sticky="w")
         ctk.CTkLabel(tab, text=legend, text_color=GREY, wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(
             row=6, column=0, sticky="w", pady=4)
+
+    def _display_vertices(self):
+        """The model as shown before the rig is built: placed, with the limb thickness previewed."""
+        verts = self.model.vertices()
+        if self.anchors is None or (abs(self.model.arm_scale - 1) < 1e-3 and abs(self.model.leg_scale - 1) < 1e-3):
+            return verts
+        from src.core.limbs import preview
+        return preview(verts, self.anchors, self.model.arm_scale, self.model.leg_scale)
 
     def on_limb(self, key, value):
         value = float(value)
@@ -541,9 +549,14 @@ class MainWindow(ctk.CTk):
         if not self.model:
             return
         setattr(self.model, key, value)
-        if self.rig is not None and self.anchors is not None:
-            self._geometry_changed()
-            self.log("Limb thickness changed: build the rig again to see it.")
+        if self.anchors is None:
+            return
+        if self.rig is not None:
+            self._geometry_changed()  # back to the T-pose model: the rig is stale
+            self.log("Limb thickness changed: build the rig again to apply it.")
+        else:
+            self.renderer.update_model_vertices(self._display_vertices())
+            self.renderer.request_render()
 
     def _limb_suggestion(self):
         from src.core.limbs import suggest
@@ -1360,7 +1373,7 @@ class MainWindow(ctk.CTk):
             if self.rig is not None:
                 self.renderer.set_model(self.rig.tpose, self.rig.faces, self.rig.uvs, self.model.texture)
             else:
-                self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+                self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
             self.log(f"Game look {value:.2f}: texture updated" if value > 0 else "Game look off: original texture.")
         self._run(job, done)
 
@@ -1392,7 +1405,7 @@ class MainWindow(ctk.CTk):
         if kind == "remove":
             self.piece_overrides = []
             self._refresh_piece_list()
-            self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
         self._show_piece_selection()
         self._refit()
         self.log(f"{int(mask.sum())} vertices {'ignored for the measurements and following the torso' if kind == 'ignore' else 'removed from the model'}. Build the rig again to apply it.")
@@ -1410,7 +1423,7 @@ class MainWindow(ctk.CTk):
 
     def _restore_accessories(self, attr):
         setattr(self.model, attr, None)
-        self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
         self._refresh_accessory_list()
         self._refit()
 
@@ -1462,7 +1475,7 @@ class MainWindow(ctk.CTk):
                                         + (f", {len(self._selected_pieces)} piece(s)" if has_pieces else ""))
         self.piece_apply.configure(state="normal" if has_pieces else "disabled")
         self.piece_grow.configure(state="normal" if has_pieces else "disabled")
-        self.renderer.set_select_lines(self.model.vertices()[edges].reshape(-1, 3))
+        self.renderer.set_select_lines(self._display_vertices()[edges].reshape(-1, 3))
         self.renderer.request_render()
 
     def on_piece_apply(self):
@@ -1649,7 +1662,7 @@ class MainWindow(ctk.CTk):
                  f"{', stood up (Z-up file)' if placement.upright_fix else ''}"
                  + ("".join(f"\n⚠ {line}" for line in source.report[:6]) if source.report else ""),
             text_color=YELLOW if source.report else GREEN)
-        self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
         self.piece_overrides, self._piece_labels, self._selected_pieces = [], None, set()
         self._zone_mask = None
         self.acc_label.configure(text="")
@@ -1762,9 +1775,9 @@ class MainWindow(ctk.CTk):
         self.quality_label.configure(text="Deformation: build the rig to measure it.", text_color=GREY)
         self.anchors = build_anchors(self.props, self.base)
         if showing_rig:
-            self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
         else:
-            self.renderer.update_model_vertices(self.model.vertices())
+            self.renderer.update_model_vertices(self._display_vertices())
         self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
         self._show_base_rest(True)
         self.renderer.request_render()
@@ -1788,8 +1801,8 @@ class MainWindow(ctk.CTk):
         self._sync_entry(slider)
         if self.rig is not None:  # the view shows the rig's vertex set: go back to the model first
             self.rig = None
-            self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
-        self.renderer.update_model_vertices(self.model.vertices())
+            self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self.renderer.update_model_vertices(self._display_vertices())
         self.renderer.request_render()
         if getattr(self, "_place_job", None):
             self.after_cancel(self._place_job)

@@ -66,3 +66,39 @@ def suggest(model_verts, anchors, base_verts, base_joints) -> tuple[float, float
         value = float(np.median(ratios)) if ratios else 1.0
         out.append(round(float(np.clip(value, 1.0, MAX_SUGGEST)) * 20) / 20)
     return out[0], out[1]
+
+
+_OTHER = (("Hips", "Spine2"), ("Spine2", "Spine3"), ("Spine3", "Neck"), ("Neck", "Head"), ("Head", "HeadTop"))
+_OTHER_SIDED = (("Clavicle", "Shoulder"), ("Hand", "HandTip"), ("Ankle", "ToeTip"), ("Hips", "Thigh"))
+
+
+def preview_weights(verts: np.ndarray, anchors: dict) -> tuple[np.ndarray, list]:
+    """Rough limb weights from the skeleton alone (no rig needed), for showing the thickness live.
+
+    Every vertex is shared between the bone segments by inverse distance (power 6), so it is close to 1 in the middle
+    of a limb and fades out around the shoulders, hips, hands and feet like real weights do."""
+    segments, names = [], []
+    for head, tail in _OTHER:
+        if head in anchors and tail in anchors:
+            segments.append((anchors[head], anchors[tail]))
+            names.append(f"_{head}")
+    for side in SIDES:
+        for head, tail in ARM_SEGMENTS + LEG_SEGMENTS:
+            segments.append((anchors[f"{head}_{side}"], anchors[f"{tail}_{side}"]))
+            names.append(f"{head}_{side}")
+        for head, tail in _OTHER_SIDED:
+            a = anchors.get(f"{head}_{side}", anchors.get(head))
+            b = anchors.get(f"{tail}_{side}")
+            if a is not None and b is not None:
+                segments.append((a, b))
+                names.append(f"_{head}_{side}")
+    dist = np.stack([np.linalg.norm(_segment_offsets(verts, a, b)[0], axis=1) for a, b in segments], axis=1)
+    inv = 1.0 / np.maximum(dist, 1e-4) ** 6
+    return inv / inv.sum(axis=1, keepdims=True), names
+
+
+def preview(verts: np.ndarray, anchors: dict, arm_scale: float, leg_scale: float) -> np.ndarray:
+    if abs(arm_scale - 1) < 1e-3 and abs(leg_scale - 1) < 1e-3:
+        return verts
+    weights, names = preview_weights(verts, anchors)
+    return inflate(verts, weights, names, anchors, arm_scale, leg_scale)
