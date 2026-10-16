@@ -43,6 +43,14 @@ Use `Game.PlaceActor` to warp the player to exact coordinates while preserving f
 Game.PlaceActor(p1Handle, 150.0, 20.0, -85.5)
 ```
 
+### 2.3. Running Faster
+`Game.SetActorSpeedScale` scales how fast one actor moves, without touching the game clock, so enemies keep their pace. `1.0` is normal and `20.0` the ceiling; the engine rebuilds the value when a world loads, so set it again afterwards.
+
+```lua
+Game.SetActorSpeedScale(p1Handle, 3.0)
+print(Game.ActorSpeedScale(p1Handle))
+```
+
 ---
 
 ## 3. Health, God Mode & Respawning

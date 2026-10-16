@@ -38,6 +38,7 @@
 #include "infrastructure/engine_free_camera.hpp"
 #include "infrastructure/engine_gateway.hpp"
 #include "infrastructure/engine_actors.hpp"
+#include "infrastructure/engine_avatar.hpp"
 #include "infrastructure/engine_kinematics.hpp"
 #include "infrastructure/engine_sky.hpp"
 #include "infrastructure/message_hook.hpp"
@@ -299,6 +300,52 @@ namespace {
         if (!result) return 0;
 
         lua.pushBoolean(L, *result);
+        return 1;
+    }
+
+    // Crabe._avatarSetLevel(playerId, characterId, level) -> the level the game reports after
+    // setting the avatar to that absolute level (0 to 20), or nothing when it could not be set.
+    int __cdecl nativeAvatarSetLevel(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto playerId = static_cast<int>(lua.argToNumber(L, 1, 0.0));
+        const auto characterId = static_cast<std::uint32_t>(lua.argToNumber(L, 2, 0.0));
+        const auto level = static_cast<int>(lua.argToNumber(L, 3, -1.0));
+
+        const auto result = crabe::infrastructure::EngineAvatar::get().setAvatarLevel(playerId, characterId, level);
+        if (!lua.hasReturnSupport() || !result) return 0;
+
+        lua.pushNumber(L, static_cast<double>(*result));
+        return 1;
+    }
+
+    // Crabe._actorSetSpeedScale(actorHandle, factor) -> true when the actor's movement speed
+    // multiplier was set; 1.0 is normal speed, 20.0 the ceiling.
+    int __cdecl nativeActorSetSpeedScale(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        const auto factor = static_cast<float>(lua.argToNumber(L, 2, 1.0));
+
+        const bool applied = crabe::infrastructure::EngineActors::get().setMoveSpeedScale(handle, factor);
+        if (!lua.hasReturnSupport()) return 0;
+
+        lua.pushBoolean(L, applied);
+        return 1;
+    }
+
+    // Crabe._actorSpeedScale(actorHandle) -> the actor's movement speed multiplier, or nothing
+    // when it cannot be read.
+    int __cdecl nativeActorSpeedScale(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        const auto handle = static_cast<std::uint32_t>(lua.argToNumber(L, 1, 0.0));
+        if (!lua.hasReturnSupport()) return 0;
+
+        const auto result = crabe::infrastructure::EngineActors::get().moveSpeedScale(handle);
+        if (!result) return 0;
+
+        lua.pushNumber(L, static_cast<double>(*result));
         return 1;
     }
 
@@ -1088,6 +1135,9 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_actorCreate",           &nativeActorCreate },
         { "_actorSetState",         &nativeActorSetState },
         { "_actorTestState",        &nativeActorTestState },
+        { "_avatarSetLevel",        &nativeAvatarSetLevel },
+        { "_actorSetSpeedScale",    &nativeActorSetSpeedScale },
+        { "_actorSpeedScale",       &nativeActorSpeedScale },
         { "_damageRadius",          &nativeDamageRadius },
         { "_inputReport",           &nativeInputReport },
         { "_keyDown",               &crabe::input_natives::keyDown },
