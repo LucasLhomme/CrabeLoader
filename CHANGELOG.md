@@ -2,7 +2,8 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions [SemVer](https://semver.org/lang/fr/).
 Commits : `type(zone): résumé` (types `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `chore`), avec un corps qui
-dit pourquoi et comment c'est vérifié.
+dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `VERSION` et ce journal ; GitHub
+Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
 
@@ -39,6 +40,6 @@ dit pourquoi et comment c'est vérifié.
 - Import du projet Disney Infinity Creator.
 
 [Non publié]: https://github.com/Nabile01/DisneyCreator/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/Nabile01/DisneyCreator/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/Nabile01/DisneyCreator/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.1.0
+[0.3.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.3.0
+[0.2.0]: https://github.com/Nabile01/DisneyCreator/commit/6604230
+[0.1.0]: https://github.com/Nabile01/DisneyCreator/commit/6d8dc3a
