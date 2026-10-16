@@ -105,10 +105,16 @@ Comme le moveset vient avec la figure, **toute la liste (~90 figures) reste affi
 d'office, les autres sont classées par silhouette (« not tested »). Le bouton **« Test the next 12 figures »** teste
 le lot suivant, et le champ de filtre cherche par nom ou par licence (Avengers, Star Wars…).
 
-**Doigts.** Les figures de base ont des os de doigts (Thumb1-3, Index1-2, Middle1-2). Avec la case **« Finger weights »**
-(cochée par défaut), la main de ton modèle suit ces os : chaque sommet au-delà des articulations des doigts est partagé
-entre le poignet et la chaîne de doigts la plus proche. En jeu, les doigts se ferment (poing, prise, tir) au lieu de
-rester plats. La pose **Fist** du sélecteur montre le résultat.
+**Doigts (expérimental, décoché par défaut).** Les figures de base ont des os de doigts (Thumb1-3, Index1-2,
+Middle1-2). Avec la case **« Finger weights »**, la main de ton modèle suit ces os : chaque sommet au-delà des
+articulations des doigts est partagé entre le poignet et la chaîne de doigts la plus proche. Tant que les doigts du
+modèle ne tombent pas sur ceux de la base (4 doigts contre 3 chaînes, mains plus grandes), les prises du jeu (sabre,
+poing) froissent la main : la main rigide est donc le réglage par défaut. Une main de moins de 60 sommets reste toujours
+rigide. La pose **Fist** du sélecteur montre le résultat.
+
+**Épaules.** La pose du jeu a les bras baissés, le modèle arrive en T-pose : les bras tournent d'environ 80° à
+l'épaule. Cette rotation est faite en quaternions duaux (le volume de l'épaule est gardé, au lieu de s'écraser vers
+l'articulation), puis la jonction poitrine/bras est lissée : épaules plus rondes, moins de creux sous le bras.
 
 **Format `.dae` (COLLADA).** Creator le lit lui-même, sans Blender : géométrie, UV, textures (cherchées à côté du
 fichier), unité et axe vertical. Un modèle skinné est lu dans sa pose de repos. Avec la case de nettoyage cochée,

@@ -300,10 +300,10 @@ class MainWindow(ctk.CTk):
                         font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(robust_transfer=bool(self.transfer_var.get()))
                         ).grid(row=3, column=0, sticky="w", pady=(4, 0))
-        self.fingers_var = ctk.BooleanVar(value=bool(self.settings.get("finger_weights", True)))
-        ctk.CTkCheckBox(import_box, text="Finger weights: hands follow the base's finger bones (closing fists, grips)",
+        self.fingers_var = ctk.BooleanVar(value=bool(self.settings.get("finger_weights_v2", False)))
+        ctk.CTkCheckBox(import_box, text="Finger weights (experimental): fingers curl with the base's grips; can crumple hands",
                         variable=self.fingers_var, font=ctk.CTkFont(size=11),
-                        command=lambda: self.settings.update(finger_weights=bool(self.fingers_var.get()))
+                        command=lambda: self.settings.update(finger_weights_v2=bool(self.fingers_var.get()))
                         ).grid(row=4, column=0, sticky="w", pady=(4, 0))
         ctk.CTkButton(tab, text="Import Blender Rig & Tracks (.glb .gltf .json)", fg_color="#27272a",
                       hover_color="#3f3f46", text_color="#e4e4e7",

@@ -46,7 +46,11 @@ def chain_params(points: np.ndarray, chain: np.ndarray):
     return best_d, best_u
 
 
-def add_fingers(baked: np.ndarray, merged: np.ndarray, palette_cols: np.ndarray, base):
+MIN_HAND_VERTICES = 60
+"""Below this, the hand is a low-poly block (mitten): curling finger bones would only crumple it, so it stays rigid."""
+
+
+def add_fingers(baked: np.ndarray, merged: np.ndarray, palette_cols: np.ndarray, base, log=None):
     """Move part of each hand's weight onto the finger bones: (merged, palette_cols) with finger columns added."""
     merged = merged.copy()
     palette_cols = np.asarray(palette_cols)
@@ -61,6 +65,10 @@ def add_fingers(baked: np.ndarray, merged: np.ndarray, palette_cols: np.ndarray,
         chains = [(names, _chain(base, side, names)) for _, names in CHAINS]
         chains = [(n, c) for n, c in chains if c is not None]
         if len(sel) == 0 or not chains:
+            continue
+        if len(sel) < MIN_HAND_VERTICES:
+            if log:
+                log(f"  {side} hand: only {len(sel)} vertices (low-poly), no finger weights: it stays rigid")
             continue
         hand = merged[sel, hand_col]
         params = [chain_params(baked[sel], c) for _, c in chains]
