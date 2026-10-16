@@ -92,6 +92,9 @@ namespace crabe::input_natives {
     // Lua binding to clear input remaps for a device or all devices.
     int __cdecl remapClear(void* L);
 
+    // Lua binding to report what is currently taken from the game: DirectInput, remaps and captured keys.
+    int __cdecl inputStatus(void* L);
+
     // Lua binding to convert a Windows virtual-key code into a DirectInput scan code.
     int __cdecl keyScanCode(void* L);
 

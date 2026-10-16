@@ -1146,6 +1146,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_setDirectInputCaptured", &crabe::input_natives::setDirectInputCaptured },
         { "_inputRemap",            &crabe::input_natives::remapSet },
         { "_inputRemapClear",       &crabe::input_natives::remapClear },
+        { "_inputStatus",           &crabe::input_natives::inputStatus },
         { "_keyScanCode",           &crabe::input_natives::keyScanCode },
         { "_mouseWheel",            &crabe::input_natives::mouseWheel },
         { "_keyName",               &crabe::input_natives::keyName },

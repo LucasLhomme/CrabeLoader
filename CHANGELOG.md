@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Per-Actor Move Speed & Play Set Resume:** `Game.SetActorSpeedScale` / `Game.ActorSpeedScale` scale one actor's movement speed (the engine's cumulative speed multiplier, signature-checked against the executable), so the player can run faster without speeding up the whole game. `Game.ContinuePlayset` / `Game.CanContinuePlayset` expose the pause menu's own load path, which resumes a Play Set save instead of restarting it. `Game.GetSkillPoints` / `Game.RespecAvatar` read and refund skill tree points, and `Game.SetAvatarLevel` sets the avatar to an absolute level (down as well as up) through the engine's own level-up path.
 
+- **`Crabe.Input.status()`:** reports whether DirectInput is captured, whether any input remap is active and how many virtual keys are captured, to diagnose input a mod left taken from the game.
+
+### Fixed
+- **`Crabe.Input.clearRemap()` with no device left mouse remaps in place:** the native read the missing device as the keyboard, so a mod that remapped mouse buttons (CrabeMenu's "lock in-game controls") left them dropped after closing. The wrapper now clears every device when none is given.
+- **Keys typed in other applications reached mods:** `Crabe._keyDown` and the pad state are read only while a window of the game has the foreground.
+
 ### Changed
 - **Modern CMake `FetchContent` Integration:** Upstream third-party dependencies (`nlohmann/json` v3.11.3, `toml++` v3.4.0, `MinHook` v1.3.3, `Dear ImGui` v1.90.9, `Lua 5.1.5`) are now fetched and built automatically via CMake `FetchContent` with strict SHA-256 validation.
 - **Codebase Comments Standardization:** Enforced a clean modern C++ standard across all 213 files: maximum 3 physical lines per function comment directly above declarations/definitions, zero inline comments inside function bodies, and zero comments on types, members, enums, macros, or constants. Verified by `tools/check_headers.py`.
