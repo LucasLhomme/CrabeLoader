@@ -717,6 +717,118 @@ function Game.CanContinuePlayset(playset) end
 ---@return string playset
 function Game.ContinuePlayset(playset, zone) end
 
+--- Returns the actor handle of the player's avatar.
+---@param playerId number? Defaults to the host player.
+---@return number handle
+function Game.GetAvatarHandle(playerId) end
+
+--- Returns the world position of an actor, or nil when it cannot be read.
+---@param handle number
+---@return number? x
+---@return number? y
+---@return number? z
+function Game.ActorPosition(handle) end
+
+--- Moves an actor to x, y, z, keeping its facing.
+---@param handle number
+---@param x number
+---@param y number
+---@param z number
+---@return boolean placed
+function Game.PlaceActor(handle, x, y, z) end
+
+--- Sets or clears a named ActorState bit on an actor, such as "Unkillable" or "NotEnemyPerceivable".
+---@param handle number
+---@param state string
+---@param on boolean
+---@return boolean applied
+function Game.SetActorState(handle, state, on) end
+
+--- Reports whether an actor carries a named ActorState bit.
+---@param handle number
+---@param state string
+---@return boolean? has nil when it cannot be read.
+function Game.ActorHasState(handle, state) end
+
+--- Returns true if the player's avatar is currently alive.
+---@param playerId number?
+---@return boolean
+function Game.IsAvatarAlive(playerId) end
+
+--- Returns true if the avatar figure is marked dead in game state.
+---@param playerId number?
+---@param sku number? Defaults to the current avatar.
+---@return boolean
+function Game.IsAvatarDead(playerId, sku) end
+
+--- Clears the stored death record of a figure.
+---@param playerId number?
+---@param sku number?
+---@return number sku
+function Game.ClearDeathInfo(playerId, sku) end
+
+--- Respawns the avatar at the last checkpoint.
+---@param playerId number?
+---@param sku number?
+---@return number sku
+function Game.CheckpointRespawn(playerId, sku) end
+
+--- Clears the death record and reloads the character model.
+---@param playerId number?
+---@param sku number?
+---@return number sku
+function Game.ReviveAvatar(playerId, sku) end
+
+--- Returns the Sparks balance of the host player.
+---@return number
+function Game.GetSparks() end
+
+--- Adds an item to the inventory; "Items.money" adds Sparks.
+---@param id string
+---@param amount number? Defaults to 1.
+---@return number amount
+function Game.AddToInventory(id, amount) end
+
+--- Removes currency from the inventory. The game ignores a removal larger than the balance.
+---@param id string Only currency such as "Items.money".
+---@param amount number? Defaults to 1.
+---@return number amount
+function Game.RemoveFromInventory(id, amount) end
+
+--- Returns the level of the avatar, 0 to 20.
+---@param sku number? Defaults to the current avatar.
+---@param playerId number?
+---@return number level
+function Game.GetAvatarLevel(sku, playerId) end
+
+--- Raises the avatar by one level.
+---@param playerId number?
+---@param sku number?
+---@param route string? "players" (default) or "skilltree".
+---@return number sku
+function Game.LevelUpAvatar(playerId, sku, route) end
+
+--- Loads a world by zone name. Called inside a loaded world it keeps Play Set progress; from the front end it starts the zone without a save.
+---@param levelName string
+---@param force boolean? Skip the game's own check that it allows the transition.
+---@return string levelName
+function Game.LoadLevel(levelName, force) end
+
+--- Returns the name of the current world (the master zone).
+---@return string
+function Game.CurrentWorld() end
+
+--- Returns the name of the zone the player is in.
+---@param playerId number?
+---@return string
+function Game.CurrentZone(playerId) end
+
+--- Reads string metadata of a zone, such as "PlaysetProperties" or "SaveZoneOverride".
+---@param key string
+---@param zone string? Defaults to the current zone.
+---@return string?
+function Game.ZoneString(key, zone) end
+
 --- Changes the active player avatar to the specified SKU ID.
 ---@param skuId number
 function Avatar_ChangeAvatar(skuId) end

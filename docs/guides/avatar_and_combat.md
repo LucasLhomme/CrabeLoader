@@ -53,27 +53,40 @@ print(Game.ActorSpeedScale(p1Handle))
 
 ---
 
-## 3. Health, God Mode & Respawning
+## 3. Staying Alive, Defeat & Respawning
 
-CrabeLoader provides complete control over avatar mortality (`src/api/11b_avatar_state.lua`):
+Whether the avatar is alive, and getting it back after a defeat, live in `src/api/11b_avatar_state.lua`. Making it harder to kill goes through ActorStates (`Game.SetActorState`).
 
-### 3.1. Invulnerability (God Mode)
+### 3.1. Keeping the Hero Alive
+An ActorState is a named bit on an actor. With `Unkillable` the hero still takes damage, but its health stops at 1 instead of reaching 0, and hits no longer knock it down:
+
 ```lua
--- Make Player 1 invulnerable
-Game.SetInvulnerable(true)
+local hero = Game.GetAvatarHandle()
 
--- Turn off invulnerability
-Game.SetInvulnerable(false)
+Game.SetActorState(hero, "Unkillable", true)
+print(Game.ActorHasState(hero, "Unkillable"))   -- true
+
+Game.SetActorState(hero, "Unkillable", false)
 ```
+
+The engine drops the state when the avatar respawns, the hero is swapped or the zone changes, so a mod that wants it kept sets it again every half second. Other states that change how enemies treat the hero are `NotEnemyPerceivable` (enemies stop targeting it) and `EnemyUninterruptable` (a small flinch instead of a fall); the full list is in the game's `gamedb/core/bitmasks.lua`. Health itself is not an attribute you can write: a code cave on the engine's health update is how CrabeMenu's God Mode refills it.
 
 ### 3.2. Defeat & Respawn
 ```lua
--- Instantly defeats the avatar (triggers defeat animation & sound)
-Game.KillAvatar()
+if not Game.IsAvatarAlive() then
+    -- put the hero back at the last checkpoint
+    Game.CheckpointRespawn()
+end
 
--- Forces an immediate respawn at the nearest checkpoint
-Game.RespawnPlayer()
+-- the figure is flagged dead in the game's state
+print(Game.IsAvatarDead())
+
+-- clear that flag, or clear it and reload the character model
+Game.ClearDeathInfo()
+Game.ReviveAvatar()
 ```
+
+`Game.onDeath(playerId, fn)` calls a function when an avatar dies. All of these take an optional player id and default to the host player.
 
 ---
 

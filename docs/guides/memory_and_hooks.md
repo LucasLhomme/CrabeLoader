@@ -10,7 +10,7 @@ CrabeLoader exposes low-level memory primitives from C++ into Lua (`src/api/24_m
 
 ### Core Safety Rules:
 * **Structured Exception Handling (SEH)**: All memory reads and writes pass through vectored exception handlers. If an invalid memory address is accessed, CrabeLoader catches the page fault, prevents an Access Violation crash (`0xC0000005`), logs a warning, and safely returns `nil`.
-* **Zero Direct Memory Writes for Known Gameplay Variables**: If an official native setter exists (such as `Game.PlaceActor` for coordinates or `Game.SetInvulnerable`), prefer it over raw memory writes to avoid physics race conditions with Octane.
+* **Zero Direct Memory Writes for Known Gameplay Variables**: If an official native setter exists (such as `Game.PlaceActor` for coordinates or `Game.SetActorSpeedScale` for movement speed), prefer it over raw memory writes to avoid physics race conditions with Octane.
 
 ```mermaid
 flowchart TD

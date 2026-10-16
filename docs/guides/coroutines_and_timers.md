@@ -67,13 +67,14 @@ While this countdown runs over 4 seconds, the game continues rendering smoothly 
 ```lua
 function activateSuperSpeed(durationSeconds)
     Crabe.spawn(function()
+        local hero = Game.GetAvatarHandle()
         print("Super speed activated!")
-        Game.SetInvulnerable(true)
+        Game.SetActorSpeedScale(hero, 3.0)
 
         -- Wait for the buff duration
         Crabe.wait(durationSeconds * 1000)
 
-        Game.SetInvulnerable(false)
+        Game.SetActorSpeedScale(hero, 1.0)
         print("Super speed expired.")
     end)
 end
