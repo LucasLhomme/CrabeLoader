@@ -187,6 +187,18 @@ Contributions are welcome! Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** fo
 
 ---
 
+## The DIM2 Modding Ecosystem
+
+CrabeLoader is part of the **DIM2** open-source modding suite for Disney Infinity 3.0:
+
+| Project | Description | Link |
+| :--- | :--- | :---: |
+| **CrabeMenu** | Autonomous in-game mod menu (`F5`) with full gamepad and keyboard navigation. | [GitHub](https://github.com/LucasLhomme/CrabeMenu) |
+| **DisneyInfinityPortal** | Physical Disney Infinity Base (Portal) support & figure progress gateway. | [GitHub](https://github.com/LucasLhomme/DisneyInfinityPortal) |
+| **DisneyInfinityCreator** | Comprehensive character creation, model extraction, and modding toolkit. | [GitHub](https://github.com/LucasLhomme/DisneyInfinityCreator) |
+
+---
+
 ## Support & Sponsor
 
 If you find this project helpful and want to support ongoing Disney Infinity 3.0 modding, reverse-engineering, and engine tooling:
