@@ -133,8 +133,36 @@ def isolate_sides_and_feet(verts, faces, weights, names, anchors, log: Log) -> n
         weights[np.ix_(mask, [j for j, name in enumerate(names) if name.endswith(other)])] = 0.0
     totals = weights.sum(1, keepdims=True)
     weights = np.where(totals > 1e-6, weights / np.maximum(totals, 1e-6), original)
-    log(f"  {rigid.sum()} vertices of loose pieces below the knees bound to their ankle; cross-side weights removed")
+    blended = _blend_piece_seams(verts, weights, rigid, side_of)
+    log(f"  {rigid.sum()} vertices of loose pieces below the knees bound to their ankle "
+        f"({blended} near the trouser hem blended with it); cross-side weights removed")
     return weights
+
+
+SEAM_REACH = 0.04
+"""Height share over which a loose foot piece follows its neighbour (the trouser hem) before turning rigid."""
+
+
+def _blend_piece_seams(verts, weights, rigid, side_of) -> int:
+    """A shoe 100% on the ankle next to a hem skinned to the shin comes apart when the ankle turns.
+    Shoe vertices close to the other surface copy that surface's weights, fading to rigid within SEAM_REACH."""
+    from scipy.spatial import cKDTree
+    if not rigid.any() or rigid.all():
+        return 0
+    reach = SEAM_REACH * float(verts[:, 1].max())
+    changed = 0
+    for side in ("Left", "Right"):
+        piece = rigid & (side_of == side)
+        other = ~rigid & (side_of == side)
+        if not piece.any() or not other.any():
+            continue
+        dist, idx = cKDTree(verts[other]).query(verts[piece])
+        t = np.clip(dist / reach, 0.0, 1.0)[:, None]
+        theirs = weights[other][idx]
+        rows = np.flatnonzero(piece)
+        weights[rows] = (1 - t) * theirs + t * weights[rows]
+        changed += int((t[:, 0] < 1).sum())
+    return changed
 
 
 ARM_BONES = ("Clavicle_", "Shoulder_", "Elbow_", "Hand_")
