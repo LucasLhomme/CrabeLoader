@@ -127,7 +127,7 @@ def vertex_tangents(verts, uvs, normals, faces):
 
 
 def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = True) -> RigResult:
+              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = False) -> RigResult:
     """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone.
 
     `weight_transfer`: when True, the rig is built both ways (bone heat and weights copied from the base body) and
@@ -153,7 +153,7 @@ def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender
 
 
 def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = True) -> RigResult:
+               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = False) -> RigResult:
     positions = model.vertices()
     faces = model.faces
     uvs = model.uvs
@@ -219,7 +219,7 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
         merged[:, col] += w[:, j]
     if finger_weights:
         from src.core.fingers import add_fingers
-        merged, palette_cols = add_fingers(baked, merged, palette_cols, base)
+        merged, palette_cols = add_fingers(baked, merged, palette_cols, base, log)
     idx, wq = quantize_weights(merged, palette_cols)
     log(f"  {len(baked)} vertices, {len(vfaces)} triangles, weights: {method}")
     if len(vfaces) > HEAVY_TRIANGLES:
