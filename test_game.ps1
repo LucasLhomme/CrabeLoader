@@ -98,6 +98,12 @@ if (Test-Path $apiDir) {
 # Deploy to mods/ directory
 $modsDir = Join-Path $resolvedGameDir "mods"
 if (!(Test-Path $modsDir)) { New-Item -ItemType Directory -Force -Path $modsDir | Out-Null }
+foreach ($obsoleteMod in @("resolution.lua", "window_mode.lua")) {
+    $obsoletePath = Join-Path $modsDir $obsoleteMod
+    if (Test-Path $obsoletePath) {
+        Remove-Item -Path $obsoletePath -Force -ErrorAction SilentlyContinue
+    }
+}
 if (Test-Path (Join-Path $projectRoot "mods")) {
     Copy-Item -Path (Join-Path $projectRoot "mods\*.lua") -Destination $modsDir -Force -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $projectRoot "mods") -Directory |

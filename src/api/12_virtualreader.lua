@@ -341,22 +341,23 @@ local function patchGridCharacter()
             local origClose = loadout.HandleCloseButton
             loadout.HandleCloseButton = function(self)
                 if not self.hitContinue then
+                    local playerNum = (self.InstanceData and self.InstanceData.playerNum) or 0
                     if self.loadUGCHandle ~= nil then
-                        local h = UI.GetHandleFromName(self.loadUGCHandle, self.InstanceData.playerNum)
+                        local h = UI.GetHandleFromName(self.loadUGCHandle, playerNum)
                         if h ~= UI.INVALID_UI_HANDLE then
-                            self:CallScreenFunctionByScreenName(self.loadUGCHandle, self.InstanceData.playerNum, "SetScreenActive", true)
-                            self:CallScreenFunctionByScreenName(self.loadUGCHandle, self.InstanceData.playerNum, "SetFocus", true)
+                            self:CallScreenFunctionByScreenName(self.loadUGCHandle, playerNum, "SetScreenActive", true)
+                            self:CallScreenFunctionByScreenName(self.loadUGCHandle, playerNum, "SetFocus", true)
                         end
                     else
                         local psHandle = UI.GetHandleFromName("PlaysetSelectMenu", 0)
                         if psHandle ~= UI.INVALID_UI_HANDLE then
-                            self:CallScreenFunctionByScreenName("PlaysetSelectMenu", self.InstanceData.playerNum, "SetScreenActive", true)
-                            self:CallScreenFunctionByScreenName("PlaysetSelectMenu", self.InstanceData.playerNum, "SetFocus", true)
+                            self:CallScreenFunctionByScreenName("PlaysetSelectMenu", playerNum, "SetScreenActive", true)
+                            self:CallScreenFunctionByScreenName("PlaysetSelectMenu", playerNum, "SetFocus", true)
                         else
                             local plHandle = UI.GetHandleFromName("PlaysetListWin32", 0)
                             if plHandle ~= UI.INVALID_UI_HANDLE then
-                                self:CallScreenFunctionByScreenName("PlaysetListWin32", self.InstanceData.playerNum, "SetScreenActive", true)
-                                self:CallScreenFunctionByScreenName("PlaysetListWin32", self.InstanceData.playerNum, "SetFocus", true)
+                                self:CallScreenFunctionByScreenName("PlaysetListWin32", playerNum, "SetScreenActive", true)
+                                self:CallScreenFunctionByScreenName("PlaysetListWin32", playerNum, "SetFocus", true)
                             end
                         end
                     end
@@ -376,14 +377,6 @@ local function patchGridCharacter()
         plw._crabeNavPatched = true
         plw.GoBack = function(self)
             if self.cloudLoadStarted then return end
-            self:RequestExit()
-        end
-    end
-
-    local mb = rawget(_G, "MenuBase")
-    if type(mb) == "table" and type(mb.GoBack) == "function" and not mb._crabeNavPatched then
-        mb._crabeNavPatched = true
-        mb.GoBack = function(self)
             self:RequestExit()
         end
     end

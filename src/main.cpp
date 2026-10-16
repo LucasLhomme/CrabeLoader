@@ -19,9 +19,6 @@
 #include "shared/version.hpp"
 #include "application/loader.hpp"
 #include "application/plugin_api.hpp"
-#if CRABELOADER_WITH_MULTIPLAYER
-#include "application/multiplayer/multiplayer_manager.hpp"
-#endif
 #include "domain/game_profile.hpp"
 #include "infrastructure/asi_loader.hpp"
 #include "infrastructure/crash_reporter.hpp"
@@ -155,9 +152,6 @@ bool APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
         crabe::shared::Logger::getInstance().debug("CrabeLoader DLL loaded.");
         scheduleAsiPlugins(lpReserved != nullptr);
-#if CRABELOADER_WITH_MULTIPLAYER
-        crabe::multiplayer::application::MultiplayerManager::getInstance().applyMemoryPatchesNow();
-#endif
         std::thread(initMain).detach();
     }
     else if (ul_reason_for_call == DLL_PROCESS_DETACH && !g_forwardOnly) {

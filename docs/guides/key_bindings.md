@@ -1,6 +1,6 @@
 # Key Bindings
 
-`mods/keybinds/` lets players rebind the game's own controls from the game's Options menu. It ships with CrabeLoader.
+The in-game keybinds subsystem lets players rebind the game's own controls from the game's Options menu. It is built natively into `CrabeLoader.asi` without requiring any loose files in `mods/`.
 
 ## Using it
 
@@ -27,16 +27,10 @@ The bindings are saved to `Crabe/keybinds.json`, next to `crabe.toml`, and resto
 - Triggers and sticks are not remapped.
 - The list of actions and their defaults is the game's PC default layout; an action the game binds elsewhere is not listed.
 
-## Files
+## Native C++23 Architecture
 
-| File | Role |
-|---|---|
-| `main.lua` | Loads the saved bindings, adds the Options entries, runs the mod each tick |
-| `bindings.lua` | The remap list, the swap rule, saving and loading |
-| `controls_page.lua` | The two pages on the game's `SettingsExtras` screen, and the key capture |
-| `options_rows.lua` | The two entries under Controls in the Options list |
-| `menu_focus.lua` | Tells when a game menu has the input |
-| `input.lua` | Reads the key, mouse button or pad button pressed during a capture, and the mouse wheel |
-| `glyphs.lua` | Maps an input to the game's `cbi_*` key icon |
-
-The offline tests are in `tests/lua/test_keybinds.lua`.
+Key bindings are implemented entirely in compiled C++23 (`src/infrastructure/patch/patch_keybind.cpp`), exactly like resolution presets (`patch_resolution.cpp`) and borderless window mode (`patch_borderless.cpp`):
+- Action definitions, DirectInput/XInput scan codes, and glyph markup formatting are computed in C++.
+- Configurations are read and written to `Crabe/keybinds.json` using `nlohmann::json`.
+- Conflicting actions are automatically swapped directly in the C++ remapping table (`InputRemap::get()`).
+- The in-game UI is injected into the vanilla `SettingsMenu` and `SettingsExtras` screens via native C callbacks without requiring any Lua files in `mods/`.

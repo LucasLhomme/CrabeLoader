@@ -1,8 +1,0 @@
-{
-  "name": "Key Bindings",
-  "version": "1.0.0",
-  "minLoaderVersion": "1.0.0",
-  "author": "Lucas Lhomme",
-  "description": "Rebind the game's own keys, mouse buttons and controller buttons from two pages under Options > Controls.",
-  "entry": "main.lua"
-}
