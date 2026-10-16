@@ -33,6 +33,24 @@ class RigResult:
     bone_w: np.ndarray
     method: str
     anchors: dict
+    baked_flat: np.ndarray | None = None
+    """Bind-pose vertices from the linear bake (shoulders folded towards the joint: suits jackets and sleeves)."""
+    normals_flat: np.ndarray | None = None
+    baked_round: np.ndarray | None = None
+    """Bind-pose vertices from the dual-quaternion bake + chest/arm smoothing (round shoulders: suits bare arms)."""
+    normals_round: np.ndarray | None = None
+    roundness: float = 0.0
+
+    def set_roundness(self, value: float) -> None:
+        """Mix the two bakes (0 = linear, 1 = round shoulders); weights are unchanged, only the rest shape moves."""
+        if self.baked_round is None or self.baked_flat is None:
+            return
+        t = float(np.clip(value, 0.0, 1.0))
+        self.roundness = t
+        self.baked = (1 - t) * self.baked_flat + t * self.baked_round
+        n = (1 - t) * self.normals_flat + t * self.normals_round
+        self.normals = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+        self.tangents, self.tangent_sign = vertex_tangents(self.baked, self.uvs, self.normals, self.faces)
 
     def posed(self, pose: str, amount: float = 1.0) -> np.ndarray:
         """Vertices in a preview pose; `amount` scales the pose angle (1.0 = the standard test pose)."""
@@ -152,6 +170,23 @@ def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender
     return robust if keep_robust else standard
 
 
+SHOULDER_SMOOTHING = 8
+"""Smoothing passes on the chest/arm seam of the round-shoulder bake."""
+
+
+def shoulder_blend(weights: np.ndarray, names: list) -> np.ndarray:
+    """0-1 per vertex: how much it sits on the seam between the chest and the upper arm (1 = half and half)."""
+    col = lambda n: weights[:, names.index(n)] if n in names else np.zeros(len(weights))  # noqa: E731
+    out = np.zeros(len(weights))
+    for side, _ in SIDES:
+        arm = col(f"Shoulder_{side}")
+        torso = col(f"Clavicle_{side}") + col("Spine3") + col("Spine2")
+        total = arm + torso
+        share = arm / np.maximum(total, 1e-9)
+        out = np.maximum(out, np.clip(4 * share * (1 - share), 0, 1) * np.clip(total, 0, 1))
+    return out
+
+
 def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
                log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = False) -> RigResult:
     positions = model.vertices()
@@ -209,6 +244,17 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
         baked += w[:, col:col + 1] * (tpose @ m + t)
         bnormals += w[:, col:col + 1] * (tnormals @ np.linalg.inv(m).T)
     bnormals /= np.maximum(np.linalg.norm(bnormals, axis=1, keepdims=True), 1e-12)
+    baked_round = normals_round = None
+    from src.core import dqs
+    transforms = [bake[bone] for bone in names]
+    if all(dqs.is_rigid(m) for m, _ in transforms):
+        # Second rest shape for the "shoulder roundness" slider: rotations blended as dual quaternions (the
+        # shoulder keeps its volume) then the chest/arm seam smoothed.
+        baked_round, normals_round = dqs.blend(tpose, tnormals, w, transforms)
+        normals_round /= np.maximum(np.linalg.norm(normals_round, axis=1, keepdims=True), 1e-12)
+        strength = shoulder_blend(w, list(names))
+        if strength.any():
+            baked_round = dqs.smooth_region(baked_round, vweld, wfaces[ok], strength, len(wverts), SHOULDER_SMOOTHING)
     tangents, tsign = vertex_tangents(baked, vuv, bnormals, vfaces)
 
     # Several canonical joints can share a palette bone on adapted skeletons (feet on the ball bone...): merge
@@ -225,7 +271,8 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     if len(vfaces) > HEAVY_TRIANGLES:
         log(f"  WARNING: {len(vfaces)} triangles is heavy for this engine (typical characters: 3000-8000) and "
             "lowers the frame rate in game. Re-import with a Triangle budget (e.g. 8000).")
-    return RigResult(base, tpose, baked, vfaces, vuv, bnormals, tangents, tsign, idx, wq, method, anchors)
+    return RigResult(base, tpose, baked, vfaces, vuv, bnormals, tangents, tsign, idx, wq, method, anchors,
+                     baked.copy(), bnormals.copy(), baked_round, normals_round)
 
 
 def skin(verts, idx, wq, bind_world, posed_world):

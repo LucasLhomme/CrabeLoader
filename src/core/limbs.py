@@ -133,3 +133,27 @@ def preview(verts: np.ndarray, anchors: dict, arm_scale: float, leg_scale: float
         return verts
     weights, names = preview_weights(verts, anchors)
     return inflate(verts, weights, names, anchors, arm_scale, leg_scale, torso_scale)
+
+
+_BAKE_KEY = {"_Clavicle": "Clavicle", "_Hand": "Hand", "_Ankle": "Ankle", "_Hips": "Hips"}
+
+
+def quick_game_pose(verts: np.ndarray, anchors: dict, base_joints: dict) -> np.ndarray:
+    """The model moved into the game's rest pose (arms down) with the rough skeleton weights: a live preview of what
+    "Build the rig" will bake, cheap enough to follow every skeleton slider."""
+    from src.core.rig import bake_transforms
+    bake = bake_transforms(anchors, base_joints)
+    weights, names = preview_weights(verts, anchors)
+    out = np.zeros_like(verts)
+    total = np.zeros(len(verts))
+    for col, name in enumerate(names):
+        key = name
+        if name.startswith("_"):
+            head, _, side = name[1:].partition("_")
+            key = f"{_BAKE_KEY.get('_' + head, head)}_{side}" if side and head != "Hips" else head
+        if key not in bake:
+            continue
+        m, t = bake[key]
+        out += weights[:, col:col + 1] * (verts @ m + t)
+        total += weights[:, col]
+    return out / np.maximum(total, 1e-9)[:, None]

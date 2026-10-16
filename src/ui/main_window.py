@@ -468,6 +468,10 @@ class MainWindow(ctk.CTk):
         self.skel_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(top, text="Custom Skeleton (Green)", variable=self.skel_var,
                         command=self.on_skeleton_toggle, font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w")
+        self.game_pose_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(top, text="Preview in game pose (arms down, as baked)", variable=self.game_pose_var,
+                        command=self.on_game_pose_preview, font=ctk.CTkFont(size=11)).grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.base_skel_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(top, text="Base Skeleton (Cyan)", variable=self.base_skel_var,
                         command=self.on_base_skeleton_toggle, font=ctk.CTkFont(size=11),
@@ -538,10 +542,33 @@ class MainWindow(ctk.CTk):
         """The model as shown before the rig is built: placed, with the limb thickness previewed."""
         verts = self.model.vertices()
         m = self.model
-        if self.anchors is None or max(abs(m.arm_scale - 1), abs(m.leg_scale - 1), abs(m.torso_scale - 1)) < 1e-3:
+        if self.anchors is None:
             return verts
-        from src.core.limbs import preview
-        return preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale)
+        from src.core.limbs import preview, quick_game_pose
+        if max(abs(m.arm_scale - 1), abs(m.leg_scale - 1), abs(m.torso_scale - 1)) >= 1e-3:
+            verts = preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale)
+        if getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get() and self.base is not None:
+            verts = quick_game_pose(verts, self.anchors, self.base.joints)
+        return verts
+
+    def on_game_pose_preview(self):
+        """Skeleton tab: show the model in the game's rest pose (rough weights) while the points are adjusted."""
+        if not self.model or self.anchors is None:
+            return
+        if self.rig is not None:  # the real rig is there: show its in-game pose instead
+            self.pose_buttons.set("In-game pose" if self.game_pose_var.get() else "T-pose")
+            self.on_pose("In-game pose" if self.game_pose_var.get() else "T-pose")
+            return
+        self.renderer.update_model_vertices(self._display_vertices())
+        self._update_skeleton_overlay()
+        self.renderer.request_render()
+
+    def _update_skeleton_overlay(self):
+        """The green fitted skeleton is drawn on the T-pose: hidden while the game-pose preview is on."""
+        if getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get():
+            self.renderer.set_skeleton(None, None)
+        elif self.anchors is not None:
+            self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
 
     def on_limb(self, key, value):
         value = float(value)
@@ -978,6 +1005,15 @@ class MainWindow(ctk.CTk):
         ctk.CTkCheckBox(pose_box, text="Show stretched edges in red", variable=self.heat_var,
                         command=self.on_heat_toggle, font=ctk.CTkFont(size=11), checkbox_width=18,
                         checkbox_height=18).grid(row=4, column=0, sticky="w", pady=(2, 0))
+        self.round_label = ctk.CTkLabel(pose_box, text="", font=ctk.CTkFont(size=11), text_color=GREY,
+                                        justify="left", wraplength=320)
+        self.round_label.grid(row=5, column=0, sticky="w", pady=(6, 0))
+        self.round_slider = ctk.CTkSlider(pose_box, from_=0, to=1, command=self._on_round_drag)
+        self.round_slider.set(float(self.settings.get("shoulder_roundness", 0.0)))
+        self.round_slider.grid(row=6, column=0, sticky="ew")
+        self.round_slider.bind("<ButtonRelease-1>", lambda _e: self.on_roundness(self.round_slider.get()))
+        self._value_entry(pose_box, 5, self.round_slider, self.on_roundness, "{:.2f}")
+        self._on_round_drag(self.round_slider.get(), live=False)
 
         ctk.CTkLabel(tab, text="Entity Type (Character, Enemy, Ally/NPC):", font=ctk.CTkFont(size=12)).grid(
             row=11, column=0, sticky="w")
@@ -1858,7 +1894,7 @@ class MainWindow(ctk.CTk):
             self.renderer.set_model(self._display_vertices(), self.model.faces, self.model.uvs, self._view_texture())
         else:
             self.renderer.update_model_vertices(self._display_vertices())
-        self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
+        self._update_skeleton_overlay()
         self._show_base_rest(True)
         self.renderer.request_render()
 
@@ -2040,6 +2076,30 @@ class MainWindow(ctk.CTk):
         self.renderer.multi_view = self.views_var.get()
         self.renderer.request_render()
 
+    def _on_round_drag(self, value, live=True):
+        self._sync_entry(self.round_slider)
+        self.round_label.configure(text=f"Shoulder roundness: {float(value):.2f} (0 = folded, suits jackets and wide "
+                                        "sleeves; 1 = round, suits bare arms). Live on the built rig.")
+        if live and self.rig is not None:
+            self.rig.set_roundness(float(value))
+            self._refresh_rig_view()
+
+    def on_roundness(self, value):
+        value = float(value)
+        self._on_round_drag(value)
+        self.settings.update(shoulder_roundness=value)
+        if self.rig is not None:
+            self._show_quality()
+
+    def _refresh_rig_view(self):
+        """Redraw the rig in the pose currently shown (after its rest shape changed)."""
+        if self.rig is None:
+            return
+        amount = float(self.pose_amount.get())
+        self.renderer.update_model_vertices(self.rig.posed(self.pose, amount))
+        self.renderer.set_heat_lines(stretched_segments(self.rig, self.pose, amount))
+        self.renderer.request_render()
+
     def _show_quality(self):
         """Measure how much the fresh rig stretches in the test poses and show it (and log it)."""
         try:
@@ -2093,6 +2153,7 @@ class MainWindow(ctk.CTk):
                 self.log("The model, skeleton or base changed while the rig was building: build it again.")
                 return
             self.rig = rig
+            rig.set_roundness(float(self.round_slider.get()))
             self.timeline.set_rig_ready(True)
             # The rig has its own vertex set (seams welded, UV splits rebuilt): show that mesh from now on.
             self.renderer.set_model(rig.tpose, rig.faces, rig.uvs, self._view_texture())

@@ -145,6 +145,16 @@ pantalon ample compte comme épais). Les membres gonflent autour de leur axe, sa
 poids : épaules et hanches restent lisses. L'effet se voit en direct dans la vue (aperçu calculé depuis le squelette) et
 est appliqué pour de bon à la construction du rig.
 
+**Pose du jeu pendant le réglage du squelette.** Onglet Squelette, case « Preview in game pose » : le modèle est
+montré bras baissés, comme le jeu l'affichera, et suit chaque curseur du squelette (aperçu calculé en quelques
+millisecondes avec des poids approchés ; le squelette vert, placé sur la T-pose, est masqué pendant l'aperçu). Si le
+rig est déjà construit, c'est sa vraie pose de jeu qui s'affiche.
+
+**Rondeur des épaules.** Onglet Rig & Export, curseur « Shoulder roundness », actif une fois le rig construit. Les bras
+tournent d'environ 80° pour passer de la T-pose à la pose du jeu. À 0 (défaut), la jonction poitrine/bras est rabattue
+vers l'articulation : adapté aux vestes et manches larges (Sora). À 1, elle garde son volume (quaternions duaux +
+lissage) : épaules rondes, adapté aux bras nus (Xehanort). Le mélange s'affiche en direct et c'est lui qui est exporté.
+
 **Pastilles du squelette.** ✓ vert = proche des proportions de la base (y compris après un réglage manuel) ; ✎ bleu =
 réglé à la main mais encore éloigné de la base ; ⚠ = estimé ou trop différent.
 
