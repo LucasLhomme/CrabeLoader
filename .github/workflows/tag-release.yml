@@ -1,0 +1,29 @@
+name: Tag release
+
+# Creates the vX.Y.Z tag (and its GitHub release, notes taken from CHANGELOG.md) when VERSION changes on main.
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create tag and release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="v$(tr -d '[:space:]' < VERSION)"
+          if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+            echo "$version already exists"; exit 0
+          fi
+          notes=$(awk -v v="${version#v}" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {if (on) exit} on' CHANGELOG.md)
+          gh release create "$version" --target "$GITHUB_SHA" --title "$version" --notes "${notes:-Version $version}"
