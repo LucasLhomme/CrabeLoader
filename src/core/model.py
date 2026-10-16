@@ -46,10 +46,22 @@ class Placement:
 class CharacterModel:
     source: SourceModel
     placement: Placement = field(default_factory=Placement)
+    ignored: np.ndarray | None = None
+    """Per-vertex flag: accessories (cape, weapon...) left out of the measurements and skinned to follow the torso."""
+    removed: np.ndarray | None = None
+    """Per-vertex flag: parts left out of the model altogether."""
 
     @property
     def faces(self) -> np.ndarray:
-        return self.source.faces
+        faces = self.source.faces
+        if self.removed is not None and self.removed.any():
+            faces = faces[~self.removed[faces].any(axis=1)]
+        return faces
+
+    def measure_mask(self):
+        """Vertices the measurements must not see (accessories and removed parts), or None."""
+        parts = [m for m in (self.ignored, self.removed) if m is not None and m.any()]
+        return np.logical_or.reduce(parts) if parts else None
 
     @property
     def uvs(self) -> np.ndarray:

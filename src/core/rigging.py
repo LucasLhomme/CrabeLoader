@@ -255,7 +255,7 @@ def apply_piece_overrides(verts, faces, weights, names, overrides, log: Log) -> 
 
 
 def compute_weights(wverts, wfaces, anchors, blender: Path | None, work: Path, log: Log,
-                    overrides=None, transfer=None) -> tuple[list[str], np.ndarray, str]:
+                    overrides=None, transfer=None, accessory=None) -> tuple[list[str], np.ndarray, str]:
     """`transfer`: optional callable (wverts, wfaces, names) -> weights or None (copy from the base body)."""
     names = [b[0] for b in heat_bones()]
     method = "distance"
@@ -292,6 +292,10 @@ def compute_weights(wverts, wfaces, anchors, blender: Path | None, work: Path, l
     weights = isolate_sides_and_feet(wverts, wfaces, weights, names, anchors, log)
     weights = rigid_bridging_pieces(wverts, wfaces, weights, names, anchors, log)
     weights = smooth_leg_spanning_panels(wverts, wfaces, weights, names, log)
+    if accessory is not None and accessory.any():
+        from src.core.accessories import accessory_weights
+        weights = accessory_weights(wverts, weights, accessory, names)
+        log(f"  {int(accessory.sum())} accessory vertices follow the torso")
     weights = apply_piece_overrides(wverts, wfaces, weights, names, overrides, log)
     return names, weights, method
 

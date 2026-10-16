@@ -12,6 +12,7 @@ from src.core.base_character import BaseCharacter
 from src.core.base_pack import has_pack, preview_texture, status
 from src.core import errorlog
 from src.core.config import normalize_blender_path
+from src.core.accessories import ZONE_LIMIT, detect
 from src.core.cleaner import NEEDS_BLENDER, clean_model
 from src.core.config import load_settings, save_settings
 from src.core.exporter import install
@@ -389,8 +390,41 @@ class MainWindow(ctk.CTk):
         self.piece_list.grid(row=r0 + 3, column=0, sticky="ew")
         self.piece_list.grid_columnconfigure(0, weight=1)
 
+        acc = ctk.CTkFrame(tab, fg_color="transparent")
+        acc.grid(row=r0 + 4, column=0, sticky="ew", pady=(10, 0))
+        acc.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(acc, text="Accessories (cape, tail, wings, weapon): they fake the body measurements. Find them, "
+                               "then ignore them (kept, but skinned to follow the torso) or remove them.",
+                     wraplength=330, justify="left", text_color=GREY, font=ctk.CTkFont(size=11)).grid(
+            row=0, column=0, columnspan=2, sticky="w")
+        self.acc_limit = ctk.CTkSlider(acc, from_=0.08, to=0.4, command=self.on_acc_limit)
+        self.acc_limit.set(ZONE_LIMIT)
+        self.acc_limit.grid(row=2, column=0, sticky="ew", pady=(0, 2))
+        self.acc_limit_label = ctk.CTkLabel(acc, text="", font=ctk.CTkFont(size=11), text_color=GREY)
+        self._value_entry(acc, 1, self.acc_limit, self.on_acc_limit, "{:.2f}")
+        self.acc_limit_label.grid(row=1, column=0, sticky="w")
+        self.on_acc_limit(ZONE_LIMIT, detect=False)
+        acc_row = ctk.CTkFrame(acc, fg_color="transparent")
+        acc_row.grid(row=3, column=0, columnspan=2, sticky="ew")
+        acc_row.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        self.acc_buttons = {}
+        for i, (key, text, cmd) in enumerate((("find", "Find", self.on_acc_find), ("ignore", "Ignore", self.on_acc_ignore),
+                                              ("remove", "Remove", self.on_acc_remove),
+                                              ("clear", "Clear", self.on_acc_clear))):
+            self.acc_buttons[key] = ctk.CTkButton(acc_row, text=text, height=26, width=60, fg_color="#27272a",
+                                                  hover_color="#3f3f46", command=cmd,
+                                                  state="normal" if key == "find" else "disabled")
+            self.acc_buttons[key].grid(row=0, column=i, padx=1, sticky="ew")
+        self.acc_label = ctk.CTkLabel(acc, text="", font=ctk.CTkFont(size=11), anchor="w", wraplength=330,
+                                      justify="left")
+        self.acc_label.grid(row=4, column=0, columnspan=2, sticky="w")
+        self.acc_list = ctk.CTkFrame(acc, fg_color="transparent")
+        self.acc_list.grid(row=5, column=0, columnspan=2, sticky="ew")
+        self.acc_list.grid_columnconfigure(0, weight=1)
+        self._zone_mask = None
+
         ctk.CTkButton(tab, text="Preview the texture atlas", fg_color="#27272a", hover_color="#3f3f46",
-                      command=self.on_preview_texture).grid(row=r0 + 4, column=0, sticky="ew", pady=(10, 4))
+                      command=self.on_preview_texture).grid(row=r0 + 5, column=0, sticky="ew", pady=(10, 4))
 
     def _build_skeleton_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -1140,6 +1174,83 @@ class MainWindow(ctk.CTk):
             self._selected_pieces = {int(self._model_pieces()[index])}
         self._show_piece_selection()
 
+    # ------------------------------------------------------------ accessories
+    def _selection_mask(self):
+        """Vertices selected by piece and/or by the accessory finder."""
+        if not self.model:
+            return None
+        mask = np.zeros(len(self.model.source.vertices), bool)
+        if self._selected_pieces:
+            mask |= np.isin(self._model_pieces(), list(self._selected_pieces))
+        if self._zone_mask is not None:
+            mask |= self._zone_mask
+        return mask if mask.any() else None
+
+    def on_acc_limit(self, value, detect=True):
+        self.acc_limit_label.configure(text=f"Depth behind the body to count as accessory: {float(value):.2f} × height")
+        if detect and self.model and self._zone_mask is not None:
+            self.on_acc_find()
+
+    def on_acc_find(self):
+        if not self.model:
+            self.acc_label.configure(text="Import a model first.")
+            return
+        findings = detect(self.model.vertices(), self._model_pieces(), float(self.acc_limit.get()))
+        self._zone_mask = np.logical_or.reduce([f.mask for f in findings]) if findings else None
+        self.acc_label.configure(text="\n".join(f"• {f.text}" for f in findings) if findings else
+                                 "Nothing found at this depth: lower the limit to catch less deep parts.")
+        self._show_piece_selection()
+
+    def _apply_accessories(self, kind):
+        mask = self._selection_mask()
+        if mask is None or not self.model:
+            return
+        attr = "ignored" if kind == "ignore" else "removed"
+        old = getattr(self.model, attr)
+        setattr(self.model, attr, mask if old is None else (old | mask))
+        self._selected_pieces, self._zone_mask = set(), None
+        self.acc_label.configure(text="")
+        self._refresh_accessory_list()
+        if kind == "remove":
+            self.piece_overrides = []
+            self._refresh_piece_list()
+            self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self._show_piece_selection()
+        self._refit()
+        self.log(f"{int(mask.sum())} vertices {'ignored for the measurements and following the torso' if kind == 'ignore' else 'removed from the model'}. Build the rig again to apply it.")
+
+    def on_acc_ignore(self):
+        self._apply_accessories("ignore")
+
+    def on_acc_remove(self):
+        self._apply_accessories("remove")
+
+    def on_acc_clear(self):
+        self._selected_pieces, self._zone_mask = set(), None
+        self.acc_label.configure(text="")
+        self._show_piece_selection()
+
+    def _restore_accessories(self, attr):
+        setattr(self.model, attr, None)
+        self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
+        self._refresh_accessory_list()
+        self._refit()
+
+    def _refresh_accessory_list(self):
+        for child in self.acc_list.winfo_children():
+            child.destroy()
+        if not self.model:
+            return
+        row = 0
+        for attr, title in (("ignored", "ignored (follow the torso)"), ("removed", "removed")):
+            mask = getattr(self.model, attr)
+            if mask is not None and mask.any():
+                ctk.CTkLabel(self.acc_list, text=f"• {int(mask.sum())} vertices {title}", font=ctk.CTkFont(size=11),
+                             anchor="w").grid(row=row, column=0, sticky="w")
+                ctk.CTkButton(self.acc_list, text="✕", width=26, height=22, fg_color="#27272a", hover_color="#3f3f46",
+                              command=lambda a=attr: self._restore_accessories(a)).grid(row=row, column=1, padx=2)
+                row += 1
+
     def on_piece_grow(self):
         """Add the small loose pieces that touch the selection (hair strips, cloth cards, jewels...)."""
         if not self._selected_pieces or not self.model:
@@ -1156,21 +1267,23 @@ class MainWindow(ctk.CTk):
         self._show_piece_selection()
 
     def _show_piece_selection(self):
-        if not self._selected_pieces:
+        mask = self._selection_mask()
+        has_pieces = bool(self._selected_pieces)
+        for key in ("ignore", "remove", "clear"):
+            self.acc_buttons[key].configure(state="normal" if mask is not None else "disabled")
+        if mask is None:
             self.piece_label.configure(text="No piece selected.")
             self.piece_apply.configure(state="disabled")
             self.piece_grow.configure(state="disabled")
             self.renderer.set_select_lines(None)
             self.renderer.request_render()
             return
-        labels = self._model_pieces()
-        members = np.isin(labels, list(self._selected_pieces))
-        faces = self.model.faces[members[self.model.faces].all(axis=1)]
+        faces = self.model.faces[mask[self.model.faces].all(axis=1)]
         edges = np.unique(np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1), axis=0)
-        self.piece_label.configure(text=f"Selected: {len(self._selected_pieces)} piece(s), {int(members.sum())} vertices "
-                                        f"(magenta in the view).")
-        self.piece_apply.configure(state="normal")
-        self.piece_grow.configure(state="normal")
+        self.piece_label.configure(text=f"Selected: {int(mask.sum())} vertices (magenta in the view)"
+                                        + (f", {len(self._selected_pieces)} piece(s)" if has_pieces else ""))
+        self.piece_apply.configure(state="normal" if has_pieces else "disabled")
+        self.piece_grow.configure(state="normal" if has_pieces else "disabled")
         self.renderer.set_select_lines(self.model.vertices()[edges].reshape(-1, 3))
         self.renderer.request_render()
 
@@ -1224,12 +1337,13 @@ class MainWindow(ctk.CTk):
         self.suggest_button.configure(state="disabled", text="Testing the figures… (1 to 2 minutes)")
         transfer = self._weight_transfer()
         fingers = bool(self.fingers_var.get())
+        ignored, removed = self.model.ignored, self.model.removed
 
         def job():
             return rank_bases(source, load_roster(), WORK_DIR / "rank", lambda text: self._events.put(
                 lambda: self.suggest_button.configure(text=text)),
                 blender=Path(blender) if blender else None, weight_transfer=transfer, skip=set(previous),
-                fingers=fingers)
+                fingers=fingers, ignored=ignored, removed=removed)
 
         def done(result, error):
             self._set_busy(False)
@@ -1353,6 +1467,9 @@ class MainWindow(ctk.CTk):
             text_color=YELLOW if source.report else GREEN)
         self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
         self.piece_overrides, self._piece_labels, self._selected_pieces = [], None, set()
+        self._zone_mask = None
+        self.acc_label.configure(text="")
+        self._refresh_accessory_list()
         self._refresh_piece_list()
         self._show_piece_selection()
         self._sync_placement_controls()
@@ -1380,7 +1497,7 @@ class MainWindow(ctk.CTk):
             self.log(f"Rig import failed: {exc}")
 
     def _refit(self):
-        self.auto_props, self.fit_report = measure(self.model.vertices(), self.model.faces, self.base)
+        self.auto_props, self.fit_report = measure(self.model.vertices(), self.model.faces, self.base, self.model.measure_mask())
         self.props = self.auto_props
         self._checked = set()
         summary = self.fit_report.summary()

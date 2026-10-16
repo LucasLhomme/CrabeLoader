@@ -167,7 +167,12 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     if weight_transfer:
         from src.core import weight_transfer as wt
         transfer = lambda v, f, n: wt.transfer(v, f, base, anchors, n, log)  # noqa: E731
-    names, weights, method = compute_weights(wverts, wfaces[ok], anchors, blender, work, log, overrides, transfer)
+    accessory = None
+    if model.ignored is not None and model.ignored.any():
+        accessory = np.zeros(len(wverts), bool)
+        accessory[corner_to_weld[np.flatnonzero(model.ignored)]] = True
+    names, weights, method = compute_weights(wverts, wfaces[ok], anchors, blender, work, log, overrides, transfer,
+                                             accessory)
 
     log("Building the final vertex set...")
     uv_key = np.round(uvs * 65536).astype(np.int64)
@@ -175,6 +180,11 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     _, first, remap = np.unique(keys, axis=0, return_index=True, return_inverse=True)
     remap = remap.reshape(-1)
     vweld, vuv, vfaces = corner_to_weld[first], uvs[first], remap[faces]
+    used = np.unique(vfaces)  # removed parts leave vertices that no face uses
+    if len(used) < len(vweld):
+        compact = np.full(len(vweld), -1)
+        compact[used] = np.arange(len(used))
+        vweld, vuv, vfaces = vweld[used], vuv[used], compact[vfaces]
     if len(vweld) > MAX_VERTICES:
         raise ValueError(f"model too detailed: {len(vweld)} vertices (max {MAX_VERTICES}). "
                          "Decimate it in Blender (Decimate modifier) and import it again.")

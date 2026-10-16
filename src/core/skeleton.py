@@ -134,7 +134,12 @@ def _crosses_midline(mesh: trimesh.Trimesh, y: float, x_limit: float) -> bool:
     return bool(np.any(inside & (np.sign(x0) != np.sign(x1))))
 
 
-def measure(vertices: np.ndarray, faces: np.ndarray, base: BaseCharacter) -> tuple[Proportions, FitReport]:
+def measure(vertices: np.ndarray, faces: np.ndarray, base: BaseCharacter,
+            ignore=None) -> tuple[Proportions, FitReport]:
+    """`ignore`: per-vertex flags of parts the measurement must not see (cape, weapon...)."""
+    from src.core.accessories import strip
+
+    vertices, faces = strip(vertices, faces, ignore)
     mesh = trimesh.Trimesh(vertices, faces, process=False)
     x, y, z = vertices.T
     h = float(y.max())

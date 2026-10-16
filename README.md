@@ -114,6 +114,18 @@ rester plats. La pose **Fist** du sélecteur montre le résultat.
 fichier), unité et axe vertical. Un modèle skinné est lu dans sa pose de repos. Avec la case de nettoyage cochée,
 Blender (import Collada) le nettoie comme les autres formats.
 
+**Accessoires (cape, queue, ailes, arme).** Une cape qui pend derrière le bassin fausse les mesures (profondeur du
+torse, genoux, entrejambe) et se fait déchirer par les jambes. Dans l'onglet Modèle, boîte « Accessories » :
+
+- **Find** cherche (1) tout ce qui est plus loin derrière le corps que la profondeur réglée (curseur, 0,20 × la
+  hauteur par défaut), même si la cape est soudée au corps, et (2) les pièces séparées qui dépassent. Le résultat est
+  surligné en magenta. Tu peux aussi sélectionner une pièce avec Ctrl+clic.
+- **Ignore** : la partie reste dans le modèle, mais n'est plus vue par l'auto-fit ni par le classement des bases, et elle
+  suit le torse (hanches, buste) au lieu des jambes et des bras.
+- **Remove** : la partie est retirée du modèle.
+- **✕** à côté de la ligne annule l'une ou l'autre. « Lock » (pièce rigide sur un os) reste disponible pour les pièces
+  séparées.
+
 **Onglet Skeleton.** Chaque curseur a une petite note (sur quoi aligner le point vert) et une **case de saisie** à droite
 pour taper la valeur exacte (Entrée valide). Une petite icône à droite de chaque point : ✓ trouvé sur le mesh, ⚠ jaune estimé par l'auto-fit,
 ⚠ orange loin des proportions de la base, ✎ réglé par toi ; survole-la pour lire la raison. Les curseurs en jaune « ⚠ check » sont ceux que l'auto-fit n'a fait

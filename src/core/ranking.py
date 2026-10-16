@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from src.core.base_character import BaseCharacter
+from src.core.accessories import strip
 from src.core.model import CharacterModel, auto_placement
 from src.core.quality import deformation_report
 from src.core.rig import build_rig
@@ -172,14 +173,15 @@ def rank_by_shape(model_profile: np.ndarray, figures: dict) -> list[tuple[float,
 
 
 def rank_bases(source, entries, work: Path, progress=lambda text: None, shortlist: int = SHORTLIST,
-               blender: Path | None = None, weight_transfer: bool = False, skip=(), fingers: bool = False) -> list[Candidate]:
+               blender: Path | None = None, weight_transfer: bool = False, skip=(), fingers: bool = False,
+               ignored=None, removed=None) -> list[Candidate]:
     """Every distinct figure, ranked: the `shortlist` best not in `skip` get the full rig test (best first), the
     others follow in silhouette order, marked untested. `entries` are roster entries."""
-    reference = CharacterModel(source, auto_placement(source, 2.0))
-    ref_props, _ = measure(reference.vertices(), reference.faces, None)
+    reference = CharacterModel(source, auto_placement(source, 2.0), ignored, removed)
+    ref_props, _ = measure(reference.vertices(), reference.faces, None, reference.measure_mask())
     figures = figure_features(entries, work, progress)
     by_actor = {e.actor: e for e in entries}
-    ordered = rank_by_shape(silhouette_profile(reference.vertices()), figures)
+    ordered = rank_by_shape(silhouette_profile(strip(reference.vertices(), reference.faces, reference.measure_mask())[0]), figures)
     skip = set(skip)
     picks = diverse_shortlist([(d, actor, f) for d, actor, f, _ in ordered if actor not in skip], shortlist)
 
@@ -189,8 +191,8 @@ def rank_bases(source, entries, work: Path, progress=lambda text: None, shortlis
         progress(f"Testing {name} ({n}/{len(picks)})…")
         try:
             base = BaseCharacter.from_pack(by_actor[actor])
-            model = CharacterModel(source, auto_placement(source, base.fit_height))
-            props, _ = measure(model.vertices(), model.faces, base)
+            model = CharacterModel(source, auto_placement(source, base.fit_height), ignored, removed)
+            props, _ = measure(model.vertices(), model.faces, base, model.measure_mask())
             rig = build_rig(model, build_anchors(props, base), base, blender, work, lambda text: None, None,
                             weight_transfer, fingers)
             report = deformation_report(rig)
