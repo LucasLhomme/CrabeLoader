@@ -1786,6 +1786,9 @@ class MainWindow(ctk.CTk):
         slider, label, text, _ = self.place_sliders[key]
         label.configure(text=f"{text}: {float(value):+.2f}")
         self._sync_entry(slider)
+        if self.rig is not None:  # the view shows the rig's vertex set: go back to the model first
+            self.rig = None
+            self.renderer.set_model(self.model.vertices(), self.model.faces, self.model.uvs, self.model.texture)
         self.renderer.update_model_vertices(self.model.vertices())
         self.renderer.request_render()
         if getattr(self, "_place_job", None):
