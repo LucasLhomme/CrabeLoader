@@ -127,6 +127,12 @@ modèle (vue de face, T-pose, texture avec le filtre) et écrit dans le mod `<ac
 « Preview » montre le résultat. Expérimental : si la grille de sélection garde l'icône par défaut, le PNG reste
 utilisable tel quel.
 
+**Audit des animations.** Onglet Rig & Export, bouton « Audit all animations » (ou `python tools/audit.py modele.glb`) :
+chaque clip est joué image par image sur ton rig, et Creator indique pour chacun la part d'arêtes déformées de plus de
+2×, l'image la pire et les zones touchées (épaule, coude, main, jambe...). Les clips sont les mouvements procéduraux de
+Creator, pas les animations d'origine du jeu : c'est un test de résistance fidèle aux mouvements, pas une copie. Les
+doigts suivent désormais la main dans ces clips (avant, ils restaient en arrière et déchiraient les mains à l'écran).
+
 **Pastilles du squelette.** ✓ vert = proche des proportions de la base (y compris après un réglage manuel) ; ✎ bleu =
 réglé à la main mais encore éloigné de la base ; ⚠ = estimé ou trop différent.
 
