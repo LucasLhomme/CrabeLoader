@@ -53,6 +53,8 @@ class CharacterModel:
     arm_scale: float = 1.0
     """Arm thickness around the bone axis (1 = as modelled), applied when the rig is built."""
     leg_scale: float = 1.0
+    torso_scale: float = 1.0
+    """Chest and belly thickness around the spine (the pelvis follows halfway)."""
     look: float = 0.0
     """Game-look filter strength (0 = original texture)."""
     match: float = 0.0

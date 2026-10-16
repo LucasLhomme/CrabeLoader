@@ -28,3 +28,13 @@ def test_inflate_scales_radius_not_length():
 
 def test_radius_and_suggest():
     assert abs(limbs.limb_radius(_arm(0.03), ANCHORS["Shoulder_Left"], ANCHORS["Elbow_Left"]) - 0.03) < 1e-6
+
+
+def test_torso_scale_widens_chest_only():
+    anchors = {"Hips": np.array([0, 1.0, 0]), "Spine2": np.array([0, 1.2, 0]), "Spine3": np.array([0, 1.4, 0]),
+               "Neck": np.array([0, 1.6, 0])}
+    v = np.array([[0.15, 1.3, 0], [0.15, 1.7, 0]])  # chest, beside the head (no torso weight)
+    names = ["Spine2", "Head"]
+    w = np.array([[1.0, 0.0], [0.0, 1.0]])
+    out = limbs.inflate(v, w, names, anchors, torso_scale=1.4)
+    assert np.allclose(out[0], [0.21, 1.3, 0]) and np.allclose(out[1], v[1])

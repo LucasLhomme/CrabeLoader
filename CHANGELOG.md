@@ -7,6 +7,7 @@ Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
 ### Ajouté
+- Épaisseur du torse (curseur « Torso », suggestion d'après la base, plafonnée à ×1,4).
 - Aperçu en direct de l'épaisseur des membres dans la vue 3D, avant la construction du rig.
 - Aperçu en direct des filtres de texture (Game look, luminosité) sur le modèle et dans la fenêtre de l'atlas, avec
   une case « Show the original » pour comparer.

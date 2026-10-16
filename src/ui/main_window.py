@@ -514,11 +514,11 @@ class MainWindow(ctk.CTk):
         limbs = ctk.CTkFrame(tab, fg_color="transparent")
         limbs.grid(row=5, column=0, sticky="ew", pady=(6, 0))
         limbs.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(limbs, text="Limb thickness (Disney Infinity figures have thick arms; thin limbs get pinched "
-                                 "in game). Applied when the rig is built.", wraplength=330, justify="left",
+        ctk.CTkLabel(limbs, text="Thickness (Disney Infinity figures have thick arms and a chunky body; thin limbs "
+                                 "get pinched in game). Shown live, applied when the rig is built.", wraplength=330, justify="left",
                      text_color=GREY, font=ctk.CTkFont(size=11)).grid(row=0, column=0, columnspan=2, sticky="w")
         self.limb_sliders = {}
-        for i, (key, text) in enumerate((("arm_scale", "Arms"), ("leg_scale", "Legs"))):
+        for i, (key, text) in enumerate((("arm_scale", "Arms"), ("leg_scale", "Legs"), ("torso_scale", "Torso"))):
             label = ctk.CTkLabel(limbs, text=f"{text}: ×1.00", font=ctk.CTkFont(size=12))
             label.grid(row=1 + 2 * i, column=0, sticky="w")
             slider = ctk.CTkSlider(limbs, from_=0.8, to=1.8, command=lambda v, k=key: self.on_limb(k, v))
@@ -529,18 +529,19 @@ class MainWindow(ctk.CTk):
         self.limb_hint = ctk.CTkLabel(limbs, text="", font=ctk.CTkFont(size=10), text_color=GREY, wraplength=320,
                                       justify="left")
         ctk.CTkButton(limbs, text="Match the base", height=24, fg_color="#27272a", hover_color="#3f3f46",
-                      command=self.on_limb_match).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        self.limb_hint.grid(row=6, column=0, columnspan=2, sticky="w")
+                      command=self.on_limb_match).grid(row=7, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self.limb_hint.grid(row=8, column=0, columnspan=2, sticky="w")
         ctk.CTkLabel(tab, text=legend, text_color=GREY, wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(
             row=6, column=0, sticky="w", pady=4)
 
     def _display_vertices(self):
         """The model as shown before the rig is built: placed, with the limb thickness previewed."""
         verts = self.model.vertices()
-        if self.anchors is None or (abs(self.model.arm_scale - 1) < 1e-3 and abs(self.model.leg_scale - 1) < 1e-3):
+        m = self.model
+        if self.anchors is None or max(abs(m.arm_scale - 1), abs(m.leg_scale - 1), abs(m.torso_scale - 1)) < 1e-3:
             return verts
         from src.core.limbs import preview
-        return preview(verts, self.anchors, self.model.arm_scale, self.model.leg_scale)
+        return preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale)
 
     def on_limb(self, key, value):
         value = float(value)
@@ -560,23 +561,26 @@ class MainWindow(ctk.CTk):
             self.renderer.request_render()
 
     def _limb_suggestion(self):
-        from src.core.limbs import suggest
+        from src.core.limbs import suggest, suggest_torso
         parts = getattr(self, "base_parts", None) or []
         if not (self.model and self.base and self.anchors and parts):
             return None
         base_verts = np.concatenate([p[0] for p in parts])
-        return suggest(self.model.vertices(), self.anchors, base_verts, self.base.joints)
+        verts = self.model.vertices()
+        arms, legs = suggest(verts, self.anchors, base_verts, self.base.joints)
+        return arms, legs, suggest_torso(verts, self.anchors, base_verts, self.base.joints)
 
     def on_limb_match(self):
         values = self._limb_suggestion()
         if values is None:
             self.limb_hint.configure(text="Import a model and pick a base first.")
             return
-        for key, value in zip(("arm_scale", "leg_scale"), values):
+        for key, value in zip(("arm_scale", "leg_scale", "torso_scale"), values):
             self.limb_sliders[key][0].set(value)
             self.on_limb(key, value)
-        self.limb_hint.configure(text=f"Base thickness: arms ×{values[0]:.2f}, legs ×{values[1]:.2f} "
-                                      "(capped at ×1.60; baggy clothes count as thick).")
+        self.limb_hint.configure(text=f"Base thickness: arms ×{values[0]:.2f}, legs ×{values[1]:.2f}, torso "
+                                      f"×{values[2]:.2f} (limbs capped at ×1.60, torso at ×1.40; never thinner; "
+                                      "baggy clothes count as thick).")
 
     # -------------------------------------------------------- abilities & moveset
     def _build_abilities_tab(self, tab):
