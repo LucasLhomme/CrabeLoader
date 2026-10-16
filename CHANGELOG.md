@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Borderless Window Mode Application:** Fixed missing `SetFullscreenState` hook installation so configured display modes apply reliably from startup.
 - **Overlay Windowed Mode Coordinates:** ImGui coordinates now map accurately to back-buffer pixels regardless of client window scale.
 - **Alt+Enter Debouncing:** Eliminated rapid toggle loops while Alt+Enter is held and restricted config writes to explicit mode changes.
+- **Escape & Back Navigation Unblocking Across Playset & Character Selection:** Neutralized Disney's PC "Onboard Tutorial" state checks (`UI_IsOnboardTutorialActive` and `UI_ShouldOnboardTutorialRestrictInput`) that silently swallowed the Escape / Cancel key (`KeyMap.GN_LST_CANCEL`) in `PlaysetListWin32`, `MenuBase` (`PlaysetSelectMenu`, `GameLoad`), and `VirtualReaderPC_Loadout` / `VirtualReaderPC_GridCharacter`. Restored proper parent menu refocusing upon canceling character loadout.
+- **MSVC Multi-Processor Compilation:** Enabled `/MP` in CMake configuration for MSVC, speeding up full rebuild times by compiling translation units concurrently across all available CPU cores.
 
 ## [1.0.0] - 2026-10-01
 
