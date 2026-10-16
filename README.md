@@ -148,7 +148,7 @@ Run it and follow the prompts. It finds the game in your Steam libraries (or let
 ### Option B: manual
 
 1. Copy the release `dinput8.dll` and `CrabeLoader.asi` into your game installation folder (e.g., `<steam-library>\steamapps\common\Disney Infinity 3.0 Gold Edition`), next to `DisneyInfinity3.exe`.
-2. Copy the release zip's `mods/` folder next to them. It holds two ready-to-use mods, `resolution.lua` and `window_mode.lua`, and the mod template.
+2. Copy the release zip's `mods/` folder next to them (or create an empty `mods/` folder).
 3. Coming from 1.0: delete the old `bink2w32.dll`, then rename `bink2w32_orig.dll` back to `bink2w32.dll`.
 
 Already have an ASI loader installed as `dinput8.dll` (such as Ultimate ASI Loader)? Keep it, and copy only `CrabeLoader.asi` next to `DisneyInfinity3.exe`: your ASI loader starts CrabeLoader. In that case the `.asi` plugins in the game folder, `scripts/` and `plugins/` are loaded by your ASI loader, CrabeLoader loads only the ones inside mod folders, and CrabeLoader's start time depends on your ASI loader. See [Native `.asi` Plugins](docs/guides/asi_plugins.md#other-asi-loaders).
@@ -159,7 +159,7 @@ Delete `dinput8.dll` and `CrabeLoader.asi`. No game file was changed by the inst
 
 ### Then
 
-1. Place your mods or packages into the `mods/` directory (the installer leaves it empty, and the release zip's `mods/` folder carries `resolution.lua` and `window_mode.lua`, which you can copy in) (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
+1. Place your mods or packages into the `mods/` directory (such as **[CrabeMenu](https://github.com/LucasLhomme/CrabeMenu)** for an interactive in-game menu).
 2. Launch `DisneyInfinity3.exe`.
    * **`Insert`**: Toggle developer debug overlay and log console.
    * **`F4`**: Hot-reload all active mods.
@@ -184,6 +184,14 @@ The loader is built as `build/Release/CrabeLoader.asi` and the bootstrap as `bui
 ## Contributing
 
 Contributions are welcome! Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for detailed guidelines on our architecture invariants, C++23 standards, Git workflow, and submission checklist.
+
+---
+
+## Support & Sponsor
+
+If you find this project helpful and want to support ongoing Disney Infinity 3.0 modding, reverse-engineering, and engine tooling:
+
+☕ **[Buy Me a Coffee](https://buymeacoffee.com/crabecrabe)** (`buymeacoffee.com/crabecrabe`)
 
 ---
 
