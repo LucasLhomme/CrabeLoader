@@ -1200,12 +1200,14 @@ class MainWindow(ctk.CTk):
         return mask if mask.any() else None
 
     def _on_look_drag(self, value):
+        self._sync_entry(self.look_slider)
         self.look_label.configure(text=f"Game look (texture filter): {float(value):.2f}. Softens baked shading and "
                                        "noise, lifts shadows, boosts colours like the base characters. 0 = original.")
 
     def on_look(self, value):
         """Apply the game-look filter to the texture shown and exported."""
         value = float(value)
+        self._on_look_drag(value)
         self.settings.update(game_look=value)
         if not self.model:
             return
