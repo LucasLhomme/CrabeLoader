@@ -33,6 +33,7 @@
 #include "infrastructure/engine_meridian.hpp"
 #include "infrastructure/engine_resolution.hpp"
 #include "infrastructure/engine_shaders.hpp"
+#include "infrastructure/engine_startup.hpp"
 #include "infrastructure/http_redirect.hpp"
 #include "infrastructure/lua_symbols.hpp"
 #include "infrastructure/lua_call.hpp"
@@ -641,6 +642,9 @@ bool Loader::initialize()
     else
         logger.info("Loader: initialized (degraded, no profile).");
     registerDefaultKeybinds();
+
+    if (config.skipStartupLogos() && !crabe::infrastructure::EngineStartup::get().skipLogos())
+        logger.warning("Loader: skipLogos is set in crabe.toml but the startup logos could not be skipped.");
 
     if (!crabe::presentation::RenderHook::get().initialize()) {
         logger.warning("Loader: failed to initialize the render hook (overlay disabled).");

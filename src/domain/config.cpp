@@ -30,10 +30,12 @@ namespace crabe::domain {
         constexpr std::array<std::string_view, 2> kKnownKeybindKeys = {"hotReload", "devOverlay"};
         constexpr std::array<std::string_view, 1> kKnownMultiplayerKeys = {"enabled"};
         constexpr std::array<std::string_view, 1> kKnownUpdatesKeys = {"check"};
+        constexpr std::array<std::string_view, 1> kKnownStartupKeys = {"skipLogos"};
         constexpr std::array<std::string_view, 1> kKnownHttpKeys = {"redirect"};
         constexpr std::array<std::string_view, 2> kKnownPluginsKeys = {"asi", "skip"};
-        constexpr std::array<std::string_view, 9> kKnownTopLevelKeys = {
-            "general", "display", "keybinds", "multiplayer", "updates", "http", "plugins", "profiles", "quarantine",
+        constexpr std::array<std::string_view, 10> kKnownTopLevelKeys = {
+            "general", "display", "keybinds", "multiplayer", "updates", "startup", "http", "plugins", "profiles",
+            "quarantine",
         };
 
         // Constructs a structured configuration diagnostic.
@@ -344,6 +346,12 @@ namespace crabe::domain {
             collectIgnored(*updates, kKnownUpdatesKeys, "updates", config._ignoredKeys);
         }
 
+        if (const auto* startup = root["startup"].as_table()) {
+            if (auto value = (*startup)["skipLogos"].value<bool>())
+                config._skipStartupLogos = *value;
+            collectIgnored(*startup, kKnownStartupKeys, "startup", config._ignoredKeys);
+        }
+
         if (const auto* plugins = root["plugins"].as_table()) {
             if (auto value = (*plugins)["asi"].value<bool>())
                 config._asiEnabled = *value;
@@ -611,6 +619,10 @@ enabled = false
 
 [updates]
 check = true           # ask GitHub at launch whether a newer CrabeLoader exists; false = never connect
+
+# What the game does while it starts.
+[startup]
+skipLogos = false      # true = skip the Avalanche, Disney, Lucasfilm and Marvel logo movies at launch
 
 # .asi plugins are native DLLs loaded before the game starts, from the game
 # folder, scripts/, plugins/ and the folder of every enabled mod.

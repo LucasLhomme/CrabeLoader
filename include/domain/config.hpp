@@ -121,6 +121,7 @@ namespace crabe::domain {
         [[nodiscard]] std::uint32_t frameLimit() const noexcept { return _frameLimit; }
         [[nodiscard]] bool multiplayerEnabled() const noexcept { return _multiplayerEnabled; }
         [[nodiscard]] bool updateCheckEnabled() const noexcept { return _updateCheckEnabled; }
+        [[nodiscard]] bool skipStartupLogos() const noexcept { return _skipStartupLogos; }
 
         [[nodiscard]] bool asiEnabled() const noexcept { return _asiEnabled; }
         [[nodiscard]] const std::vector<std::string>& asiSkipList() const noexcept { return _asiSkip; }
@@ -168,6 +169,7 @@ namespace crabe::domain {
         void writeDisplaySection(const std::filesystem::path& gameRoot) const;
         bool _multiplayerEnabled{false};
         bool _updateCheckEnabled{true};
+        bool _skipStartupLogos{false};
         bool _asiEnabled{true};
         std::vector<std::string> _asiSkip;
         std::vector<std::pair<std::string, std::string>> _httpRedirects;

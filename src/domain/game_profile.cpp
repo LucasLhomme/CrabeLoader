@@ -121,6 +121,7 @@ namespace {
         { "Script_AddActorStateByName",             0x0030F9C0 },
         { "Script_RemoveActorStateByName",          0x0030FA10 },
         { "Script_MovementSetCumulativeSpeedMultiplier", 0x01468400 },
+        { "StartupLogos::Dispatch",                 0x00F8D6CD },
         { "VirtualReaderSystem::Players_AvatarLevelUp", 0x00749110 },
         { "Script_TestActorStateByName",            0x0030FAD0 },
         { "Script_DamageRadiusExceptActor",         0x00F76330 },

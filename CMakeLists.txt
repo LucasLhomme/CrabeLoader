@@ -220,6 +220,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/engine_kinematics.cpp
     src/infrastructure/engine_meridian.cpp
     src/infrastructure/engine_resolution.cpp
+    src/infrastructure/engine_startup.cpp
     src/infrastructure/patch/patch_resolution.cpp
     src/infrastructure/patch/patch_borderless.cpp
     src/infrastructure/patch/patch_keybind.cpp

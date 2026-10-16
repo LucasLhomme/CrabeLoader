@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-Actor Move Speed & Play Set Resume:** `Game.SetActorSpeedScale` / `Game.ActorSpeedScale` scale one actor's movement speed (the engine's cumulative speed multiplier, signature-checked against the executable), so the player can run faster without speeding up the whole game. `Game.ContinuePlayset` / `Game.CanContinuePlayset` expose the pause menu's own load path, which resumes a Play Set save instead of restarting it. `Game.GetSkillPoints` / `Game.RespecAvatar` read and refund skill tree points, and `Game.SetAvatarLevel` sets the avatar to an absolute level (down as well as up) through the engine's own level-up path.
 
 - **`Crabe.Input.status()`:** reports whether DirectInput is captured, whether any input remap is active and how many virtual keys are captured, to diagnose input a mod left taken from the game.
+- **Startup Logo Skip (`[startup] skipLogos`):** Skips the Avalanche, Disney, Lucasfilm, and Marvel startup logo videos at launch via a native C++23 patch on `PlayStartupFMVS()`, jumping straight to the start screen. Configured in `crabe.toml` under `[startup]`.
 
 ### Fixed
 - **`Crabe.Input.clearRemap()` with no device left mouse remaps in place:** the native read the missing device as the keyboard, so a mod that remapped mouse buttons (CrabeMenu's "lock in-game controls") left them dropped after closing. The wrapper now clears every device when none is given.
