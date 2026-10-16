@@ -24,3 +24,11 @@ A dedicated suite of structured guides in plain English explaining every modding
 
 ### 4. Architectural Invariants & Blueprint
 * **[Architecture Blueprint (Long-Term Reference)](ARCHITECTURE_BLUEPRINT.md)** — Invariant rules, the 4-layer architecture model, decision flowchart ("where does my code belong?"), and the Definition of Done (DoD).
+
+---
+
+## Support & Sponsor
+
+If you find this project helpful and want to support ongoing tools and mods:
+
+? **[Buy Me a Coffee](https://buymeacoffee.com/crabecrabe)** (uymeacoffee.com/crabecrabe)

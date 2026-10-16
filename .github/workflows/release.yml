@@ -117,9 +117,8 @@ jobs:
           fi
           cp build/Release/CrabeInstaller.exe package/
 
-          # Copy mod template, the two ready-to-use mods, and EmmyLua documentation
+          # Copy mod template and EmmyLua documentation
           cp -r mods/_template package/mods/
-          cp mods/resolution.lua mods/window_mode.lua package/mods/
           mkdir -p package/docs
           cp docs/crabe_api.def.lua package/docs/
           mkdir -p package/sdk
@@ -142,9 +141,11 @@ jobs:
           2. Coming from 1.0: delete the old bink2w32.dll, then rename bink2w32_orig.dll to bink2w32.dll.
           3. Copy the 'mods/' folder of this zip next to them, then add your own mods to it.
 
-          Ready-to-use mods in 'mods/' (delete a file to turn it off):
-          - resolution.lua: extra resolutions (4K, ultrawide, Steam Deck...) and a frame rate limit in the Video Settings.
-          - window_mode.lua: a Borderless / Windowed choice in the Video Settings.
+          Built-in Features:
+          - Resolution presets (up to 8K), borderless window mode, and in-game keybinds are built directly into CrabeLoader natively.
+
+          Support the project:
+          - Buy Me a Coffee: https://buymeacoffee.com/crabecrabe
 
           In-game: press Insert for the CrabeLoader overlay. F5 opens the mod menu if CrabeMenu is installed.
 
