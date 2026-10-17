@@ -6,6 +6,8 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+
+## [0.4.0] - 2026-10-17
 ### Ajouté
 - Bouton « Disney Infinity style » : proportions moyennes de 30 personnages humanoïdes du jeu (tête, torse, bras,
   avant-bras, jambes) appliquées en un clic ; « Match the base » conservé ; bouton « Reset ».
@@ -58,7 +60,8 @@ Actions crée alors l'étiquette et la release.
 ## [0.1.0] - 2026-10-15
 - Import du projet Disney Infinity Creator.
 
-[Non publié]: https://github.com/Nabile01/DisneyCreator/compare/v0.3.0...HEAD
+[Non publié]: https://github.com/Nabile01/DisneyCreator/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Nabile01/DisneyCreator/releases/tag/v0.1.0
