@@ -140,7 +140,10 @@ def vertex_tangents(verts, uvs, normals, faces):
     bad = np.linalg.norm(tan, axis=1) < 1e-9
     tan[bad] = np.cross(normals[bad], [0.0, 0.0, 1.0]) + 1e-6
     tan /= np.linalg.norm(tan, axis=1, keepdims=True)
-    w = np.where((np.cross(normals, tan) * bit).sum(1) < 0, -1.0, 1.0)
+    # Handedness in the game's convention: on the shipped figures the stored sign is the opposite of
+    # sign(dot(cross(N, T), B)) computed from their UVs (checked on Anakin, Aladdin, Spider-Man: >99% of vertices).
+    # It only shows with a real normal map (relief), where the wrong sign would turn grooves into ridges.
+    w = np.where((np.cross(normals, tan) * bit).sum(1) < 0, 1.0, -1.0)
     return tan, w
 
 

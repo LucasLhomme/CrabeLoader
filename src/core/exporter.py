@@ -38,7 +38,7 @@ import shutil
 def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Path,
             log: Callable[[str], None], entity_config: EntityConfig | None = None,
             abilities: CharacterAbilities | None = None,
-            use_legacy_zip: bool = False, icon: dict | None = None) -> InstallReport:
+            use_legacy_zip: bool = False, icon: dict | None = None, relief: bool = True) -> InstallReport:
     base = rig.base
     game_dir = Path(game_dir)
     if not (game_dir / "assets").is_dir():
@@ -103,8 +103,14 @@ def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Pat
 
     log("Model files, manifest and patches written")
 
+    normal = None
+    if relief:
+        from src.core.gamelook import coverage
+        from src.core.normalmap import normal_map
+        normal = normal_map(texture, coverage(rig.uvs, rig.faces, texture.size))
+        log(f"Relief normal map made from the texture ({normal.width}x{normal.height})")
     log("Writing CrabeLoader V2 loose VFS textures (.tbody)...")
-    export_loose_textures(ids, texture, mod_dir)
+    export_loose_textures(ids, texture, mod_dir, normal)
     report.notes.append(f"textures: loose VFS {ids.diffuse}.tbody, {ids.normal}.tbody")
 
     if icon is not None:
@@ -116,7 +122,7 @@ def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Pat
     if use_legacy_zip:
         log("Rebuilding legacy encrypted texture archive (optional fallback)...")
         tex_zip = mod_dir / "textures" / f"{ids.prefix}.zip"
-        entries = build_texture_archive(ids, texture, game_dir, WORK_DIR / "textures", tex_zip)
+        entries = build_texture_archive(ids, texture, game_dir, WORK_DIR / "textures", tex_zip, normal)
         report.notes.append(f"textures/{ids.prefix}.zip: {entries} entries (vanilla + 2)")
 
     note = ship_motions_if_needed(base, game_dir, mod_dir)

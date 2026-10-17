@@ -1119,11 +1119,18 @@ class MainWindow(ctk.CTk):
                                             text_color="#09090b", hover_color="#f59e0b",
                                             font=ctk.CTkFont(weight="bold"), command=self.on_install)
         self.install_button.grid(row=15, column=0, sticky="ew", pady=(4, 8))
+        tex_box = ctk.CTkFrame(tab, fg_color="transparent")
+        tex_box.grid(row=14, column=0, sticky="w", pady=(4, 0))
         self.zip_var = ctk.BooleanVar(value=bool(self.settings.get("legacy_zip", True)))
-        ctk.CTkCheckBox(tab, text="Ship the texture archive (.zip) - required for the textures to show in game",
+        ctk.CTkCheckBox(tex_box, text="Ship the texture archive (.zip) - required for the textures to show in game",
                         variable=self.zip_var, font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(legacy_zip=bool(self.zip_var.get()))
-                        ).grid(row=14, column=0, sticky="w", pady=(4, 0))
+                        ).grid(row=0, column=0, sticky="w")
+        self.relief_var = ctk.BooleanVar(value=bool(self.settings.get("relief_normals", True)))
+        ctk.CTkCheckBox(tex_box, text="Relief: carve seams and folds from the texture (normal map, like the game's figures)",
+                        variable=self.relief_var, font=ctk.CTkFont(size=11),
+                        command=lambda: self.settings.update(relief_normals=bool(self.relief_var.get()))
+                        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
         self.log_box = ctk.CTkTextbox(tab, height=240, fg_color="#0c0c0e", font=ctk.CTkFont(family="Consolas", size=11),
                                       wrap="word")
         self.log_box.grid(row=16, column=0, sticky="nsew")
@@ -2371,5 +2378,6 @@ class MainWindow(ctk.CTk):
         abilities = self.abilities
         icon = self._make_icon() if self.icon_var.get() else None
         self._run(lambda: install(rig, model.texture, ident, game_dir, self.log, entity_cfg, abilities=abilities,
-                                    use_legacy_zip=bool(self.zip_var.get()), icon=icon), done)
+                                    use_legacy_zip=bool(self.zip_var.get()), icon=icon,
+                                    relief=bool(self.relief_var.get())), done)
 

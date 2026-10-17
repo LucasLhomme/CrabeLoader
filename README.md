@@ -124,6 +124,10 @@ s'affiche en direct dans la vue 3D et dans « Preview the texture atlas » (vers
 bouge, pleine résolution au relâchement) et c'est celui qui est exporté dans le jeu. Le second curseur « Match the base figure's
 brightness » rapproche la luminosité moyenne de celle de la texture de la base choisie (0 = désactivé).
 
+**Relief.** Case « Relief » (onglet Rig & Export, activée par défaut) : Creator tire une normal map de la texture
+(coutures, plis et bords de couleur légèrement creusés) au format des cartes du jeu, comme les figures officielles.
+Décocher pour revenir à une carte plate.
+
 **Icônes du personnage.** Case « Character icons » (onglet Modèle) : à l'installation, Creator photographie le
 modèle (texture avec le filtre, pose de jeu une fois riggé) et écrit les images au format des fichiers du jeu :
 le portrait HUD 128 px (`ui/icons/hud_playericons_<acteur>.mtb` + texture, nommé dans `mod.json` par

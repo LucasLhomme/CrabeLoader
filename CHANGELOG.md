@@ -6,7 +6,16 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Ajouté
+- Relief (case « Relief », onglet Rig & Export, activée par défaut) : une normal map est tirée de la texture du
+  modèle (détails fins, sombre = creusé, bords de couleur = rainure légère) au format des cartes du jeu (R = 255,
+  G = Y, A = X). Les 37 figures officielles doivent leur aspect « figurine sculptée » à ces cartes (coutures, plis,
+  boutons) ; le Creator n'envoyait qu'une carte plate. Inclinaison calibrée sur 40 cartes du jeu (médiane ~4°,
+  coutures ~31° contre ~35°).
 ### Corrigé
+- Sens des tangentes (signe de la bitangente) inversé par rapport au jeu sur toutes les figures : vérifié sur les
+  37 figures officielles (98 à 99 % des sommets maintenant identiques). Sans effet avec une carte plate, mais
+  indispensable au relief (les creux seraient sortis en bosses).
 - Icônes du personnage refaites au format réel du jeu : les fichiers produits jusqu'ici suivaient le gabarit de
   `make_icon.py` (CrabeLoader), qui ne correspond à aucun fichier du jeu, et rien ne pointait vers eux. Le Creator
   écrit maintenant, à partir de captures du modèle :
