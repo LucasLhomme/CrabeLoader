@@ -1,4 +1,5 @@
 """Loading a downloaded 3D model and placing it the way the engine expects (Y up, facing +Z, feet on the ground)."""
+import re
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
@@ -31,6 +32,8 @@ class SourceModel:
 class Placement:
     upright_fix: bool = False
     """True for Z-up files: rotate them so +Y is up."""
+    upside_down: bool = False
+    """True for files whose figure stands on its head (feet up): turned over before anything else."""
     quarter_turns: int = 0
     """Yaw in 90 degree steps, so that the character faces +Z with its left hand on +X."""
     height: float = 2.13
@@ -121,21 +124,53 @@ class CharacterModel:
         return place(self.source.vertices, self.placement)
 
 
-def pick_model_file(folder: Path) -> Path | None:
-    candidates = [p for p in folder.rglob("*") if p.suffix.lower() in MODEL_EXTENSIONS]
-    candidates.sort(key=lambda p: (MODEL_EXTENSIONS.index(p.suffix.lower()), -p.stat().st_size))
-    return candidates[0] if candidates else None
+SIDE_PARTS = ("ghost", "phantom", "triforce", "weapon", "sword", "shield", "bow", "arrow", "effect", "fx", "prop",
+              "item", "wing", "arm", "hair", "hat", "helmet", "mask", "cape", "acc", "lod", "shadow", "low")
+"""Words that mark a file as a side part or a variant rather than the character itself."""
+
+
+def rank_model_files(files: list[Path], root: Path, hint: str = "") -> list[Path]:
+    """Model files of an archive, the likeliest character first: a name that matches the archive, no side-part word,
+    near the top of the folder tree, then the preferred format and the biggest file."""
+    hint_words = {w for w in re.split(r"[^a-z0-9]+", hint.lower()) if len(w) > 2}
+
+    def key(p: Path):
+        stem = p.stem.lower()
+        words = set(re.split(r"[^a-z0-9]+", stem)) | {w for part in p.relative_to(root).parts[:-1]
+                                                       for w in re.split(r"[^a-z0-9]+", part.lower())}
+        named = any(w in hint_words for w in words if len(w) > 2)
+        side = any(word in stem for word in SIDE_PARTS) or any(
+            word in part.lower() for part in p.relative_to(root).parts[:-1] for word in SIDE_PARTS)
+        depth = len(p.relative_to(root).parts)
+        return (side, not named, depth, MODEL_EXTENSIONS.index(p.suffix.lower()), -p.stat().st_size)
+    return sorted(files, key=key)
+
+
+def model_files(folder: Path) -> list[Path]:
+    return [p for p in folder.rglob("*") if p.suffix.lower() in MODEL_EXTENSIONS]
+
+
+def pick_model_file(folder: Path, hint: str = "") -> Path | None:
+    ranked = rank_model_files(model_files(folder), folder, hint)
+    return ranked[0] if ranked else None
+
+
+def extract_archive(path: Path) -> tuple[Path, list[Path]]:
+    """Unzip an archive into a temporary folder (kept until the app closes): (folder, model files, best first)."""
+    tmp = tempfile.TemporaryDirectory(prefix="dic_model_")
+    _extracted_dirs.append(tmp)
+    with zipfile.ZipFile(path) as archive:
+        archive.extractall(tmp.name)
+    folder = Path(tmp.name)
+    return folder, rank_model_files(model_files(folder), folder, path.stem)
 
 
 def load_source(path: str | Path) -> SourceModel:
     path = Path(path)
     model_file = path
     if path.suffix.lower() == ".zip":
-        tmp = tempfile.TemporaryDirectory(prefix="dic_model_")
-        _extracted_dirs.append(tmp)
-        with zipfile.ZipFile(path) as archive:
-            archive.extractall(tmp.name)
-        model_file = pick_model_file(Path(tmp.name))
+        _, ranked = extract_archive(path)
+        model_file = ranked[0] if ranked else None
         if model_file is None:
             raise ValueError(f"no 3D model ({', '.join(MODEL_EXTENSIONS)}) in {path.name}")
     elif path.suffix.lower() not in MODEL_EXTENSIONS:
@@ -346,6 +381,8 @@ def _rotation(placement: Placement) -> np.ndarray:
     m = np.eye(3)
     if placement.upright_fix:
         m = m @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], float)
+    if placement.upside_down:
+        m = m @ np.diag([-1.0, -1.0, 1.0])
     a = np.radians(90 * (placement.quarter_turns % 4) + placement.yaw_deg)
     yaw = np.array([[np.cos(a), 0, -np.sin(a)], [0, 1, 0], [np.sin(a), 0, np.cos(a)]])
     return m @ yaw
@@ -368,21 +405,93 @@ def place(vertices: np.ndarray, placement: Placement) -> np.ndarray:
     return v
 
 
+def mirror_error(v: np.ndarray, axis: int = 0) -> float:
+    """How far the figure is from mirror symmetric across a vertical plane on `axis` (0 = left/right), as a fraction
+    of its size. A standing character is left/right symmetric; lying on its side, that plane is horizontal."""
+    from scipy.spatial import cKDTree
+    pts = v[np.random.default_rng(0).choice(len(v), min(len(v), 4000), replace=False)]
+    size = np.ptp(v, axis=0).max()
+    if size <= 0:
+        return 1.0
+    mirrored = pts.copy()
+    centre = (pts[:, axis].min() + pts[:, axis].max()) / 2
+    mirrored[:, axis] = 2 * centre - mirrored[:, axis]
+    return float(np.median(cKDTree(pts).query(mirrored)[0]) / size)
+
+
+def arms_score(v: np.ndarray) -> float:
+    """A T-pose is widest at the arms, high on the body: +1 when the widest slab sits near shoulder height, -1 when
+    it sits near the feet (upside down), around 0 when the figure lies on its side (the widest band is the body)."""
+    h = v[:, 1].max()
+    if h <= 0:
+        return 0.0
+    bins = np.minimum((v[:, 1] / h * 20).astype(int), 19)
+    widths = np.zeros(20)
+    for i in range(20):
+        x = v[bins == i, 0]
+        if len(x) >= 5:
+            widths[i] = np.percentile(x, 99) - np.percentile(x, 1)
+    if widths.max() <= 0:
+        return 0.0
+    peak = (np.argmax(widths) + 0.5) / 20
+    sharp = widths.max() / max(np.median(widths[widths > 0]), 1e-6)
+    if sharp < 1.6:  # no clear arm span (A-pose, cloak, lying figure)
+        return 0.0
+    return float(np.clip(1 - abs(peak - 0.8) / 0.3, -1, 1))
+
+
+def standing_score(v: np.ndarray) -> float:
+    """How much a placed vertex set looks like a figure standing on its feet (higher is better).
+
+    A head is one lump on the mid-line; feet are two lumps apart, with little on the mid-line between them. Upside
+    down, it is the reverse. Lying down, the height axis is only the body's thickness. The arm span of a T-pose gives a
+    second, stronger vote."""
+    ext = np.ptp(v, axis=0)
+    if ext[1] < 0.4 * max(ext[0], ext[2]):  # lying flat: the height axis is the body's thickness
+        return -1.0
+    h = v[:, 1].max()
+    cx = (v[:, 0].min() + v[:, 0].max()) / 2
+    near = np.abs(v[:, 0] - cx) < 0.04 * h
+    top, bottom = v[:, 1] > 0.9 * h, v[:, 1] < 0.08 * h
+    lumps = 0.0 if top.sum() < 5 or bottom.sum() < 5 else float(near[top].mean() - near[bottom].mean())
+    return lumps + arms_score(v)
+
+
 def auto_placement(source: SourceModel, height: float) -> Placement:
     ext = np.ptp(source.vertices, axis=0)
-    placement = Placement(upright_fix=bool(ext[1] < min(ext[0], ext[2]) * 0.8), height=height)
+    guess = bool(ext[1] < min(ext[0], ext[2]) * 0.8)
+    options = []
+    for upright in (guess, not guess):
+        # A Y-up file is practically never stored upside down, while a Z-up one may point either way: only consider
+        # flipping together with the stand-up fix (big-headed figures fool the head/feet test otherwise).
+        for flipped in ((False, True) if upright else (False,)):
+            p = Placement(upright_fix=upright, upside_down=flipped, height=height)
+            v = place(source.vertices, p)
+            ext_p = np.ptp(v, axis=0)
+            if ext_p[0] < ext_p[2]:  # judge the figure from the front
+                p.quarter_turns = 1
+                v = place(source.vertices, p)
+            # The extent rule decides when it is clear; the head/feet test settles the rest (and upside-down files).
+            # Left/right symmetry tells standing from lying (flipping keeps it, so the head/feet test settles that).
+            sym = -60 * mirror_error(v)
+            options.append((standing_score(v) + sym + (0.15 if upright == guess else 0.0), p))
+    placement = max(options, key=lambda o: o[0])[1]
+    placement.quarter_turns = 0
     v = place(source.vertices, placement)
     ext = np.ptp(v, axis=0)
     if ext[0] < ext[2]:
         placement.quarter_turns = 1
         v = place(source.vertices, placement)
-    if not faces_forward(v):
+    if not faces_forward(v, trust_native=not placement.upright_fix):
         placement.quarter_turns += 2
     return placement
 
 
-def faces_forward(v: np.ndarray) -> bool:
-    """Feet stick out towards the front: compare how far the soles reach past the shins in +Z and -Z."""
+def faces_forward(v: np.ndarray, trust_native: bool = False) -> bool:
+    """Feet stick out towards the front: compare how far the soles reach past the shins in +Z and -Z.
+
+    With `trust_native` (a Y-up file, which nearly always faces +Z already), only turn round when nothing at all
+    sticks out in front: a cape or a train trailing behind would otherwise win the comparison."""
     h = v[:, 1].max()
     soles = v[:, 1] < 0.06 * h
     shins = (v[:, 1] > 0.15 * h) & (v[:, 1] < 0.3 * h)
@@ -390,4 +499,6 @@ def faces_forward(v: np.ndarray) -> bool:
         return True
     forward = v[soles, 2].max() - v[shins, 2].max()
     backward = v[shins, 2].min() - v[soles, 2].min()
+    if trust_native and forward > 0:
+        return True
     return forward >= backward

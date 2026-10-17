@@ -18,7 +18,7 @@ from src.core.cleaner import NEEDS_BLENDER, clean_model
 from src.core.config import load_settings, save_settings
 from src.core.exporter import install
 from src.core.mod_writer import default_actor, make_identity
-from src.core.model import CharacterModel, auto_placement, load_source
+from src.core.model import CharacterModel, auto_placement, extract_archive, load_source
 from src.core.paths import WORK_DIR
 from src.core.quality import deformation_report, stretched_segments
 from src.core.ranking import rank_bases
@@ -322,9 +322,9 @@ class MainWindow(ctk.CTk):
         row = ctk.CTkFrame(tab, fg_color="transparent")
         row.grid(row=5, column=0, sticky="ew", pady=(2, 10))
         for i, (text, cmd) in enumerate((("↻ 90°", lambda: self.on_turn(1)), ("↻ 180°", lambda: self.on_turn(2)),
-                                         ("Stand up", self.on_upright))):
+                                         ("Stand up", self.on_upright), ("⇅ Flip", self.on_flip))):
             row.grid_columnconfigure(i, weight=1)
-            ctk.CTkButton(row, text=text, width=90, fg_color="#27272a", hover_color="#3f3f46", command=cmd).grid(
+            ctk.CTkButton(row, text=text, width=70, fg_color="#27272a", hover_color="#3f3f46", command=cmd).grid(
                 row=0, column=i, padx=2, sticky="ew")
 
         self.height_label = ctk.CTkLabel(tab, text="Model height")
@@ -1783,6 +1783,11 @@ class MainWindow(ctk.CTk):
             filetypes=[("3D models and ZIP", "*.zip *.obj *.glb *.gltf *.fbx *.dae *.ply *.stl *.off"), ("All", "*.*")])
         if not path:
             return
+        shown = path
+        if Path(path).suffix.lower() == ".zip":
+            path = self._pick_from_archive(path)
+            if not path:
+                return
         blender = normalize_blender_path(self.blender_entry.get()) if hasattr(self, "blender_entry") else ""
         if Path(path).suffix.lower() in NEEDS_BLENDER or self.clean_var.get():
             if not blender or not Path(blender).is_file():
@@ -1791,20 +1796,62 @@ class MainWindow(ctk.CTk):
                                                    "tab.", text_color=RED)
                     return
                 errorlog.info(f"import without cleaning: blender path {blender!r} is not a file")
-                self._finish_import(path, path, [f"NOT cleaned: blender.exe not found ('{blender or 'empty'}'). "
+                self._finish_import(path, shown, [f"NOT cleaned: blender.exe not found ('{blender or 'empty'}'). "
                                                   "Set it in the Rig & Export tab, then import again."])
                 return
-            self.model_info.configure(text=f"Cleaning {Path(path).name} with Blender...", text_color=YELLOW)
+            self.model_info.configure(text=f"Cleaning {Path(shown).name} with Blender...", text_color=YELLOW)
 
             def done(result, error):
                 self._set_busy(False)
                 if error:
                     self.model_info.configure(text=f"Cleaning failed: {error[0]}", text_color=RED)
                     return
-                self._finish_import(str(result[0]), path, result[1])
+                self._finish_import(str(result[0]), shown, result[1])
             self._run(lambda: clean_model(path, blender, max_triangles=self._triangle_budget()), done)
             return
-        self._finish_import(path, path, [])
+        self._finish_import(path, shown, [])
+
+    def _pick_from_archive(self, path: str) -> str | None:
+        """The model file to use inside a .zip: the likeliest one directly, or the user's pick when the archive holds
+        several (variants, side parts, low-poly copies)."""
+        try:
+            folder, ranked = extract_archive(Path(path))
+        except Exception as e:  # noqa: BLE001 - a broken archive is reported, not raised
+            self.model_info.configure(text=f"Could not open {Path(path).name}: {e}", text_color=RED)
+            return None
+        if not ranked:
+            self.model_info.configure(text=f"No 3D model in {Path(path).name}.", text_color=RED)
+            return None
+        if len(ranked) == 1:
+            return str(ranked[0])
+        window = ctk.CTkToplevel(self)
+        window.title("Several models in this archive")
+        window.geometry("520x420")
+        window.transient(self)
+        ctk.CTkLabel(window, text=f"{Path(path).name} holds {len(ranked)} models. Which one is the character?\n"
+                                  "The first one is the Creator's guess.", wraplength=480, justify="left").pack(
+            padx=12, pady=(12, 6), anchor="w")
+        frame = ctk.CTkScrollableFrame(window)
+        frame.pack(fill="both", expand=True, padx=12)
+        choice = ctk.StringVar(value=str(ranked[0]))
+        for f in ranked[:30]:
+            size = f.stat().st_size / 1e6
+            ctk.CTkRadioButton(frame, text=f"{f.relative_to(folder)}  ({size:.1f} MB)", variable=choice,
+                               value=str(f)).pack(anchor="w", pady=2)
+        picked = {"path": None}
+
+        def ok():
+            picked["path"] = choice.get()
+            window.destroy()
+        buttons = ctk.CTkFrame(window, fg_color="transparent")
+        buttons.pack(fill="x", padx=12, pady=10)
+        ctk.CTkButton(buttons, text="Import", command=ok).pack(side="right")
+        ctk.CTkButton(buttons, text="Cancel", fg_color="#27272a", hover_color="#3f3f46",
+                      command=window.destroy).pack(side="right", padx=6)
+        window.after(100, window.lift)
+        window.grab_set()
+        self.wait_window(window)
+        return picked["path"]
 
     def _finish_import(self, load_path, shown_path, notes):
         path = shown_path
@@ -1827,6 +1874,7 @@ class MainWindow(ctk.CTk):
                  f"texture {source.texture.width}×{source.texture.height}\n"
                  f"Auto orientation: {placement.quarter_turns % 4 * 90}°"
                  f"{', stood up (Z-up file)' if placement.upright_fix else ''}"
+                 f"{', flipped' if placement.upside_down else ''}"
                  + ("".join(f"\n⚠ {line}" for line in source.report[:6]) if source.report else ""),
             text_color=YELLOW if source.report else GREEN)
         self._shown_texture = None
@@ -2009,6 +2057,13 @@ class MainWindow(ctk.CTk):
     def on_upright(self):
         if self.model:
             self.model.placement.upright_fix = not self.model.placement.upright_fix
+            self._refit()
+            self.renderer.frame_all()
+
+    def on_flip(self):
+        """Upside down → on its feet (and back)."""
+        if self.model:
+            self.model.placement.upside_down = not self.model.placement.upside_down
             self._refit()
             self.renderer.frame_all()
 

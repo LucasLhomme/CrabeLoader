@@ -7,6 +7,14 @@ Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
 ### Corrigé
+- Import d'un .zip à plusieurs modèles : le Creator prend le personnage principal (nom de l'archive, pas de
+  variante « ghost/phantom », pas d'accessoire, le plus haut dans les dossiers) au lieu du plus gros fichier ; si
+  l'archive en contient plusieurs, une fenêtre propose la liste (son choix en premier). Le nettoyage Blender
+  utilise le même fichier.
+- Orientation automatique : les modèles couchés ou tête en bas sont redressés (symétrie gauche/droite, envergure
+  des bras en T, tête/pieds) ; les fichiers Y-up gardent leur sens d'origine (une cape ou une traîne ne les fait
+  plus tourner de dos). Vérifié sur 11 modèles variés : 11/11 debout et de face (avant : 7/11).
+- Bouton « ⇅ Flip » (onglet Modèle) pour retourner à la main un modèle tête en bas.
 - Visage/cou avec « Head » agrandi : la tête grandit maintenant depuis l'articulation de la mâchoire (le menton ne
   s'enfonce plus dans le col, le cou garde sa longueur) et le cou s'épaissit à moitié avec la tête ; le V-shape
   s'arrête aux aisselles et n'élargit plus la base du cou.
