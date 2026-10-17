@@ -60,15 +60,27 @@ def _smooth(x, a, b):
 
 
 def v_profile(y: np.ndarray, anchors: dict) -> np.ndarray:
-    """0-1 along the height: how much of the V-shape widening applies at each height."""
-    t = (y - anchors["Hips"][1]) / max(anchors["Neck"][1] - anchors["Hips"][1], 1e-9)
+    """0-1 along the height: how much of the V-shape widening applies at each height. It stops at the armpits
+    (shoulder joint height): above, the base of the neck and the collar keep their width."""
+    span = max(anchors["Neck"][1] - anchors["Hips"][1], 1e-9)
+    t = (y - anchors["Hips"][1]) / span
     a, b, c, d = V_RANGE
+    if "Shoulder_Left" in anchors:
+        top = (anchors["Shoulder_Left"][1] - anchors["Hips"][1]) / span
+        c, d = min(c, top - 0.08), min(d, top)
     return _smooth(t, a, b) * (1 - _smooth(t, c, d))
 
 
-HEAD_NECK_SHARE = 0.5
-"""The neck follows half of the head scaling, so the head grows without a step at the collar."""
 MAX_HEAD = 1.4
+NECK_SHARE = 0.5
+"""The neck widens by half the head scaling (never stretched in height)."""
+
+
+def head_pivot(verts: np.ndarray, head_weight: np.ndarray, anchors: dict) -> np.ndarray:
+    """Point the head grows from: the head joint (jaw / skull base height) on the neck's axis. Above it the head
+    grows up and out; below it (chin, neck) it only widens, so the chin does not sink into the collar and the neck
+    keeps its length."""
+    return np.asarray(anchors.get("Head", anchors.get("Neck")), float)
 
 
 def inflate(verts: np.ndarray, weights: np.ndarray, names: list, anchors: dict,
@@ -76,7 +88,7 @@ def inflate(verts: np.ndarray, weights: np.ndarray, names: list, anchors: dict,
             head_scale: float = 1.0, forearm_scale: float | None = None, v_shape: float = 0.0,
             v_target: float | None = None) -> np.ndarray:
     """T-pose vertices pushed away from their limb (or spine) axes by (scale - 1), weighted by each bone's weight.
-    The head is scaled as a whole around the neck joint. `forearm_scale` defaults to `arm_scale`. `v_shape` (0-1) widens
+    The head is scaled as a whole from its bottom (see head_pivot). `forearm_scale` defaults to `arm_scale`. `v_shape` (0-1) widens
     the chest sideways, height by height, until it is `v_target` wide (half width); the waist and whatever is already
     that wide are left alone: a V-shaped torso that fills the gap under the arms once they hang down."""
     out = verts.copy()
@@ -90,13 +102,17 @@ def inflate(verts: np.ndarray, weights: np.ndarray, names: list, anchors: dict,
         factor = np.interp(verts[:, 1], ys, factors)
         blend = np.clip(w, 0, 1) * v_profile(verts[:, 1], anchors) * float(np.clip(v_shape, 0, 1))
         out[:, 0] += blend * (factor - 1.0) * verts[:, 0]  # sideways only, from the body's mid-plane
-    if abs(head_scale - 1.0) >= 1e-3 and "Neck" in anchors:
-        w = np.zeros(len(verts))
-        if "Head" in names:
-            w += weights[:, names.index("Head")]
-        if "Neck" in names:
-            w += HEAD_NECK_SHARE * weights[:, names.index("Neck")]
-        out += ((head_scale - 1.0) * np.clip(w, 0, 1))[:, None] * (verts - anchors["Neck"])
+    if abs(head_scale - 1.0) >= 1e-3 and "Head" in names:
+        w = np.clip(weights[:, names.index("Head")], 0, 1)
+        neck = np.clip(weights[:, names.index("Neck")], 0, 1) if "Neck" in names else np.zeros(len(verts))
+        pivot = head_pivot(verts, w, anchors)
+        offset = verts - pivot
+        offset[:, 1] = np.maximum(offset[:, 1], 0.0)  # below the jaw (neck) only widen, never push down
+        out += ((head_scale - 1.0) * w)[:, None] * offset
+        # The neck thickens with the head (halfway) so a big head does not sit on a thin stalk.
+        axis = verts - np.array([pivot[0], 0.0, pivot[2]])
+        axis[:, 1] = 0.0
+        out += ((head_scale - 1.0) * NECK_SHARE * neck)[:, None] * axis
     if abs(torso_scale - 1.0) >= 1e-3:
         for head, tail, share in TORSO_SEGMENTS:
             if head not in names or head not in anchors or tail not in anchors:

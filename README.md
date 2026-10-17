@@ -138,7 +138,7 @@ pire image, zones touchées), `report.json` et des images de la pire image des a
 suivent la main dans ces clips (avant, ils restaient en arrière et déchiraient les mains à l'écran).
 
 **Proportions (tête, torse, bras, avant-bras, jambes).** Onglet Squelette, cinq curseurs : « Head » (×0,8 à ×1,5,
-la tête grossit autour du cou, le cou suit à moitié), « Torso », « Arms », « Forearms » et « Legs » (×0,8 à ×1,8,
+la tête grandit depuis la mâchoire, le menton reste en place, le cou s'épaissit à moitié), « Torso », « Arms », « Forearms » et « Legs » (×0,8 à ×1,8,
 gonflés autour de leur axe sans changer de longueur, en fondu avec les poids). Aperçu en direct, appliqué au rig.
 - **Disney Infinity style** : rapproche le modèle des proportions moyennes de 30 personnages humanoïdes du jeu (mesurées
   dans le jeu : tête = 21 % de la hauteur, avant-bras plus épais que le bras, etc.). Jamais plus petit que le modèle,
@@ -149,7 +149,7 @@ Un vêtement ample (pantalon bouffant) compte comme épais : les jambes restent 
 - **V-shape** (0 à 1) : en pose du jeu, les bras pendent depuis les épaules de la base (larges) ; un modèle au torse
   étroit laisse alors un vide sous les bras. Le V-shape élargit la poitrine sur les côtés, tranche par tranche, jusqu'au
   côté intérieur du bras baissé (moins 2 % de la hauteur) : plein effet de la poitrine aux aisselles, rien à la taille
-  ni au cou, et une tranche déjà assez large (veste évasée) ne bouge pas. Les deux boutons le mettent à 1.
+  ni au-dessus des aisselles (cou, col), et une tranche déjà assez large (veste évasée) ne bouge pas. Les deux boutons le mettent à 1.
 
 **Pose du jeu pendant le réglage du squelette.** Onglet Squelette, case « Preview in game pose » : le modèle est
 montré bras baissés, comme le jeu l'affichera, et suit chaque curseur du squelette (aperçu calculé en quelques

@@ -40,13 +40,19 @@ def test_torso_scale_widens_chest_only():
     assert np.allclose(out[0], [0.21, 1.3, 0]) and np.allclose(out[1], v[1])
 
 
-def test_head_scale_grows_head_around_neck():
-    anchors = {"Neck": np.array([0, 1.6, 0])}
-    v = np.array([[0, 1.9, 0.1], [0.2, 1.0, 0]])  # head top, hip
+def test_head_scale_grows_from_the_bottom_of_the_head():
+    anchors = {"Neck": np.array([0, 1.6, 0]), "Head": np.array([0, 1.7, 0])}
+    head = np.array([[0, 1.65 + 0.01 * i, 0.05] for i in range(20)])  # chin at 1.65 up to the top at 1.84
+    hip = np.array([[0.2, 1.0, 0]])
+    v = np.vstack([head, hip])
     names = ["Head", "Hips"]
-    w = np.array([[1.0, 0.0], [0.0, 1.0]])
+    w = np.zeros((len(v), 2))
+    w[:20, 0] = 1
+    w[20, 1] = 1
     out = limbs.inflate(v, w, names, anchors, head_scale=1.2)
-    assert np.allclose(out[0], [0, 1.96, 0.12]) and np.allclose(out[1], v[1])
+    assert out[:20, 1].min() >= 1.648          # the chin stays put (no sinking into the collar)
+    assert out[19, 1] > v[19, 1] + 0.02        # the top of the head grows
+    assert np.allclose(out[20], v[20])         # the rest of the body does not move
 
 
 def test_forearm_scale_is_separate():
@@ -74,7 +80,7 @@ def test_v_shape_widens_narrow_chest_not_wide_jacket():
     names = ["Spine3"]
     w = np.ones((len(narrow), 1))
     out = limbs.inflate(narrow, w, names, anchors, v_shape=1.0, v_target=0.2)
-    chest = np.abs(narrow[:, 1] - 1.45) < 0.03
+    chest = np.abs(narrow[:, 1] - 1.4) < 0.02
     waist = np.abs(narrow[:, 1] - 1.05) < 0.03
     assert np.all(np.abs(out[chest, 0]) > 0.17)          # chest pushed out towards the target
     assert np.allclose(out[waist, 0], narrow[waist, 0])  # waist untouched

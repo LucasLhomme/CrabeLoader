@@ -6,6 +6,10 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Corrigé
+- Visage/cou avec « Head » agrandi : la tête grandit maintenant depuis l'articulation de la mâchoire (le menton ne
+  s'enfonce plus dans le col, le cou garde sa longueur) et le cou s'épaissit à moitié avec la tête ; le V-shape
+  s'arrête aux aisselles et n'élargit plus la base du cou.
 ### Ajouté
 - Curseur « V-shape » (onglet Squelette) : élargit la poitrine, hauteur par hauteur, jusqu'au côté intérieur du
   bras baissé de la base ; la taille et ce qui est déjà assez large (veste évasée) ne bougent pas. Comble le vide
