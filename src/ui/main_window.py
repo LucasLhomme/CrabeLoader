@@ -525,20 +525,23 @@ class MainWindow(ctk.CTk):
                      wraplength=330, justify="left",
                      text_color=GREY, font=ctk.CTkFont(size=11)).grid(row=0, column=0, columnspan=2, sticky="w")
         self.limb_sliders = {}
-        for i, (key, text) in enumerate((("head_scale", "Head"), ("torso_scale", "Torso"), ("arm_scale", "Arms"),
-                                         ("forearm_scale", "Forearms"), ("leg_scale", "Legs"))):
-            label = ctk.CTkLabel(limbs, text=f"{text}: ×1.00", font=ctk.CTkFont(size=12))
+        for i, (key, text) in enumerate((("head_scale", "Head"), ("torso_scale", "Torso"),
+                                         ("v_shape", "V-shape (chest fills the gap under the arms)"),
+                                         ("arm_scale", "Arms"), ("forearm_scale", "Forearms"), ("leg_scale", "Legs"))):
+            unit = "" if key == "v_shape" else "×"
+            label = ctk.CTkLabel(limbs, text=f"{text}: {unit}{0.0 if key == 'v_shape' else 1.0:.2f}",
+                                 font=ctk.CTkFont(size=12))
             label.grid(row=1 + 2 * i, column=0, sticky="w")
-            low, high = (0.8, 1.5) if key == "head_scale" else (0.8, 1.8)
+            low, high = {"head_scale": (0.8, 1.5), "v_shape": (0.0, 1.0)}.get(key, (0.8, 1.8))
             slider = ctk.CTkSlider(limbs, from_=low, to=high, command=lambda v, k=key: self.on_limb(k, v))
-            slider.set(1.0)
+            slider.set(0.0 if key == "v_shape" else 1.0)
             slider.grid(row=2 + 2 * i, column=0, sticky="ew")
             self._value_entry(limbs, 1 + 2 * i, slider, lambda v, k=key: self.on_limb(k, v), "{:.2f}")
             self.limb_sliders[key] = (slider, label, text)
         self.limb_hint = ctk.CTkLabel(limbs, text="", font=ctk.CTkFont(size=10), text_color=GREY, wraplength=320,
                                       justify="left")
         buttons = ctk.CTkFrame(limbs, fg_color="transparent")
-        buttons.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        buttons.grid(row=13, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         buttons.grid_columnconfigure((0, 1), weight=1)
         ctk.CTkButton(buttons, text="Disney Infinity style", height=24, fg_color="#1d4ed8", hover_color="#2563eb",
                       command=self.on_disney_style).grid(row=0, column=0, sticky="ew", padx=(0, 2))
@@ -546,7 +549,7 @@ class MainWindow(ctk.CTk):
                       command=self.on_limb_match).grid(row=0, column=1, sticky="ew", padx=(2, 0))
         ctk.CTkButton(buttons, text="Reset", height=22, fg_color="#27272a", hover_color="#3f3f46",
                       command=self.on_limb_reset).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
-        self.limb_hint.grid(row=12, column=0, columnspan=2, sticky="w")
+        self.limb_hint.grid(row=14, column=0, columnspan=2, sticky="w")
         ctk.CTkLabel(scroll, text=legend, text_color=GREY, wraplength=320, justify="left", font=ctk.CTkFont(size=10)).grid(
             row=3 * len(SKELETON_SLIDERS) + 1, column=0, columnspan=3, sticky="w", pady=4)
 
@@ -557,7 +560,9 @@ class MainWindow(ctk.CTk):
         if self.anchors is None:
             return verts
         from src.core.limbs import preview, quick_game_pose
-        verts = preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale, m.head_scale, m.forearm_scale)
+        self._sync_v_target()
+        verts = preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale, m.head_scale, m.forearm_scale,
+                        m.v_shape, m.v_target)
         if getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get() and self.base is not None:
             verts = quick_game_pose(verts, self.anchors, self.base.joints)
         return verts
@@ -581,10 +586,19 @@ class MainWindow(ctk.CTk):
         elif self.anchors is not None:
             self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
 
+    def _sync_v_target(self):
+        """The V-shape widens the chest up to the inner side of the hanging arm: that width depends on the base's
+        shoulders and on the model's arm thickness."""
+        from src.core.limbs import v_target
+        m = self.model
+        if m is None or self.anchors is None or self.base is None or m.v_shape <= 0:
+            return
+        m.v_target = v_target(m.vertices(), self.anchors, self.base.joints, m.arm_scale)
+
     def on_limb(self, key, value):
         value = float(value)
         slider, label, text = self.limb_sliders[key]
-        label.configure(text=f"{text}: ×{value:.2f}")
+        label.configure(text=f"{text}: {value:.2f}" if key == "v_shape" else f"{text}: ×{value:.2f}")
         self._sync_entry(slider)
         if not self.model:
             return
@@ -620,6 +634,7 @@ class MainWindow(ctk.CTk):
             self.limb_hint.configure(text="Import a model and pick a base first.")
             return
         values["head_scale"] = 1.0
+        values["v_shape"] = 1.0
         self._apply_proportions(values)
         self.limb_hint.configure(text="Matched to the base: " + self._proportions_text(values) +
                                       " (head untouched; never thinner; baggy clothes count as thick).")
@@ -631,20 +646,22 @@ class MainWindow(ctk.CTk):
             self.limb_hint.configure(text="Import a model first.")
             return
         values = disney_style(self.model.vertices(), self.anchors)
+        values["v_shape"] = 1.0 if self.base is not None else 0.0
         self._apply_proportions(values)
         self.limb_hint.configure(text="Disney Infinity style (average of 30 figures of the game): "
                                       + self._proportions_text(values) + ". Never smaller than your model; fine-tune "
                                       "with the sliders.")
 
     def on_limb_reset(self):
-        self._apply_proportions({key: 1.0 for key in self.limb_sliders})
+        self._apply_proportions({key: 0.0 if key == "v_shape" else 1.0 for key in self.limb_sliders})
         self.limb_hint.configure(text="Proportions back to the model's own.")
 
     @staticmethod
     def _proportions_text(values: dict) -> str:
         names = (("head_scale", "head"), ("torso_scale", "torso"), ("arm_scale", "arms"),
                  ("forearm_scale", "forearms"), ("leg_scale", "legs"))
-        return ", ".join(f"{label} ×{values[key]:.2f}" for key, label in names if key in values)
+        text = ", ".join(f"{label} ×{values[key]:.2f}" for key, label in names if key in values)
+        return text + (f", V-shape {values['v_shape']:.2f}" if "v_shape" in values else "")
 
     # -------------------------------------------------------- abilities & moveset
     def _build_abilities_tab(self, tab):
@@ -1801,8 +1818,8 @@ class MainWindow(ctk.CTk):
         self.model = CharacterModel(source, placement, look=float(self.look_slider.get()),
                                match=float(self.match_slider.get()), match_target=self._base_brightness())
         for key, (slider, label, text) in self.limb_sliders.items():  # a new model starts as modelled
-            slider.set(1.0)
-            label.configure(text=f"{text}: ×1.00")
+            slider.set(0.0 if key == "v_shape" else 1.0)
+            label.configure(text=f"{text}: 0.00" if key == "v_shape" else f"{text}: ×1.00")
             self._sync_entry(slider)
         self.limb_hint.configure(text="")
         self.model_info.configure(
@@ -2202,6 +2219,7 @@ class MainWindow(ctk.CTk):
             if then:
                 then()
         blender = normalize_blender_path(self.blender_entry.get())
+        self._sync_v_target()
         model, anchors, base = self.model, self.anchors, self.base
         overrides = list(self.piece_overrides)
         transfer = self._weight_transfer()

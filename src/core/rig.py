@@ -233,12 +233,13 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     w = weights[vweld]
     tpose = wverts[vweld]
     scales = (model.arm_scale, model.forearm_scale, model.leg_scale, model.torso_scale, model.head_scale)
-    if max(abs(v - 1) for v in scales) > 1e-3:
+    if max(abs(v - 1) for v in scales) > 1e-3 or (model.v_shape > 1e-3 and model.v_target):
         from src.core.limbs import inflate
         tpose = inflate(tpose, w, list(names), anchors, model.arm_scale, model.leg_scale, model.torso_scale,
-                        model.head_scale, model.forearm_scale)
+                        model.head_scale, model.forearm_scale, model.v_shape, model.v_target)
         log(f"  proportions: head x{model.head_scale:.2f}, torso x{model.torso_scale:.2f}, arms "
-            f"x{model.arm_scale:.2f}, forearms x{model.forearm_scale:.2f}, legs x{model.leg_scale:.2f}")
+            f"x{model.arm_scale:.2f}, forearms x{model.forearm_scale:.2f}, legs x{model.leg_scale:.2f}, "
+            f"V-shape {model.v_shape:.2f}")
     tnormals = sign * vertex_normals(wverts, wfaces[ok])[vweld]
     baked = np.zeros_like(tpose)
     bnormals = np.zeros_like(tpose)

@@ -6,6 +6,10 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Ajouté
+- Curseur « V-shape » (onglet Squelette) : élargit la poitrine, hauteur par hauteur, jusqu'au côté intérieur du
+  bras baissé de la base ; la taille et ce qui est déjà assez large (veste évasée) ne bougent pas. Comble le vide
+  entre le torse et les bras en pose du jeu. Activé par « Disney Infinity style » et « Match the base ».
 ### Corrigé
 - Onglet Squelette : le bloc des proportions et ses boutons sortaient de l'écran sans pouvoir défiler ; ils sont
   maintenant dans la zone qui défile, qui prend toute la hauteur disponible.

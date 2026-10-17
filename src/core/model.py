@@ -56,6 +56,10 @@ class CharacterModel:
     torso_scale: float = 1.0
     forearm_scale: float = 1.0
     head_scale: float = 1.0
+    v_shape: float = 0.0
+    """0-1: chest widened towards `v_target` (not the waist), so the torso fills the gap under the hanging arms."""
+    v_target: float | None = None
+    """Chest half width to reach (set from the base figure's shoulders when a base is picked)."""
     """Head size, scaled around the neck (the neck follows halfway)."""
     """Chest and belly thickness around the spine (the pelvis follows halfway)."""
     look: float = 0.0

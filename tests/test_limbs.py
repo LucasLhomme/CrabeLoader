@@ -58,3 +58,26 @@ def test_forearm_scale_is_separate():
     out = limbs.inflate(v, w, names, ANCHORS, arm_scale=1.0, forearm_scale=2.0)
     r = np.hypot(out[:, 1] - 1.4, out[:, 2])
     assert np.allclose(r[v[:, 0] < 0.45], 0.03) and np.allclose(r[v[:, 0] >= 0.45], 0.06)
+
+
+def test_v_shape_widens_narrow_chest_not_wide_jacket():
+    anchors = {"Hips": np.array([0, 1.0, 0]), "Spine2": np.array([0, 1.15, 0]), "Spine3": np.array([0, 1.3, 0]),
+               "Neck": np.array([0, 1.6, 0]), "Head": np.array([0, 1.7, 0]), "HeadTop": np.array([0, 1.9, 0]),
+               "Shoulder_Left": np.array([0.3, 1.5, 0]), "Shoulder_Right": np.array([-0.3, 1.5, 0])}
+    for side, sx in (("Left", 1), ("Right", -1)):  # arms out sideways, legs down: far from the test points
+        anchors.update({f"Elbow_{side}": np.array([sx * 0.6, 1.5, 0]), f"Hand_{side}": np.array([sx * 0.9, 1.5, 0]),
+                        f"HandTip_{side}": np.array([sx * 1.0, 1.5, 0]), f"Clavicle_{side}": np.array([sx * 0.03, 1.5, 0]),
+                        f"Thigh_{side}": np.array([sx * 0.1, 0.95, 0]), f"Knee_{side}": np.array([sx * 0.1, 0.5, 0]),
+                        f"Ankle_{side}": np.array([sx * 0.1, 0.1, 0]), f"ToeTip_{side}": np.array([sx * 0.1, 0.0, 0.2])})
+    ys = np.linspace(1.0, 1.6, 25)
+    narrow = np.array([[sx * 0.1, y, 0] for y in ys for sx in (-1, 1)])
+    names = ["Spine3"]
+    w = np.ones((len(narrow), 1))
+    out = limbs.inflate(narrow, w, names, anchors, v_shape=1.0, v_target=0.2)
+    chest = np.abs(narrow[:, 1] - 1.45) < 0.03
+    waist = np.abs(narrow[:, 1] - 1.05) < 0.03
+    assert np.all(np.abs(out[chest, 0]) > 0.17)          # chest pushed out towards the target
+    assert np.allclose(out[waist, 0], narrow[waist, 0])  # waist untouched
+    wide = narrow.copy()
+    wide[:, 0] *= 3  # already wider than the target: left alone
+    assert np.allclose(limbs.inflate(wide, w, names, anchors, v_shape=1.0, v_target=0.2), wide)

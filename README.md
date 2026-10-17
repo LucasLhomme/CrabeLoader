@@ -146,6 +146,10 @@ gonflés autour de leur axe sans changer de longueur, en fondu avec les poids). 
 - **Match the base** : copie l'épaisseur de la base choisie (sans toucher à la tête).
 - **Reset** : revient aux proportions du modèle.
 Un vêtement ample (pantalon bouffant) compte comme épais : les jambes restent alors à ×1.
+- **V-shape** (0 à 1) : en pose du jeu, les bras pendent depuis les épaules de la base (larges) ; un modèle au torse
+  étroit laisse alors un vide sous les bras. Le V-shape élargit la poitrine sur les côtés, tranche par tranche, jusqu'au
+  côté intérieur du bras baissé (moins 2 % de la hauteur) : plein effet de la poitrine aux aisselles, rien à la taille
+  ni au cou, et une tranche déjà assez large (veste évasée) ne bouge pas. Les deux boutons le mettent à 1.
 
 **Pose du jeu pendant le réglage du squelette.** Onglet Squelette, case « Preview in game pose » : le modèle est
 montré bras baissés, comme le jeu l'affichera, et suit chaque curseur du squelette (aperçu calculé en quelques

@@ -22,6 +22,50 @@ def _segment_offsets(verts, a, b):
     return perp, length
 
 
+V_RANGE = (0.25, 0.6, 0.82, 0.95)
+"""Where the V-shape acts along the spine (0 = hips, 1 = neck): fades in from 0.25 to full at 0.6 (chest, armpits),
+stays full up to the shoulders (0.82) and is gone below the neck base (0.95): waist, neck and head keep their width."""
+MAX_V = 2.5
+"""Strongest sideways widening of the chest at any height."""
+
+
+def torso_mask(verts: np.ndarray, anchors: dict) -> np.ndarray:
+    """Vertices that belong to the torso (rough skeleton weights): wide sleeves and arms are left out."""
+    weights, names = preview_weights(verts, anchors)
+    torso = [i for i, n in enumerate(names) if n in ("Hips", "Spine2", "Spine3", "Neck") or n.startswith("_Clavicle")]
+    return weights[:, torso].sum(axis=1) > 0.5
+
+
+def v_scales(verts: np.ndarray, anchors: dict, target: float, slabs: int = 14) -> tuple[np.ndarray, np.ndarray]:
+    """(heights, factor) of the sideways scaling that brings the torso's half width up to `target` at each height of
+    the chest (1 where it is already that wide, e.g. a flared jacket), smoothed along the height."""
+    lo, hi = anchors["Hips"][1], anchors["Neck"][1]
+    ys = np.linspace(lo, hi, slabs)
+    band = 1.5 * (hi - lo) / slabs
+    mask = torso_mask(verts, anchors)
+    factors = np.ones(slabs)
+    for i, y in enumerate(ys):
+        sel = mask & (np.abs(verts[:, 1] - y) < band)
+        if sel.sum() >= 4:
+            half = float(np.percentile(np.abs(verts[sel, 0]), 90))
+            factors[i] = np.clip(target / max(half, 1e-6), 1.0, MAX_V)
+    kernel = np.array([0.25, 0.5, 0.25])
+    padded = np.r_[factors[0], factors, factors[-1]]
+    return ys, np.convolve(padded, kernel, mode="valid")
+
+
+def _smooth(x, a, b):
+    t = np.clip((x - a) / (b - a), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def v_profile(y: np.ndarray, anchors: dict) -> np.ndarray:
+    """0-1 along the height: how much of the V-shape widening applies at each height."""
+    t = (y - anchors["Hips"][1]) / max(anchors["Neck"][1] - anchors["Hips"][1], 1e-9)
+    a, b, c, d = V_RANGE
+    return _smooth(t, a, b) * (1 - _smooth(t, c, d))
+
+
 HEAD_NECK_SHARE = 0.5
 """The neck follows half of the head scaling, so the head grows without a step at the collar."""
 MAX_HEAD = 1.4
@@ -29,10 +73,23 @@ MAX_HEAD = 1.4
 
 def inflate(verts: np.ndarray, weights: np.ndarray, names: list, anchors: dict,
             arm_scale: float = 1.0, leg_scale: float = 1.0, torso_scale: float = 1.0,
-            head_scale: float = 1.0, forearm_scale: float | None = None) -> np.ndarray:
+            head_scale: float = 1.0, forearm_scale: float | None = None, v_shape: float = 0.0,
+            v_target: float | None = None) -> np.ndarray:
     """T-pose vertices pushed away from their limb (or spine) axes by (scale - 1), weighted by each bone's weight.
-    The head is scaled as a whole around the neck joint. `forearm_scale` defaults to `arm_scale`."""
+    The head is scaled as a whole around the neck joint. `forearm_scale` defaults to `arm_scale`. `v_shape` (0-1) widens
+    the chest sideways, height by height, until it is `v_target` wide (half width); the waist and whatever is already
+    that wide are left alone: a V-shaped torso that fills the gap under the arms once they hang down."""
     out = verts.copy()
+    if v_shape > 1e-3 and v_target and "Hips" in anchors and "Neck" in anchors:
+        w = np.zeros(len(verts))
+        for bone, share in (("Spine3", 1.0), ("Spine2", 1.0), ("Clavicle_Left", 1.0), ("Clavicle_Right", 1.0),
+                            ("Hips", 0.5)):
+            if bone in names:
+                w += share * weights[:, names.index(bone)]
+        ys, factors = v_scales(verts, anchors, v_target)
+        factor = np.interp(verts[:, 1], ys, factors)
+        blend = np.clip(w, 0, 1) * v_profile(verts[:, 1], anchors) * float(np.clip(v_shape, 0, 1))
+        out[:, 0] += blend * (factor - 1.0) * verts[:, 0]  # sideways only, from the body's mid-plane
     if abs(head_scale - 1.0) >= 1e-3 and "Neck" in anchors:
         w = np.zeros(len(verts))
         if "Head" in names:
@@ -141,16 +198,49 @@ def preview_weights(verts: np.ndarray, anchors: dict) -> tuple[np.ndarray, list]
                 names.append(f"_{head}_{side}")
     dist = np.stack([np.linalg.norm(_segment_offsets(verts, a, b)[0], axis=1) for a, b in segments], axis=1)
     inv = 1.0 / np.maximum(dist, 1e-4) ** 6
-    return inv / inv.sum(axis=1, keepdims=True), names
+    weights = inv / inv.sum(axis=1, keepdims=True)
+    if "Head" in names and "Head" in anchors and "Shoulder_Left" in anchors:
+        # The rig makes the head rigid: do the same, or the face gets dragged by the neck and shoulders.
+        head = (verts[:, 1] > anchors["Head"][1]) & (np.abs(verts[:, 0]) < 0.6 * abs(anchors["Shoulder_Left"][0]))
+        weights[head] = 0.0
+        weights[head, names.index("Head")] = 1.0
+    return weights, names
 
 
 def preview(verts: np.ndarray, anchors: dict, arm_scale: float, leg_scale: float,
-            torso_scale: float = 1.0, head_scale: float = 1.0, forearm_scale: float | None = None) -> np.ndarray:
+            torso_scale: float = 1.0, head_scale: float = 1.0, forearm_scale: float | None = None,
+            v_shape: float = 0.0, v_target: float | None = None) -> np.ndarray:
     forearm = arm_scale if forearm_scale is None else forearm_scale
-    if max(abs(arm_scale - 1), abs(leg_scale - 1), abs(torso_scale - 1), abs(head_scale - 1), abs(forearm - 1)) < 1e-3:
+    if max(abs(arm_scale - 1), abs(leg_scale - 1), abs(torso_scale - 1), abs(head_scale - 1), abs(forearm - 1),
+           v_shape if v_target else 0.0) < 1e-3:
         return verts
     weights, names = preview_weights(verts, anchors)
-    return inflate(verts, weights, names, anchors, arm_scale, leg_scale, torso_scale, head_scale, forearm)
+    return inflate(verts, weights, names, anchors, arm_scale, leg_scale, torso_scale, head_scale, forearm, v_shape,
+                   v_target)
+
+
+def chest_half_width(verts: np.ndarray, anchors: dict, at: float = 0.8) -> float | None:
+    """Half width of the chest at `at` (0 hips - 1 neck): the 95th percentile of |x| in a thin slab, among the
+    vertices that belong to the torso (rough skeleton weights), so wide sleeves and arms are left out."""
+    y = anchors["Hips"][1] + at * (anchors["Neck"][1] - anchors["Hips"][1])
+    height = float(np.ptp(verts[:, 1]))
+    sl = np.flatnonzero(np.abs(verts[:, 1] - y) < 0.012 * height)
+    if len(sl) < 6:
+        return None
+    weights, names = preview_weights(verts[sl], anchors)
+    torso = [i for i, n in enumerate(names) if n in ("Hips", "Spine2", "Spine3", "Neck") or n.startswith("_Clavicle")]
+    keep = weights[:, torso].sum(axis=1) > 0.5
+    return float(np.percentile(np.abs(verts[sl[keep], 0]), 95)) if keep.sum() >= 6 else None
+
+
+def v_target(verts, anchors, base_joints, arm_scale=1.0) -> float | None:
+    """Chest half width that reaches the inner side of the hanging arm in the game pose: the upper arm hangs from the
+    base figure's shoulder joint, its inner side one arm radius closer to the body; 2 % of the height is kept free."""
+    radius = limb_radius(verts, anchors["Shoulder_Left"], anchors["Elbow_Left"])
+    if not radius:
+        return None
+    height = float(np.ptp(verts[:, 1]))
+    return float(abs(base_joints["Shoulder_Left"][0]) - radius * arm_scale - 0.02 * height)
 
 
 DISNEY_STYLE = {"head": 0.212, "arm": 0.030, "forearm": 0.033, "thigh": 0.046, "torso": 0.076}
