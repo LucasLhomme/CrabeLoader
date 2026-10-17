@@ -1,7 +1,12 @@
 /*
- * Hosts ReShade's documented manual effect-runtime API without proxy COM objects.
- * Contract: https://github.com/crosire/reshade/blob/v6.8.0/include/reshade.hpp
- */
+** CrabeLoader
+** File description:
+** Hosts optional ReShade effects on the game's existing D3D11 swap chain.
+** Manual runtime calls preserve native COM identities to avoid proxy-related crashes.
+** Add-on initialization belongs to the companion runtime built by tools/reshade/build.ps1.
+**
+** Authors: @lightningcal
+*/
 #include "presentation/reshade_bridge.hpp"
 #include <d3d11.h>
 #include <psapi.h>
@@ -105,6 +110,18 @@ namespace {
             failed = true;
             return;
         }
+        using ManualAddonSupport = unsigned int(__cdecl*)();
+        const auto addonSupport = reinterpret_cast<ManualAddonSupport>(
+            GetProcAddress(module, "CrabeReShadeManualAddonSupport"));
+        unsigned int addonVersion = 0;
+        if (addonSupport)
+            guarded([&] { addonVersion = addonSupport(); }, "ReShadeBridge::addonSupport");
+        if (addonVersion >= 1)
+            logger.info("ReShadeBridge: manual add-on lifecycle supported; built-in and external add-ons will initialize with the runtime.");
+        else
+            logger.warning("ReShadeBridge: stock manual runtime does not initialize add-ons. Build the companion DLL with tools/reshade/build.ps1 for Generic Depth and .addon32 loading.");
+        if (addonVersion >= 2)
+            logger.info("ReShadeBridge: native game depth event capture supported.");
         logger.info("ReShadeBridge: loaded Crabe/ReShade32.dll with automatic graphics hooks disabled.");
     }
 

@@ -1,3 +1,12 @@
+/*
+** CrabeLoader
+** File description:
+** Declares the render thread lifecycle for the optional ReShade host.
+** The runtime is destroyed before resizing and the DLL stays loaded for input hooks.
+** Graphics interception and game depth capture are outside this host's responsibility.
+**
+** Authors: @lightningcal
+*/
 #pragma once
 #include <dxgi.h>
 namespace crabe::presentation {
