@@ -6,6 +6,9 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Ajouté
+- `Sync_Claude.bat` (+ `tools/pack_assets.py`) : regroupe `src/assets` (≈ 900 fichiers extraits du jeu, non
+  versionnés) en une archive `build/claude_sync/assets.zip`, transférable en une fois vers une session cloud.
 ### Corrigé
 - Import d'un .zip à plusieurs modèles : le Creator prend le personnage principal (nom de l'archive, pas de
   variante « ghost/phantom », pas d'accessoire, le plus haut dans les dossiers) au lieu du plus gros fichier ; si
