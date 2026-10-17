@@ -56,12 +56,12 @@ def prefixes_used_by_other_mods(game_dir: Path, mod_name: str) -> set[str]:
     return used
 
 
-def choose_texture_ids(actor: str, game_dir: Path, mod_name: str) -> TextureIds:
+def choose_texture_ids(actor: str, game_dir: Path, mod_name: str, prefix: str | None = None) -> TextureIds:
+    """`prefix`: archive to use (the shared one); otherwise one no other mod ships (one archive per character)."""
     digest = hashlib.sha256(f"DisneyInfinityCreator/{actor.lower()}".encode()).hexdigest()
     taken = prefixes_used_by_other_mods(game_dir, mod_name)
     vanilla = Path(game_dir) / "assets" / "textures"
-    prefix = None
-    for i in range(0, len(digest) - 1, 2):
+    for i in ([] if prefix else range(0, len(digest) - 1, 2)):
         candidate = digest[i:i + 2]
         if candidate not in taken and (vanilla / f"{candidate}.zip").exists():
             prefix = candidate

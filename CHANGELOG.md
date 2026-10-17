@@ -6,6 +6,17 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Ajouté
+- Mod partagé `mods/zz_creator_shared` : le jeu ne lit les textures et les icônes que dans ses archives, qu'il
+  faut livrer entières. Au lieu d'une archive de ~13 Mo par personnage (et d'une seule archive d'icônes de 125 Mo
+  possible à la fois), chaque personnage garde ses petits fichiers sources et le mod partagé contient les
+  archives reconstruites une fois pour tous : `textures/17.zip` (la plus petite archive du jeu, 5 Mo) et les
+  icônes (`ui/icons`, `ui/virtualreadercharacters`). Reconstruit à chaque installation, seulement si ses sources
+  ont changé (`manifest.json`). Remplace `zz_creator_ui` (fait à la main) et les archives par personnage.
+- `Gerer_Mods.bat` (outil à part) : liste des personnages Creator (taille, icône, état), suppression vers la
+  corbeille, désactivation (préfixe `_`), nettoyage (migration des anciens personnages dans l'archive partagée,
+  suppression des anciennes archives, sauvegardes d'anciennes versions à la corbeille) et reconstruction. Un
+  personnage supprimé ne laisse rien dans le jeu. Options `--list`, `--rebuild`, `--clean`.
 ### Corrigé
 - Nettoyage Blender des fichiers `.dae` : Blender 5 n'a plus d'import COLLADA. Le `.dae` est lu par Creator
   (pièces fusionnées, textures en un atlas) puis confié à Blender en `.glb` avec un matériau PBR neutre, ce qui

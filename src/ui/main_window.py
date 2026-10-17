@@ -1126,7 +1126,7 @@ class MainWindow(ctk.CTk):
         tex_box = ctk.CTkFrame(tab, fg_color="transparent")
         tex_box.grid(row=14, column=0, sticky="w", pady=(4, 0))
         self.zip_var = ctk.BooleanVar(value=bool(self.settings.get("legacy_zip", True)))
-        ctk.CTkCheckBox(tex_box, text="Ship the texture archive (.zip) - required for the textures to show in game",
+        ctk.CTkCheckBox(tex_box, text="Shared texture and icon archives (mods/zz_creator_shared) - required for textures and icons in game",
                         variable=self.zip_var, font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(legacy_zip=bool(self.zip_var.get()))
                         ).grid(row=0, column=0, sticky="w")

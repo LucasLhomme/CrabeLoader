@@ -45,7 +45,8 @@ def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Pat
         raise FileNotFoundError(f"{game_dir} is not the game folder (no assets subfolder)")
     mod_dir = game_dir / "mods" / ident.slug
 
-    ids = choose_texture_ids(ident.actor, game_dir, ident.slug)
+    from src.core import shared
+    ids = choose_texture_ids(ident.actor, game_dir, ident.slug, shared.SHARED_PREFIX if use_legacy_zip else None)
     log(f"Base: {base.display_name} ({base.actor}, model {base.model}, {len(base.meshes)} mesh(es))")
     if entity_config and not entity_config.is_player:
         log(f"Entity: {entity_config.summary()}")
@@ -120,16 +121,22 @@ def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Pat
         report.notes.append("icons: HUD portrait (ui/icons) and Virtual Reader figure (ui/virtualreadercharacters)")
 
     if use_legacy_zip:
-        log("Rebuilding legacy encrypted texture archive (optional fallback)...")
-        tex_zip = mod_dir / "textures" / f"{ids.prefix}.zip"
-        entries = build_texture_archive(ids, texture, game_dir, WORK_DIR / "textures", tex_zip, normal)
-        report.notes.append(f"textures/{ids.prefix}.zip: {entries} entries (vanilla + 2)")
+        # Textures and icons only show from the game's archives: the shared mod rebuilds them for all characters.
+        try:
+            res = shared.rebuild(game_dir, log)
+            report.notes.append(f"shared archives ({shared.SHARED_SLUG}): rebuilt {', '.join(res.built) or 'none'}")
+        except Exception as exc:  # noqa: BLE001 - the character itself is installed; the archives can be redone
+            log(f"WARNING shared archives not rebuilt ({exc}). Close the game, then Gerer_Mods.bat -> Reconstruire.")
+            report.notes.append("shared archives NOT rebuilt: run Gerer_Mods.bat")
 
     note = ship_motions_if_needed(base, game_dir, mod_dir)
     report.notes.append(note)
     log(note)
 
     _verify(report, rig, ident, mod_dir, ids.prefix, n_materials)
+    if use_legacy_zip:
+        archive = game_dir / "mods" / shared.SHARED_SLUG / "textures" / f"{ids.prefix}.zip"
+        report.checks.append((archive.is_file(), f"shared texture archive {shared.SHARED_SLUG}/textures/{archive.name}"))
     return report
 
 
