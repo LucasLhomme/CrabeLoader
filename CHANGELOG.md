@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Built-in settings could be missing on the first opening of Options or Video: register the game's lowercase presentation chunk paths so the settings wrapper installs before the list is first built, rather than waiting for the periodic retry. Binding rows also use the screen class instead of the transient world name, and an already-built persistent Options list is refreshed once when the hooks attach late.
+
 ## [1.1.0] - 2026-10-16
 
 ### Added

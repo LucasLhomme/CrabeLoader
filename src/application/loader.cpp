@@ -449,6 +449,11 @@ void Loader::ensureRuntimeReady(void* L)
     crabe::infrastructure::patch::PatchBorderless::apply(L);
     crabe::infrastructure::patch::PatchKeybind::apply(L);
 
+    // Settings Lua is injected before these natives exist; initialize its menus now.
+    if (!crabe::infrastructure::LuaCall::get().runSnippet(L,
+            "assert(Crabe.Settings.initBuiltins(), 'native settings callbacks are not registered')")) {
+        crabe::shared::Logger::getInstance().error("Loader: failed to initialize built-in settings.");
+    }
     if (!_characterInjectionScript.empty()) {
         crabe::shared::Logger::getInstance().info("Loader: injecting character definitions into Lua state ({} bytes).",
                                                   _characterInjectionScript.size());
