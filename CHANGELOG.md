@@ -6,6 +6,10 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Corrigé
+- Aperçu « Preview in game pose » (onglet Squelette) : il utilise maintenant les poids de secours du vrai rig
+  (zones du corps, tête rigide) au lieu de poids approximatifs. Le menton ne s'étire plus vers le col et les
+  épaules ne remontent plus vers les oreilles : l'aperçu ressemble au rig construit.
 ### Ajouté
 - Os de torsion du jeu (case « Game twist bones », activée par défaut) : les 37 figures officielles partagent le
   haut du bras, l'avant-bras et la cuisse entre l'os principal et des os d'aide pilotés par le moteur

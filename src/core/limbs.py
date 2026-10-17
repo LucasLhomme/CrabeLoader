@@ -293,25 +293,22 @@ def disney_style(verts: np.ndarray, anchors: dict) -> dict:
     }
 
 
-_BAKE_KEY = {"_Clavicle": "Clavicle", "_Hand": "Hand", "_Ankle": "Ankle", "_Hips": "Hips"}
-
-
 def quick_game_pose(verts: np.ndarray, anchors: dict, base_joints: dict) -> np.ndarray:
-    """The model moved into the game's rest pose (arms down) with the rough skeleton weights: a live preview of what
-    "Build the rig" will bake, cheap enough to follow every skeleton slider."""
+    """The model moved into the game's rest pose (arms down): a live preview of what "Build the rig" will bake,
+    cheap enough to follow every skeleton slider. It uses the rig's own fallback weights (distance to the bones,
+    body zones, rigid head) so the shoulders and the chin move as they will once rigged."""
     from src.core.rig import bake_transforms
+    from src.core.rigging import distance_weights, rigid_head
+    from src.core.skeleton import heat_bones
     bake = bake_transforms(anchors, base_joints)
-    weights, names = preview_weights(verts, anchors)
+    names = [b[0] for b in heat_bones()]
+    weights = rigid_head(verts, distance_weights(verts, anchors), names, anchors, lambda text: None)
     out = np.zeros_like(verts)
     total = np.zeros(len(verts))
     for col, name in enumerate(names):
-        key = name
-        if name.startswith("_"):
-            head, _, side = name[1:].partition("_")
-            key = f"{_BAKE_KEY.get('_' + head, head)}_{side}" if side and head != "Hips" else head
-        if key not in bake:
+        if name not in bake:
             continue
-        m, t = bake[key]
+        m, t = bake[name]
         out += weights[:, col:col + 1] * (verts @ m + t)
         total += weights[:, col]
     return out / np.maximum(total, 1e-9)[:, None]
