@@ -7,6 +7,12 @@ Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
 ### Ajouté
+- Os de torsion du jeu (case « Game twist bones », activée par défaut) : les 37 figures officielles partagent le
+  haut du bras, l'avant-bras et la cuisse entre l'os principal et des os d'aide pilotés par le moteur
+  (`Shoulder_Spin`, `Shoulder_OL`, `Forearm_OL`, `Thigh_OL`, ≈ 7 % du poids du corps). Le Creator ne pesait que
+  l'os principal : l'épaule et la hanche tournaient d'un bloc avec le membre. Le partage mesuré sur ces figures
+  (profil médian le long du membre, `tools/twist_profiles.py`) est maintenant copié sur le modèle. Au repos rien
+  ne bouge ; l'effet n'est visible qu'en jeu.
 - `Sync_Claude.bat` (+ `tools/pack_assets.py`) : regroupe `src/assets` (≈ 900 fichiers extraits du jeu, non
   versionnés) en une archive `build/claude_sync/assets.zip`, transférable en une fois vers une session cloud.
 ### Corrigé

@@ -145,19 +145,21 @@ def vertex_tangents(verts, uvs, normals, faces):
 
 
 def build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = False) -> RigResult:
+              log: Callable[[str], None], piece_overrides=None, weight_transfer: bool = False, fingers: bool = False,
+              twist: bool = True) -> RigResult:
     """`piece_overrides`: [(source vertex indices, bone name)] - the pieces holding those vertices follow that bone.
 
     `weight_transfer`: when True, the rig is built both ways (bone heat and weights copied from the base body) and
     the one that deforms less is kept."""
-    standard = _build_rig(model, anchors, base, blender, work, log, piece_overrides, None, fingers)
+    standard = _build_rig(model, anchors, base, blender, work, log, piece_overrides, None, fingers, twist)
     if not weight_transfer:
         return standard
     from src.core.quality import deformation_report
 
     robust_lines = lambda text: log(text) if text.strip().startswith(("Robust", "too few", "inpainting")) else None  # noqa: E731
     try:
-        robust = _build_rig(model, anchors, base, blender, work, robust_lines, piece_overrides, weight_transfer, fingers)
+        robust = _build_rig(model, anchors, base, blender, work, robust_lines, piece_overrides, weight_transfer, fingers,
+                            twist)
     except Exception as exc:  # noqa: BLE001 - optional feature
         log(f"  Robust transfer unavailable ({exc}) -> standard weights")
         return standard
@@ -188,7 +190,8 @@ def shoulder_blend(weights: np.ndarray, names: list) -> np.ndarray:
 
 
 def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blender: Path | None, work: Path,
-               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = False) -> RigResult:
+               log: Callable[[str], None], piece_overrides, weight_transfer: bool, finger_weights: bool = False,
+               twist: bool = True) -> RigResult:
     positions = model.vertices()
     faces = model.faces
     uvs = model.uvs
@@ -267,6 +270,9 @@ def _build_rig(model: CharacterModel, anchors: dict, base: BaseCharacter, blende
     merged = np.zeros((len(w), len(palette_cols)))
     for j, col in enumerate(column):
         merged[:, col] += w[:, j]
+    if twist:
+        from src.core.twist import split
+        merged, palette_cols = split(baked, merged, palette_cols, base, log)
     if finger_weights:
         from src.core.fingers import add_fingers
         merged, palette_cols = add_fingers(baked, merged, palette_cols, base, log)

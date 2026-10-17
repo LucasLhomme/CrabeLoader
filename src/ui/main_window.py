@@ -305,6 +305,11 @@ class MainWindow(ctk.CTk):
                         variable=self.fingers_var, font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(finger_weights_v2=bool(self.fingers_var.get()))
                         ).grid(row=4, column=0, sticky="w", pady=(4, 0))
+        self.twist_var = ctk.BooleanVar(value=bool(self.settings.get("twist_bones", True)))
+        ctk.CTkCheckBox(import_box, text="Game twist bones: shoulders, forearms and hips share their weight like the "
+                                         "official figures", variable=self.twist_var, font=ctk.CTkFont(size=11),
+                        command=lambda: self.settings.update(twist_bones=bool(self.twist_var.get()))
+                        ).grid(row=5, column=0, sticky="w", pady=(4, 0))
         ctk.CTkButton(tab, text="Import Blender Rig & Tracks (.glb .gltf .json)", fg_color="#27272a",
                       hover_color="#3f3f46", text_color="#e4e4e7",
                       command=self.on_import_rig).grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -2279,8 +2284,9 @@ class MainWindow(ctk.CTk):
         overrides = list(self.piece_overrides)
         transfer = self._weight_transfer()
         fingers = bool(self.fingers_var.get())
+        twist = bool(self.twist_var.get())
         self._run(lambda: build_rig(model, anchors, base, Path(blender) if blender else None,
-                                    WORK_DIR / "rig", self.log, overrides, transfer, fingers), done)
+                                    WORK_DIR / "rig", self.log, overrides, transfer, fingers, twist), done)
 
     def on_install(self):
         if not self._ready_to_rig():
