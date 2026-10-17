@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environment (created by Launch_Creator.bat / run.ps1)
+.venv/
+venv/
+.env
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Creator: generated at runtime
+build/
+backups/
+*.log
+
+# Creator: personal settings (game and Blender paths)
+src/config/settings.json
+
+# Game data and third-party binaries: not redistributable, rebuilt from the user's own game (see README)
+src/assets/
+src/tools/
+
+# Test models and intermediate data (never commit models ripped from games)
+*.glb
+*.gltf
+*.fbx
+*.dae
+*.npz
+!tests/fixtures/**
+
+# Local working folders
+Claude outputs/
