@@ -1,5 +1,7 @@
 # Disney Infinity Creator
 
+**Français** · [English](README.en.md)
+
 Transforme n'importe quel modèle 3D en **personnage jouable** pour **Disney Infinity 3.0 Gold Edition (PC)**.
 
 Tu importes un modèle (Sketchfab, Models Resource, ton propre travail Blender…), tu choisis une figure du jeu comme
@@ -19,6 +21,7 @@ remplacé.
 - [Installation et lancement](#installation-et-lancement)
 - [Créer un personnage pas à pas](#créer-un-personnage-pas-à-pas)
 - [Comprendre le score de déformation](#comprendre-le-score-de-déformation)
+- [Gérer ses personnages](#gérer-ses-personnages)
 - [Outils en ligne de commande](#outils-en-ligne-de-commande)
 - [Jouer avec son personnage](#jouer-avec-son-personnage)
 - [Conseils pour un bon résultat](#conseils-pour-un-bon-résultat)
@@ -39,7 +42,7 @@ remplacé.
 - **Nettoyage intégré** : à l'import, Blender (en arrière-plan) fusionne les morceaux, corrige l'échelle et
   l'orientation, retrouve les textures perdues (fichier `.mtl` absent, images à côté du modèle) et fige un éventuel
   squelette. Le résultat est un fichier temporaire supprimé à la fermeture : aucun fichier parasite chez toi. Les
-  `.fbx` passe toujours par ce nettoyage.
+  `.fbx` passent toujours par ce nettoyage.
 - **Placement manuel** : décale et tourne le modèle (curseurs, boutons de 1 cm, rotation fine, « Recentre ») quand
   l'ajustement automatique se trompe.
 - **Vue 3 plans** (face, profil, dessus) pour juger l'alignement du squelette d'un coup d'œil.
@@ -55,6 +58,11 @@ remplacé.
   pièces voisines, « Lock » pour la forcer à suivre un seul os.
 - **Aperçu de l'atlas de textures** avec contrôles (image trop sombre, non carrée…), et avertissements à l'import
   (matériau sans texture, texture répétée).
+- **Icônes en jeu** : portrait du HUD et figure de la grille de sélection, photographiés automatiquement sur ton
+  modèle.
+- **Relief** : une normal map tirée de la texture donne l'aspect « figurine sculptée » des personnages du jeu.
+- **Mod partagé léger** : textures et icônes de tous tes personnages dans un seul mod (`zz_creator_shared`), au lieu
+  d'une archive de ~13 Mo par personnage ; `Gerer_Mods.bat` liste, désactive et supprime proprement tes personnages.
 - **Journal d'erreurs** (`build/creator.log`) pour comprendre un plantage.
 - **Installation vérifiée** : chaque installation est contrôlée (tampons, poids, liens de fichiers) et l'ancienne
   version du mod est sauvegardée dans `backups/`.
@@ -67,17 +75,18 @@ remplacé.
 | Disney Infinity 3.0 Gold Edition (PC) | Ta propre copie installée |
 | [CrabeLoader](https://github.com/LucasLhomme/CrabeLoader) et [CrabeMenu](https://github.com/LucasLhomme/CrabeMenu) | Le chargeur de mods qui charge ton personnage. CrabeMenu (menu `F5` en jeu) est conseillé pour passer sur ton personnage |
 | Python 3.12 ou plus récent | Cocher « Add python.exe to PATH » à l'installation |
-| Blender 4.x ou plus récent | Recommandé : nettoyage des modèles (obligatoire pour `.fbx`) et meilleurs poids. Creator le lance en arrière-plan, tu n'as jamais à l'ouvrir |
+| Blender 4.x ou 5.x | Recommandé : nettoyage des modèles (obligatoire pour `.fbx`) et meilleurs poids. Creator le lance en arrière-plan, tu n'as jamais à l'ouvrir |
 
 ## Installation et lancement
 
 1. Télécharge ou clone ce dépôt.
-2. Lance `run.ps1` (PowerShell) : le premier démarrage crée l'environnement virtuel `.venv` et installe les
-   dépendances (`customtkinter`, `moderngl`, `numpy`, `Pillow`, `trimesh`, `scipy`).
-3. Ensuite, un double-clic sur **`Lancer_Creator.bat`** suffit. Si l'appli s'arrête, la fenêtre reste ouverte et
-   renvoie vers `build\creator.log`.
+2. Double-clique sur **`Launch_Creator.bat`**. Au premier lancement, il crée l'environnement virtuel `.venv` et
+   installe les dépendances (`customtkinter`, `moderngl`, `numpy`, `Pillow`, `trimesh`, `scipy`, `cryptography`),
+   puis ouvre Creator. Les fois suivantes, il démarre directement.
+3. Si l'appli s'arrête, la fenêtre reste ouverte et renvoie vers `build\creator.log`.
 
-> Si PowerShell refuse le script : `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (une seule fois).
+> `run.ps1` (PowerShell) fait la même chose et réinstalle les dépendances à chaque lancement : utile après une mise
+> à jour de Creator.
 
 Le chemin de Blender et celui du jeu se règlent dans l'onglet **Rig & Export** ; ils sont mémorisés.
 
@@ -114,7 +123,8 @@ rigide. La pose **Fist** du sélecteur montre le résultat.
 
 **Format `.dae` (COLLADA).** Creator le lit lui-même, sans Blender : géométrie, UV, textures (cherchées à côté du
 fichier), unité et axe vertical. Un modèle skinné est lu dans sa pose de repos. Avec la case de nettoyage cochée,
-Blender (import Collada) le nettoie comme les autres formats.
+Creator le convertit en `.glb` (couleurs identiques) avant de le confier à Blender, qui n'a plus d'import Collada
+depuis la version 5.
 
 **Rendu du jeu (filtre de texture).** Onglet Modèle, curseur « Game look » (0 = texture d'origine). Les modèles de fans
 sont plus sombres, plus ternes et pleins d'ombres peintes ; les personnages du jeu sont clairs, saturés et lisses. Le
@@ -133,7 +143,8 @@ modèle (texture avec le filtre, pose de jeu une fois riggé) et écrit les imag
 le portrait HUD 128 px (`ui/icons/hud_playericons_<acteur>.mtb` + texture, nommé dans `mod.json` par
 `"icon": "HUD_PlayerIcons_<Acteur>"`) et la figure du Virtual Reader (`ui/virtualreadercharacters/<acteur>.mtb`,
 `_sm`, et la silhouette `_s`). `<acteur>_icon.png` reste à la racine du mod. Le bouton « Preview » montre les trois
-images.
+images. Le jeu ne lit ces images que dans ses archives : Creator les ajoute à celles du mod partagé (voir
+[Gérer ses personnages](#gérer-ses-personnages)).
 
 **Audit des animations (outil à part, hors Creator).** Glisse un modèle sur `Audit_Animations.bat` (base par défaut
 TCW_Anakin ; une autre en 2ᵉ argument). L'outil construit le rig, joue toutes les animations dessus et écrit dans
@@ -203,7 +214,7 @@ ou un `.zip` qui le contient avec ses textures.
   Sans chemin Blender valide, les formats `.glb`/`.obj`/`.zip` s'importent tels quels ; `.fbx` demande
   Blender.
 - Le modèle doit être en **T-pose** (bras écartés) ; une A-pose passe aussi.
-- Creator détecte l'orientation. Sinon : **↻ 90°**, **↻ 180°**, **Stand up**.
+- Creator détecte l'orientation. Sinon : **↻ 90°**, **↻ 180°**, **Stand up**, **⇅ Flip**.
 - **Model height** est préréglée à la taille de la base. Coche **Show … alongside** pour comparer côte à côte.
 - **Position** : curseurs gauche/droite, arrière/avant, bas/haut, rotation fine ; boutons ◄ 1 cm ►, ▼ back, ▲ forward ;
   **Recentre** revient au centrage automatique.
@@ -235,7 +246,42 @@ Réglages des capacités et de l'ensemble de mouvements du personnage (hérités
 6. **2. Install into the game** : le journal liste les contrôles, tous doivent afficher `OK`.
 
 Le mod est écrit dans `<jeu>/mods/<nom du personnage>/`. Réinstaller sous le même nom remplace le mod et déplace
-l'ancienne version dans `backups/`.
+l'ancienne version dans `backups/`. Creator met ensuite à jour le mod partagé `zz_creator_shared` (textures et icônes,
+quelques secondes). **Ferme le jeu avant d'installer** : il garde ses archives ouvertes.
+
+### Option : transfert robuste des poids
+
+Case « Robust weight transfer » (onglet Modèle). Creator construit le rig deux fois (poids Blender, puis poids
+copiés depuis le corps de la figure de base) et garde celui qui déforme le moins. Utile surtout pour les jupes, capes
+et manteaux longs. Aucun module à installer en plus (NumPy et SciPy suffisent).
+
+- Méthode : « Robust Skin Weights Transfer via Weight Inpainting » (Abdrashitov, Raichstat, Monsen, Hill, SIGGRAPH
+  Asia 2023), réimplémentée sans dépendance compilée. Inspiré de l'add-on Blender gratuit
+  [Robust Weight Transfer](https://github.com/sentfromspacevr/robust-weight-transfer) de SentFromSpaceVR et du code
+  de référence [RobustSkinWeightsTransferCode](https://github.com/rin-23/RobustSkinWeightsTransferCode) (MIT).
+
+## Gérer ses personnages
+
+Le jeu ne lit les textures et les icônes que dans ses propres archives (`assets/textures/17.zip`,
+`assets/ui/icons/icons.zip`…), qu'un mod doit fournir entières. Pour ne pas répéter ces archives dans chaque
+personnage :
+
+- chaque personnage (`mods/<nom>/`) garde seulement ses fichiers sources (`textures/*.tbody`, `ui/…`) ;
+- le mod **`mods/zz_creator_shared`** contient les archives reconstruites une fois pour tous les personnages actifs
+  (les fichiers du jeu sont recopiés tels quels, seuls tes fichiers sont ajoutés). Ne le modifie pas à la main.
+
+**`Gerer_Mods.bat`** (outil à part, jeu fermé) :
+
+| Choix | Effet |
+| :--- | :--- |
+| 1. Supprimer | Envoie le personnage à la corbeille et refait les archives : il ne reste rien de lui dans le jeu |
+| 2. Désactiver / réactiver | Préfixe `_` sur le dossier (ignoré par CrabeLoader), puis refait les archives |
+| 3. Nettoyer | Range les personnages faits avec une ancienne version (une archive de 13 Mo chacun), propose d'envoyer les sauvegardes de `backups/` à la corbeille |
+| 4. Reconstruire | Refait les archives partagées de force |
+
+Quand le lancer : pour supprimer ou désactiver un personnage (plutôt que d'effacer son dossier), après avoir effacé un
+dossier à la main, ou si l'installation signale « shared archives NOT rebuilt » (jeu ouvert). La liste indique
+« Archives partagées à jour » ou ce qu'il faut reconstruire. En ligne de commande : `--list`, `--rebuild`, `--clean`.
 
 ## Comprendre le score de déformation
 
@@ -266,6 +312,7 @@ Sans ouvrir l'interface (à lancer avec `.\.venv\Scripts\python.exe`) :
 | `tools\capture.py modele.glb [--base ACTOR] [--amount 1.0] [--out dossier]` | Construit le rig d'un modèle et enregistre des images en 3 vues (repos, bras levés, marche, avec les arêtes étirées en rouge) et `report.txt` dans `build\captures\` |
 | `Capturer_Modele.bat` | Même chose en glissant un modèle sur le fichier |
 | `Audit_Animations.bat` | Audit des animations d'un modèle (rapport + images), hors Creator |
+| `Gerer_Mods.bat` / `tools\manage_mods.py` | Gérer les personnages installés (voir plus haut) |
 
 ## Jouer avec son personnage
 
@@ -291,7 +338,8 @@ animations et capacités qui le pilotent. Creator crée un **acteur cloné** : u
 maillage est remplacé par le tien, sous un nouveau nom.
 
 1. **Ajustement du squelette** : des coupes horizontales du modèle donnent la ligne des bras, le cou, l'entrejambe,
-   les genoux et les chevilles ; les articulations standard sont placées dessus. Le centrage ignore cheveux et ailes
+   les genoux et les chevilles ; les articulations standard sont placées dessus, puis corrigées par de petits modèles
+   calibrés sur les figures du jeu. Le centrage ignore cheveux et ailes
    pour que le squelette ne soit pas décalé.
 2. **Correspondance des os** : chaque articulation est reliée à l'os le plus proche que la base possède vraiment ;
    une position manquante est reconstruite d'après les proportions d'une figure de référence.
@@ -299,13 +347,13 @@ maillage est remplacé par le tien, sous un nouveau nom.
    maillages ouverts ou en très nombreux morceaux : si moins de 70 % des sommets reçoivent un poids, Creator utilise la
    méthode par distance. Ensuite : tête rigide (les yeux ne glissent pas), pièces sous les genoux liées à une
    cheville, pièces reliant bras et jambes suivant la colonne, lissage des panneaux entre les jambes (jupes, robes),
-   puis les pièces verrouillées à la main.
+   os de torsion du jeu sur les bras et les cuisses, puis les pièces verrouillées à la main.
 4. **Cuisson dans la pose de repos** : le maillage n'est pas rigué sur un nouveau squelette. Chaque partie du corps
    est tournée et étirée de l'articulation de ton modèle vers l'articulation correspondante de la base, si bien que
    le maillage épouse exactement la pose de repos de la base. Le squelette et les matrices de la base ne changent pas :
    **toutes les animations du jeu s'appliquent telles quelles**.
 5. **Écriture des fichiers** : Creator lit et écrit directement les formats du jeu : scènes Octane (`.oct`, `.bent`),
-   Lua compilé (`.dnax`) et paquets de matériaux (`.mtb`), sans perte (réécrire un fichier intact redonne les mêmes
+   Lua compilé (`.dnax`), paquets de matériaux (`.mtb`), paquets d'interface et archives chiffrées, sans perte (réécrire un fichier intact redonne les mêmes
    octets).
 
 ### Contenu d'un mod de personnage
@@ -315,7 +363,8 @@ maillage est remplacé par le tien, sous un nouveau nom.
 | `characters/<acteur>/<acteur>.oct`, `_0.vbuf`, `_0.ibuf` | Le maillage : sommets, poids, triangles, limites |
 | `characters/<acteur>/<acteur>.mtb` | Les matériaux, avec textures |
 | `characters/<acteur>/<acteur>.dnax`, `.bent`, `.animtreeoverrides` | La définition de l'acteur, pointant vers le nouveau maillage |
-| `textures/<xx>.zip` | L'archive de textures du personnage |
+| `textures/<id>.tbody` | Textures du personnage (couleur et relief), sources de l'archive partagée |
+| `ui/icons/…`, `ui/virtualreadercharacters/…`, `<acteur>_icon.png` | Icônes (sources de l'archive partagée) |
 | `skilltrees/ActorList.patch`, `skilltrees/DataMap.patch` | Enregistrent l'acteur dans les bases de données du jeu |
 | `characters/<Acteur>.lua` | Ajoute la figure à la grille de personnages |
 | `<nom>.lua`, `mod.json` | Point d'entrée CrabeLoader et entrée CrabeMenu |
@@ -324,24 +373,27 @@ maillage est remplacé par le tien, sous un nouveau nom.
 
 - **Moveset** : le personnage reprend les mouvements, la voix, les capacités et l'arbre de compétences de sa base ;
   pas d'animations personnalisées.
-- **Textures** : seule la couleur de base du modèle est utilisée, la carte de normales est plate. Un modèle dont les
-  textures sont **noires en jeu** reste un point à investiguer (il faut `loader.log` et une capture du jeu).
+- **Textures** : seule la couleur de base du modèle est utilisée (le relief est déduit de cette couleur, pas d'une
+  vraie normal map du modèle). Une seule texture par personnage (atlas), plafonnée à 2048 px.
 - **Figures non humanoïdes** (Olaf, Randall, Maleficent, Elastigirl) : inutilisables comme base.
 - **Squelettes adaptés** (◐) : quelques articulations reconstruites à peu près.
 - **Capes, jupes, cheveux** : sans « bone heat » réussi, le skinning par distance est plus approximatif ; le score ne
   voit pas tout, contrôle les poses et verrouille les pièces si besoin.
-- **Icône** : la grille affiche une icône générique pour ton personnage.
-- **Maturité** : les personnages basés sur Luke ont été joués en jeu ; les autres bases utilisent la même chaîne mais
-  ont été moins testées. L'interface n'a été validée que sur des tests automatiques sans écran.
+- **Placement automatique du squelette** : c'est la principale source d'écart. Refaites à travers Creator, les
+  figures du jeu s'écartent d'environ 3,5 % de leur forme d'origine avec l'auto-fit, contre 1,6 % avec leurs vraies
+  articulations. Vérifie surtout les épaules, les coudes et le bassin dans l'onglet Skeleton.
+- **Maturité** : testé en jeu sur les bases Luke, Anakin et Gamora ; les autres bases utilisent la même chaîne mais
+  ont été moins jouées.
 
 ## Dépannage
 
 | Problème | À essayer |
 | :--- | :--- |
-| L'appli se ferme au lancement | Lance `Lancer_Creator.bat` (la fenêtre reste ouverte) et consulte `build\creator.log` |
+| L'appli se ferme au lancement | Lance `Launch_Creator.bat` (la fenêtre reste ouverte) et consulte `build\creator.log` |
+| Textures noires ou icône « IN » en jeu | Ferme le jeu, `Gerer_Mods.bat` → 4. Reconstruire ; l'icône n'existe que si « Character icons » était coché à l'installation |
 | Le personnage n'apparaît pas en jeu | Redémarre le jeu ; vérifie CrabeLoader ; consulte `loader.log` dans le dossier du jeu |
 | « model too detailed » | Réduis sous ~65 000 sommets (le nettoyage le fait) |
-| Modèle couché ou de dos | Onglet 1 : **Stand up**, **↻ 90°** / **↻ 180°** |
+| Modèle couché ou de dos | Onglet 1 : **Stand up**, **↻ 90°** / **↻ 180°**, **⇅ Flip** |
 | Squelette décalé par rapport au corps | Onglet 1 : curseurs de position ou **Recentre** ; vue « 3 views » pour vérifier |
 | Le modèle devient une aiguille / « collapsed » | Les poids Blender ont échoué ; Creator bascule normalement sur la distance. Reconstruis le rig et lis le journal |
 | Modèle gris à l'import | Lis l'avertissement jaune : texture non liée. Mets les images à côté du modèle (dans le même `.zip`) |
@@ -363,16 +415,23 @@ src/
     quality.py, ranking.py                               score de déformation, classement des bases
     cleaner.py, errorlog.py                              nettoyage Blender intégré, journal d'erreurs
     octane.py, exporter.py, mod_writer.py, textures.py   sortie du mod
+    icon.py, normalmap.py, twist.py                      icônes, relief, os de torsion
+    shared.py, octane_zip.py                             mod partagé, archives chiffrées du jeu
   render/     viewport OpenGL hors écran (aussi utilisé par tools/capture.py)
   ui/         interface customtkinter
   scripts/    étapes Blender en arrière-plan (nettoyage, poids bone heat, figer un .glb rigué)
   assets/     bases/ (pack des figures), roster.json, shader_layouts.json, templates/
-  tools/      QuickBMS et le ré-encrypteur d'archives
-tools/        batch_check.py, capture.py, scripts qui régénèrent src/assets depuis une installation du jeu
+  tools/      QuickBMS et le ré-encrypteur d'archives (offsetting.exe)
+tools/        batch_check.py, capture.py, audit.py, manage_mods.py, scripts qui régénèrent src/assets
+              depuis une installation du jeu, outils de mesure (roundtrip.py, fit_calibration.py, twist_profiles.py)
 tests/        tests unitaires (pytest)
 ```
 
 Tests : `.\.venv\Scripts\python.exe -m pytest tests`.
+
+`tools/roundtrip.py <ACTEUR>` refait une figure officielle à travers Creator et la compare à l'originale (forme,
+poids, squelette) ; `--true-skeleton` et `--official-weights` isolent chaque source d'erreur. `Sync_Claude.bat`
+regroupe `src/assets` en une archive pour une session de développement distante.
 
 ### Ressources du jeu
 
@@ -390,25 +449,18 @@ QuickBMS (avec le script BMS Disney Infinity) et `offsetting.exe` vont dans `src
 ### Conventions
 
 - Branche principale : `main`. Une modification = un commit avec un message clair.
-- Le dossier `build/`, `backups/`, `.venv/` et `src/config/settings.json` (chemins personnels) ne sont pas suivis.
-
-## Option : transfert robuste des poids
-
-Case « Robust weight transfer » dans l'onglet d'import. Creator construit le rig deux fois (poids Blender, puis poids
-copiés depuis le corps de la figure de base) et garde celui qui déforme le moins. Utile surtout pour les jupes, capes
-et manteaux longs. Aucun module à installer en plus (NumPy et SciPy suffisent).
-
-- Méthode : « Robust Skin Weights Transfer via Weight Inpainting » (Abdrashitov, Raichstat, Monsen, Hill, SIGGRAPH
-  Asia 2023), réimplémentée sans dépendance compilée. Inspiré de l'add-on Blender gratuit
-  [Robust Weight Transfer](https://github.com/sentfromspacevr/robust-weight-transfer) de SentFromSpaceVR et du code
-  de référence [RobustSkinWeightsTransferCode](https://github.com/rin-23/RobustSkinWeightsTransferCode) (MIT).
+- Commits `type(zone): résumé` avec un corps qui dit pourquoi ; chaque version est décrite dans `CHANGELOG.md`.
+  Publier une version : mettre à jour `VERSION` et le journal, GitHub Actions crée l'étiquette et la release.
+- `build/`, `backups/`, `.venv/`, `src/assets/`, `src/tools/` et `src/config/settings.json` (chemins personnels) ne
+  sont pas suivis, ni les modèles 3D (`*.glb`, `*.fbx`, `*.dae`…).
 
 ## Crédits
 
 - **QuickBMS** de Luigi Auriemma et le script BMS Disney Infinity de la communauté.
 - La communauté de modding Disney Infinity (ré-encrypteur d'archives, recherches sur les formats).
 - [trimesh](https://trimesh.org), [ModernGL](https://github.com/moderngl/moderngl),
-  [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter), NumPy, SciPy, Pillow et
+  [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter), NumPy, SciPy, Pillow,
+  [cryptography](https://cryptography.io) et
   [Blender](https://www.blender.org).
 
 Disney Infinity et tous les personnages associés sont des marques de leurs propriétaires respectifs. Ce projet est

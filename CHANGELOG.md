@@ -6,6 +6,9 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+Points forts : icônes en jeu, relief des textures, mod partagé léger et `Gerer_Mods.bat`, os de torsion du jeu,
+auto-fit calibré sur les figures officielles, documentation en anglais.
+
 ### Ajouté
 - Mod partagé `mods/zz_creator_shared` : le jeu ne lit les textures et les icônes que dans ses archives, qu'il
   faut livrer entières. Au lieu d'une archive de ~13 Mo par personnage (et d'une seule archive d'icônes de 125 Mo
@@ -17,14 +20,23 @@ Actions crée alors l'étiquette et la release.
   corbeille, désactivation (préfixe `_`), nettoyage (migration des anciens personnages dans l'archive partagée,
   suppression des anciennes archives, sauvegardes d'anciennes versions à la corbeille) et reconstruction. Un
   personnage supprimé ne laisse rien dans le jeu. Options `--list`, `--rebuild`, `--clean`.
-### Corrigé
-- Nettoyage Blender des fichiers `.dae` : Blender 5 n'a plus d'import COLLADA. Le `.dae` est lu par Creator
-  (pièces fusionnées, textures en un atlas) puis confié à Blender en `.glb` avec un matériau PBR neutre, ce qui
-  garde les couleurs à l'identique (vérifié sur Ganondorf Smash : texture moyenne 54,35 avant et après).
-- Rapport du nettoyage : la sortie de Blender est lue en UTF-8 ; sous Windows, les accents cassés empêchaient de
-  filtrer les avertissements d'orientation sans objet (« Modèle debout »).
-- Aperçu « in game pose » : le squelette de base (fantôme et points) suit la pose de jeu au lieu de rester en
-  T-pose, et l'aperçu se met à jour en direct avec les curseurs du squelette.
+- Relief (case « Relief », onglet Rig & Export, activée par défaut) : une normal map est tirée de la texture du
+  modèle (détails fins, sombre = creusé, bords de couleur = rainure légère) au format des cartes du jeu (R = 255,
+  G = Y, A = X). Les 37 figures officielles doivent leur aspect « figurine sculptée » à ces cartes (coutures, plis,
+  boutons) ; le Creator n'envoyait qu'une carte plate. Inclinaison calibrée sur 40 cartes du jeu (médiane ~4°,
+  coutures ~31° contre ~35°).
+- Os de torsion du jeu (case « Game twist bones », activée par défaut) : les 37 figures officielles partagent le
+  haut du bras, l'avant-bras et la cuisse entre l'os principal et des os d'aide pilotés par le moteur
+  (`Shoulder_Spin`, `Shoulder_OL`, `Forearm_OL`, `Thigh_OL`, ≈ 7 % du poids du corps). Le Creator ne pesait que
+  l'os principal : l'épaule et la hanche tournaient d'un bloc avec le membre. Le partage mesuré sur ces figures
+  (profil médian le long du membre, `tools/twist_profiles.py`) est maintenant copié sur le modèle. Au repos rien
+  ne bouge ; l'effet n'est visible qu'en jeu.
+- `Sync_Claude.bat` (+ `tools/pack_assets.py`) : regroupe `src/assets` (≈ 900 fichiers extraits du jeu, non
+  versionnés) en une archive `build/claude_sync/assets.zip`, transférable en une fois vers une session cloud.
+- Curseur « V-shape » (onglet Squelette) : élargit la poitrine, hauteur par hauteur, jusqu'au côté intérieur du
+  bras baissé de la base ; la taille et ce qui est déjà assez large (veste évasée) ne bougent pas. Comble le vide
+  entre le torse et les bras en pose du jeu. Activé par « Disney Infinity style » et « Match the base ».
+- Documentation en anglais : `README.en.md`, traduction complète du README (lien de langue en tête des deux).
 ### Amélioré
 - Auto-fit du squelette calibré sur les figures du jeu (`tools/fit_calibration.py`) : 70 figures humanoïdes remises
   en T-pose et mesurées comme un modèle importé ; chaque articulation est prédite par un petit modèle linéaire.
@@ -33,11 +45,24 @@ Actions crée alors l'étiquette et la release.
   corrigé), profondeur genoux 3,0 → 2,0, cou 4,6 → 4,3. Hanches et hauteur des bras volontairement non corrigées
   (les proportions des figures, grosse tête et jambes courtes, fausseraient un modèle réaliste). Test aller-retour
   sur 69 figures : écart médian 4,4 % → 4,1 %.
-### Outils
-- `tools/roundtrip.py` (développeur) : test « aller-retour ». Une figure officielle est remise en T-pose avec son
-  propre squelette, importée dans Creator, riggée sur elle-même et comparée à l'originale (forme en pose de jeu,
-  poids, squelette auto). Options `--true-skeleton` et `--official-weights` pour isoler chaque source d'erreur.
+- Installation d'un personnage avec icône : l'archive d'icônes du jeu (22 700 fichiers, 125 Mo) n'est plus
+  extraite ni rechiffrée. `src/core/octane_zip.py` lit et écrit les archives chiffrées du jeu (chaque entrée est
+  chiffrée à part) : les fichiers du jeu sont recopiés octet pour octet et seuls ceux du Creator passent par
+  `offsetting.exe`. De 1-2 minutes à quelques secondes ; quickbms n'est plus utilisé pour le mod partagé.
+### Modifié
+- `Lancer_Creator.bat` devient `Launch_Creator.bat`. Au premier lancement, il crée `.venv` et installe les
+  dépendances (via `run.ps1 -SetupOnly`) : un seul fichier à lancer pour un nouvel utilisateur.
+- Dépendance ajoutée : `cryptography` (archives chiffrées du jeu).
+- README mis à jour (mod partagé, icônes, relief, `.dae`, limites connues) ; `.gitignore` réduit à ce qui concerne
+  le projet (modèles 3D, ressources du jeu, réglages personnels exclus).
 ### Corrigé
+- Nettoyage Blender des fichiers `.dae` : Blender 5 n'a plus d'import COLLADA. Le `.dae` est lu par Creator
+  (pièces fusionnées, textures en un atlas) puis confié à Blender en `.glb` avec un matériau PBR neutre, ce qui
+  garde les couleurs à l'identique (vérifié sur Ganondorf Smash : texture moyenne 54,35 avant et après).
+- Rapport du nettoyage : la sortie de Blender est lue en UTF-8 ; sous Windows, les accents cassés empêchaient de
+  filtrer les avertissements d'orientation sans objet (« Modèle debout »).
+- Aperçu « in game pose » : le squelette de base (fantôme et points) suit la pose de jeu au lieu de rester en
+  T-pose, et l'aperçu se met à jour en direct avec les curseurs du squelette.
 - Menton / cou étirés en pose de jeu quand le torse ou le cou du modèle n'a pas la longueur de celui de la base
   (Sora sur Gamora : 1,8 cm puis 1,1 cm d'écart) : le cou part maintenant du bout du torse et la tête du bout du
   cou au lieu de sauter sur les articulations de la base. La zone rigide de la tête ne prend plus le col, la
@@ -45,13 +70,6 @@ Actions crée alors l'étiquette et la release.
   l'articulation de la tête : cheveux, chapeau).
 - Les points du squelette restent visibles avec « Preview in game pose » (et en « In-game pose » une fois
   riggé) : ils suivent le modèle dans la pose du jeu.
-### Ajouté
-- Relief (case « Relief », onglet Rig & Export, activée par défaut) : une normal map est tirée de la texture du
-  modèle (détails fins, sombre = creusé, bords de couleur = rainure légère) au format des cartes du jeu (R = 255,
-  G = Y, A = X). Les 37 figures officielles doivent leur aspect « figurine sculptée » à ces cartes (coutures, plis,
-  boutons) ; le Creator n'envoyait qu'une carte plate. Inclinaison calibrée sur 40 cartes du jeu (médiane ~4°,
-  coutures ~31° contre ~35°).
-### Corrigé
 - Sens des tangentes (signe de la bitangente) inversé par rapport au jeu sur toutes les figures : vérifié sur les
   37 figures officielles (98 à 99 % des sommets maintenant identiques). Sans effet avec une carte plate, mais
   indispensable au relief (les creux seraient sortis en bosses).
@@ -67,16 +85,6 @@ Actions crée alors l'étiquette et la release.
 - Aperçu « Preview in game pose » (onglet Squelette) : il utilise maintenant les poids de secours du vrai rig
   (zones du corps, tête rigide) au lieu de poids approximatifs. Le menton ne s'étire plus vers le col et les
   épaules ne remontent plus vers les oreilles : l'aperçu ressemble au rig construit.
-### Ajouté
-- Os de torsion du jeu (case « Game twist bones », activée par défaut) : les 37 figures officielles partagent le
-  haut du bras, l'avant-bras et la cuisse entre l'os principal et des os d'aide pilotés par le moteur
-  (`Shoulder_Spin`, `Shoulder_OL`, `Forearm_OL`, `Thigh_OL`, ≈ 7 % du poids du corps). Le Creator ne pesait que
-  l'os principal : l'épaule et la hanche tournaient d'un bloc avec le membre. Le partage mesuré sur ces figures
-  (profil médian le long du membre, `tools/twist_profiles.py`) est maintenant copié sur le modèle. Au repos rien
-  ne bouge ; l'effet n'est visible qu'en jeu.
-- `Sync_Claude.bat` (+ `tools/pack_assets.py`) : regroupe `src/assets` (≈ 900 fichiers extraits du jeu, non
-  versionnés) en une archive `build/claude_sync/assets.zip`, transférable en une fois vers une session cloud.
-### Corrigé
 - Import d'un .zip à plusieurs modèles : le Creator prend le personnage principal (nom de l'archive, pas de
   variante « ghost/phantom », pas d'accessoire, le plus haut dans les dossiers) au lieu du plus gros fichier ; si
   l'archive en contient plusieurs, une fenêtre propose la liste (son choix en premier). Le nettoyage Blender
@@ -88,13 +96,12 @@ Actions crée alors l'étiquette et la release.
 - Visage/cou avec « Head » agrandi : la tête grandit maintenant depuis l'articulation de la mâchoire (le menton ne
   s'enfonce plus dans le col, le cou garde sa longueur) et le cou s'épaissit à moitié avec la tête ; le V-shape
   s'arrête aux aisselles et n'élargit plus la base du cou.
-### Ajouté
-- Curseur « V-shape » (onglet Squelette) : élargit la poitrine, hauteur par hauteur, jusqu'au côté intérieur du
-  bras baissé de la base ; la taille et ce qui est déjà assez large (veste évasée) ne bougent pas. Comble le vide
-  entre le torse et les bras en pose du jeu. Activé par « Disney Infinity style » et « Match the base ».
-### Corrigé
 - Onglet Squelette : le bloc des proportions et ses boutons sortaient de l'écran sans pouvoir défiler ; ils sont
   maintenant dans la zone qui défile, qui prend toute la hauteur disponible.
+### Outils
+- `tools/roundtrip.py` (développeur) : test « aller-retour ». Une figure officielle est remise en T-pose avec son
+  propre squelette, importée dans Creator, riggée sur elle-même et comparée à l'originale (forme en pose de jeu,
+  poids, squelette auto). Options `--true-skeleton` et `--official-weights` pour isoler chaque source d'erreur.
 
 ## [0.4.0] - 2026-10-17
 ### Ajouté
