@@ -312,3 +312,29 @@ def quick_game_pose(verts: np.ndarray, anchors: dict, base_joints: dict) -> np.n
         out += weights[:, col:col + 1] * (verts @ m + t)
         total += weights[:, col]
     return out / np.maximum(total, 1e-9)[:, None]
+
+
+_ANCHOR_BONE = {"Hips": "Hips", "HipsLow": "Hips", "Spine2": "Spine2", "Spine3": "Spine3", "Neck": "Neck",
+                "Head": "Head", "HeadTop": "Head", "Clavicle": "Clavicle", "ClavicleHeat": "Clavicle",
+                "Shoulder": "Shoulder", "Elbow": "Elbow", "Hand": "Hand", "HandTip": "Hand", "Thigh": "Thigh",
+                "Knee": "Knee", "Ankle": "Ankle", "AnkleTrue": "Ankle", "Ball": "Ball", "ToeTip": "Ball"}
+
+
+def posed_anchors(anchors: dict, base_joints: dict) -> dict:
+    """The skeleton points moved like the model into the game's rest pose (each by the bone it belongs to), so the
+    points stay on the model while "Preview in game pose" is on."""
+    from src.core.rig import bake_transforms
+    bake = bake_transforms(anchors, base_joints)
+    out = {}
+    for name, point in anchors.items():
+        head, _, side = name.partition("_")
+        bone = _ANCHOR_BONE.get(head)
+        if bone is None:
+            continue
+        key = f"{bone}_{side}" if side else bone
+        if key not in bake:
+            continue
+        m, t = bake[key]
+        out[name] = np.asarray(point, float) @ m + t
+    return out
+

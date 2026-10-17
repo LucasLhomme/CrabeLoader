@@ -6,6 +6,14 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Corrigé
+- Menton / cou étirés en pose de jeu quand le torse ou le cou du modèle n'a pas la longueur de celui de la base
+  (Sora sur Gamora : 1,8 cm puis 1,1 cm d'écart) : le cou part maintenant du bout du torse et la tête du bout du
+  cou au lieu de sauter sur les articulations de la base. La zone rigide de la tête ne prend plus le col, la
+  capuche ni le haut des épaules à côté du cou (seulement ce qui est au-dessus du cou, et tout ce qui dépasse
+  l'articulation de la tête : cheveux, chapeau).
+- Les points du squelette restent visibles avec « Preview in game pose » (et en « In-game pose » une fois
+  riggé) : ils suivent le modèle dans la pose du jeu.
 ### Ajouté
 - Relief (case « Relief », onglet Rig & Export, activée par défaut) : une normal map est tirée de la texture du
   modèle (détails fins, sombre = creusé, bords de couleur = rainure légère) au format des cartes du jeu (R = 255,

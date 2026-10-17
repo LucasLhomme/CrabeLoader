@@ -585,11 +585,14 @@ class MainWindow(ctk.CTk):
         self.renderer.request_render()
 
     def _update_skeleton_overlay(self):
-        """The green fitted skeleton is drawn on the T-pose: hidden while the game-pose preview is on."""
-        if getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get():
-            self.renderer.set_skeleton(None, None)
-        elif self.anchors is not None:
-            self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
+        """The green fitted skeleton, drawn on the model: in the game's rest pose while that preview is on."""
+        if self.anchors is None:
+            return
+        anchors = self.anchors
+        if getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get() and self.base is not None:
+            from src.core.limbs import posed_anchors
+            anchors = posed_anchors(self.anchors, self.base.joints)
+        self.renderer.set_skeleton(skeleton_segments(anchors), joint_points(anchors))
 
     def _sync_v_target(self):
         """The V-shape widens the chest up to the inner side of the hanging arm: that width depends on the base's
@@ -2185,6 +2188,10 @@ class MainWindow(ctk.CTk):
         self._show_base_rest(self.pose == "tpose")
         if self.pose == "tpose":
             self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
+        elif self.pose == "bind":  # in-game rest pose: the points follow the model there
+            from src.core.limbs import posed_anchors
+            posed = posed_anchors(self.anchors, self.rig.base.joints)
+            self.renderer.set_skeleton(skeleton_segments(posed), joint_points(posed))
         else:
             self.renderer.set_skeleton(None, None)
             self.renderer.set_base_skeleton(None, None)

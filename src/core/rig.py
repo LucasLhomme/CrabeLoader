@@ -108,7 +108,14 @@ def bake_transforms(anchors, base_pos, preserve_proportions=True) -> dict[str, t
     for bone, (sj, sc, lj, lc, axial) in specs.items():
         limb = bone.startswith(("Shoulder_", "Elbow_", "Thigh_", "Knee_")) and stretch
         out[bone] = segment_transform(anchors[sj], anchors[sc], base_pos[lj], base_pos[lc], axial, thicken=limb)
-    out["Head"] = (np.eye(3), base_pos["Head"] - anchors["Head"])
+    # Neck and head ride on the end of the chest instead of jumping to the base's neck and head joints: when the
+    # model's chest and neck are shorter or longer than the base's (Sora on Gamora: 1.8 cm, then 1.1 cm), the gaps
+    # stretched the throat and pulled the chin of the rigid head down to the collar.
+    m_chest, t_chest = out["Spine3"]
+    m_neck = out["Neck"][0]
+    t_neck = anchors["Neck"] @ m_chest + t_chest - anchors["Neck"] @ m_neck
+    out["Neck"] = (m_neck, t_neck)
+    out["Head"] = (np.eye(3), anchors["Head"] @ m_neck + t_neck - anchors["Head"])
     for side, _ in SIDES:
         foot = (np.eye(3), base_pos[f"Ankle_{side}"] - anchors[f"Ankle_{side}"])
         out[f"Ankle_{side}"] = foot

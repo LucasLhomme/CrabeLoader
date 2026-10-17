@@ -99,8 +99,14 @@ def rigid_head(wverts, weights, names, anchors, log: Log) -> np.ndarray:
     neck_y = anchors["Neck"][1]
     head_y = anchors["Head"][1]
     head_top = anchors.get("HeadTop", np.array([0, head_y + 0.2, 0]))[1]
-    # Protect the entire head from neck line upwards across the head volume
-    above = (wverts[:, 1] >= neck_y - 0.02 * (head_y - neck_y)) & (np.abs(wverts[:, 0]) < max(shoulder_x * 1.8, 0.45 * (head_top - neck_y)))
+    # The head is rigid: everything above the head joint (wide hair, hats, ears), and between the neck line and the
+    # head joint only what lies over the neck (chin, jaw, back of the skull). The band beside the neck is the
+    # collar, the hood and the top of the shoulders: made rigid with the head, they stayed level when the arms come
+    # down in the game pose (square shoulders) and moved with every head turn.
+    head_span = head_top - neck_y
+    wide = np.abs(wverts[:, 0]) < max(shoulder_x * 1.8, 0.45 * head_span)
+    narrow = np.abs(wverts[:, 0]) < max(0.6 * shoulder_x, 0.35 * head_span)
+    above = ((wverts[:, 1] >= head_y) & wide) | ((wverts[:, 1] >= neck_y - 0.02 * (head_y - neck_y)) & narrow)
     weights[above] = 0.0
     weights[above, names.index("Head")] = 1.0
     log(f"  {above.sum()} vertices of the head made rigid (face, eyes and hat stay 100% intact)")
