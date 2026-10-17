@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.core.base_character import BaseCharacter
+from src.core.icon import hud_name
 from src.core.paths import BACKUP_DIR, BMS_SCRIPT, QUICKBMS
 from src.core.roster import load_roster
 
@@ -96,7 +97,7 @@ def write_text_files(mod_dir: Path, ident: Identity, base: BaseCharacter,
             "name": ident.actor,
             "baseCharacter": base.actor,
             "displayName": ident.display_name,
-            "icon": ident.actor,
+            "icon": hud_name(ident.actor),
         },
         "entityType": cfg.entity_type.value,
         "faction": cfg.faction.value,

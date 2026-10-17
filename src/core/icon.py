@@ -1,16 +1,29 @@
-"""Character icon: a picture of the head, taken from the model itself, and its HUD files for CrabeLoader.
+"""Character icons: pictures taken from the model itself, written as the game's own UI files.
 
-The HUD files follow CrabeLoader's own pipeline (tools/character_pipeline/make_icon.py): a DXT5 .tbody named after a
-hash of the actor name, plus an 80-byte .mtb. Whether the selection grid picks them up depends on the game, so the
-plain PNG is always written next to them."""
+The game keeps two kinds of character pictures, both as a tiny material bundle (.mtb) pointing to a DDS texture:
+  - ui/icons/hud_playericons_<name>.mtb: the 128 px head portrait (HUD, selection grid). A character row names it
+    in its Icon field ("HUD_PlayerIcons_<name>"), which CrabeLoader fills from mod.json ("character" > "icon").
+  - ui/virtualreadercharacters/<actor>.mtb, <actor>_sm.mtb, <actor>_s.mtb: the Virtual Reader figure (512 px),
+    its small version (256 px) and its glowing silhouette (512 px).
+The bundles follow the layout of the shipped files (BNDL > TEXB > name + 8-byte texture hash, read from
+assets/ui/icons/icons.zip and virtualreadercharacters.zip); the textures are single-level DXT5 like the originals.
+CrabeLoader serves files of a mod folder at the same path under assets/, and any .tbody by its file name."""
 import hashlib
 import struct
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 
-from src.core.textures import dds_bytes
+HUD_SIZE = 128
+FIGURE_SIZE = 512
+SMALL_SIZE = 256
+GLOW = (120, 205, 255)
+
+
+def hud_name(actor: str) -> str:
+    """Icon field of the character row (and, lowercased, the name of the HUD bundle)."""
+    return f"HUD_PlayerIcons_{actor}"
 
 
 def head_sphere(vertices: np.ndarray, neck_y: float, height: float) -> tuple[np.ndarray, float]:
@@ -26,44 +39,120 @@ def head_sphere(vertices: np.ndarray, neck_y: float, height: float) -> tuple[np.
     return center, radius
 
 
-def finish(raw: Image.Image, size: int = 128, background=(38, 60, 112)) -> Image.Image:
-    """Head render (transparent background) -> square RGB icon on a flat colour with a round vignette."""
-    raw = raw.convert("RGBA").resize((size, size), Image.LANCZOS)
-    base = Image.new("RGBA", (size, size), background + (255,))
-    yy, xx = np.mgrid[:size, :size]
-    d = np.hypot(xx - size / 2 + 0.5, yy - size / 2 + 0.5) / (size / 2)
-    shade = np.clip(1.15 - 0.35 * d, 0.6, 1.15)[..., None]
-    arr = np.asarray(base, np.float32)
-    arr[..., :3] = np.clip(arr[..., :3] * shade, 0, 255)
-    out = Image.alpha_composite(Image.fromarray(arr.astype(np.uint8), "RGBA"), raw)
-    return out.convert("RGB")
+def body_sphere(vertices: np.ndarray) -> tuple[np.ndarray, float]:
+    """Centre and radius framing the whole figure."""
+    lo, hi = vertices.min(axis=0), vertices.max(axis=0)
+    return (lo + hi) / 2, float(max(hi[1] - lo[1], hi[0] - lo[0]) / 2) * 1.04
 
 
-def _hud_hash(name: str) -> str:
-    return hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+def texture_hash(name: str) -> str:
+    """16 hex digits, stable per bundle name, kept away from the game's own hashes by a prefix."""
+    return hashlib.sha256(f"DisneyInfinityCreator/ui/{name.lower()}".encode()).hexdigest()[:16]
 
 
-def hud_material(tex_hash_hex: str, name: str) -> bytes:
-    header = bytearray(80)
-    header[0:4] = b"MTB\0"
-    header[4:8] = struct.pack("<I", 1)
-    header[8:12] = b"MATP"
-    header[12:16] = hashlib.sha1(name.encode("utf-8")).digest()[:4]
-    header[16:32] = hashlib.md5(name.encode("utf-8")).digest()
-    header[32:40] = bytes.fromhex(tex_hash_hex)
-    header[48:52] = struct.pack("<I", 0x00010000)
-    return bytes(header)
+def ui_bundle(name: str, tex_hash: str) -> bytes:
+    """A UI material bundle naming one texture, laid out like the game's (e.g. hud_playericons_anakin.mtb)."""
+    raw = name.lower().encode("ascii") + b"\0"
+    body = struct.pack("<I", len(raw)) + raw + b"\0" * (-len(raw) % 4) + bytes.fromhex(tex_hash)
+    total = -(-(32 + len(body) + 4) // 16) * 16
+    head = b"BNDL" + struct.pack("<III", 1, total, 1) + b"TEXB" + struct.pack("<III", 3, total - 16, 1)
+    out = head + body
+    return out + b"\0" * (total - len(out))
 
 
-def write_icon(icon: Image.Image, actor: str, mod_dir: Path) -> list[Path]:
-    """<actor>_icon.png in the mod folder, and the HUD texture + material in textures/."""
-    tex_dir = mod_dir / "textures"
-    tex_dir.mkdir(parents=True, exist_ok=True)
+def dds_single(img: Image.Image) -> bytes:
+    """One-level DXT5 DDS with the header fields of the game's UI textures."""
+    import io
+    buf = io.BytesIO()
+    img.convert("RGBA").save(buf, "DDS", pixel_format="DXT5")
+    payload = buf.getvalue()[128:]
+    w, h = img.size
+    header = struct.pack("<4s7I44s2I4s5I5I", b"DDS ", 124, 0x81007, h, w, len(payload), 0, 1, b"\0" * 44,
+                         32, 0x4, b"DXT5", 0, 0, 0, 0, 0, 0x1000, 0, 0, 73, 0)
+    return header + payload
+
+
+def _fit(raw: Image.Image, size: int, margin: float) -> Image.Image:
+    """Crop to the visible pixels and centre them in a transparent square, `margin` of the side left around."""
+    raw = raw.convert("RGBA")
+    box = raw.getchannel("A").getbbox()
+    if box:
+        raw = raw.crop(box)
+    inner = max(1, int(size * (1 - 2 * margin)))
+    scale = inner / max(raw.size)
+    raw = raw.resize((max(1, round(raw.width * scale)), max(1, round(raw.height * scale))), Image.LANCZOS)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.alpha_composite(raw, ((size - raw.width) // 2, size - raw.height - int(size * margin)))
+    return out
+
+
+def _glow(alpha: Image.Image, radius: float, colour=GLOW, strength: float = 1.0) -> Image.Image:
+    halo = alpha.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(radius))
+    halo = halo.point(lambda v: min(255, int(v * 2.2 * strength)))
+    layer = Image.new("RGBA", alpha.size, colour + (0,))
+    layer.putalpha(halo)
+    return layer
+
+
+def portrait_sphere(vertices: np.ndarray, neck_y: float, height: float) -> tuple[np.ndarray, float]:
+    """Framing of the HUD portrait: the head filling most of the square, the top of the shoulders at the bottom."""
+    center, radius = head_sphere(vertices, neck_y, height)
+    return center - np.array([0.0, 0.18 * radius, 0.0]), radius * 1.08
+
+
+def hud_icon(head: Image.Image) -> Image.Image:
+    """128 px head portrait on transparency with the soft blue rim of the game's HUD icons."""
+    face = head.convert("RGBA").resize((HUD_SIZE, HUD_SIZE), Image.LANCZOS)
+    out = _glow(face.getchannel("A"), 2.5)
+    out.alpha_composite(face)
+    return out
+
+
+def figure_icon(body: Image.Image, size: int = FIGURE_SIZE) -> Image.Image:
+    return _fit(body, size, 0.04)
+
+
+def silhouette_icon(figure: Image.Image) -> Image.Image:
+    """Glowing outline with a faint fill, like the Virtual Reader's locked figures."""
+    alpha = figure.getchannel("A").point(lambda v: 255 if v > 40 else 0)
+    edge = ImageChops.subtract(alpha.filter(ImageFilter.MaxFilter(5)), alpha.filter(ImageFilter.MinFilter(5)))
+    h = figure.height
+    ramp = np.linspace(0.15, 0.55, h)[:, None] * np.ones((1, figure.width))
+    fill_a = (np.asarray(alpha, np.float32) / 255 * ramp * 255).astype(np.uint8)
+    out = Image.new("RGBA", figure.size, (40, 110, 150, 0))
+    out.putalpha(Image.fromarray(fill_a))
+    out.alpha_composite(_glow(edge, 6, strength=0.8))
+    line = Image.new("RGBA", figure.size, (235, 250, 255, 0))
+    line.putalpha(edge)
+    out.alpha_composite(line)
+    return out
+
+
+def build_pictures(head: Image.Image, body: Image.Image | None) -> dict[str, Image.Image]:
+    """Every picture the game shows for a character, from a head render and a full-body render (transparent)."""
+    pictures = {"hud": hud_icon(head)}
+    if body is not None:
+        figure = figure_icon(body)
+        pictures.update(figure=figure, small=figure.resize((SMALL_SIZE, SMALL_SIZE), Image.LANCZOS),
+                        silhouette=silhouette_icon(figure))
+    return pictures
+
+
+def write_icon(pictures: dict[str, Image.Image], actor: str, mod_dir: Path) -> list[Path]:
+    """The UI bundles and textures under ui/, and <actor>_icon.png (the HUD picture) at the mod root."""
+    a = actor.lower()
+    files = {"hud": ("icons", hud_name(actor))}
+    files.update(figure=("virtualreadercharacters", a), small=("virtualreadercharacters", f"{a}_sm"),
+                 silhouette=("virtualreadercharacters", f"{a}_s"))
+    written = []
+    for key, picture in pictures.items():
+        folder, name = files[key]
+        tex = texture_hash(name)
+        target = mod_dir / "ui" / folder
+        (target / "textures").mkdir(parents=True, exist_ok=True)
+        (target / f"{name.lower()}.mtb").write_bytes(ui_bundle(name, tex))
+        (target / "textures" / f"{tex}.tbody").write_bytes(dds_single(picture))
+        written += [target / f"{name.lower()}.mtb", target / "textures" / f"{tex}.tbody"]
     png = mod_dir / f"{actor}_icon.png"
-    icon.save(png)
-    tex_hash = _hud_hash(actor)
-    tbody = tex_dir / f"{tex_hash}.tbody"
-    mtb = tex_dir / f"{actor}.mtb"
-    tbody.write_bytes(dds_bytes(icon.convert("RGBA"), "DXT5"))
-    mtb.write_bytes(hud_material(tex_hash, actor))
-    return [png, tbody, mtb]
+    pictures["hud"].save(png)
+    return [png] + written

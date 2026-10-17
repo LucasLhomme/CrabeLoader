@@ -7,6 +7,15 @@ Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
 ### Corrigé
+- Icônes du personnage refaites au format réel du jeu : les fichiers produits jusqu'ici suivaient le gabarit de
+  `make_icon.py` (CrabeLoader), qui ne correspond à aucun fichier du jeu, et rien ne pointait vers eux. Le Creator
+  écrit maintenant, à partir de captures du modèle :
+  - le portrait HUD 128 px `ui/icons/hud_playericons_<acteur>.mtb` + texture, référencé par `mod.json`
+    (`"icon": "HUD_PlayerIcons_<Acteur>"`, que CrabeLoader recopie dans la ligne du personnage) ;
+  - la figure du Virtual Reader `ui/virtualreadercharacters/<acteur>.mtb` (512 px), `_sm` (256 px) et la
+    silhouette lumineuse `_s` (512 px).
+  Les bundles sont identiques octet pour octet à ceux du jeu (vérifié sur Anakin) ; textures DXT5 à un niveau
+  comme les originales. Aperçu des trois images avec le bouton « Preview ».
 - Aperçu « Preview in game pose » (onglet Squelette) : il utilise maintenant les poids de secours du vrai rig
   (zones du corps, tête rigide) au lieu de poids approximatifs. Le menton ne s'étire plus vers le col et les
   épaules ne remontent plus vers les oreilles : l'aperçu ressemble au rig construit.

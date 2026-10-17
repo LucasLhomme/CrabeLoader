@@ -455,7 +455,7 @@ class MainWindow(ctk.CTk):
         icon_row.grid(row=r0 + 6, column=0, sticky="ew", pady=(10, 0))
         icon_row.grid_columnconfigure(0, weight=1)
         self.icon_var = ctk.BooleanVar(value=bool(self.settings.get("make_icon", True)))
-        ctk.CTkCheckBox(icon_row, text="Character icon: photograph the head when installing",
+        ctk.CTkCheckBox(icon_row, text="Character icons: photograph the head and the figure when installing",
                         variable=self.icon_var, font=ctk.CTkFont(size=11),
                         command=lambda: self.settings.update(make_icon=bool(self.icon_var.get()))
                         ).grid(row=0, column=0, sticky="w")
@@ -1375,40 +1375,51 @@ class MainWindow(ctk.CTk):
         atlas["notes"].configure(text="\n".join(notes),
                                  text_color=RED if len(notes) > 1 and notes[1].startswith("⚠") else GREY)
 
-    def _make_icon(self, size: int = 128):
-        """A picture of the head, taken from the model as it will be in game (T-pose, current texture)."""
+    def _make_icon(self):
+        """The game's character pictures, taken from the model as it will be in game: the head and shoulders (front
+        view) and the whole figure, in the in-game rest pose once rigged, with the current texture."""
         from src.core import icon
         if not (self.model and self.props):
             return None
         tpose = self.rig.tpose if self.rig else self.model.vertices()
-        restore = None
-        if self.rig and self.pose != "tpose":
-            restore = self.rig.posed(self.pose, float(self.pose_amount.get()))
-        self.renderer.update_model_vertices(tpose)
+        figure = self.rig.baked if self.rig else None
+        restore = self.rig.posed(self.pose, float(self.pose_amount.get())) if self.rig and self.pose != "tpose" else None
         try:
-            center, radius = icon.head_sphere(np.asarray(tpose), self.props.neck_y, self.props.height)
-            raw = self.renderer.render_icon(center, radius, 256)
+            shot = figure if figure is not None else tpose  # arms down when rigged: shoulders as in game
+            self.renderer.update_model_vertices(shot)
+            center, radius = icon.portrait_sphere(np.asarray(shot), self.props.neck_y, self.props.height)
+            head = self.renderer.render_icon(center, radius, 256)
+            body = None
+            if figure is not None:
+                center, radius = icon.body_sphere(np.asarray(figure))
+                body = self.renderer.render_icon(center, radius, 1024, yaw=-20.0)
         finally:
-            if restore is not None:
-                self.renderer.update_model_vertices(restore)
-        return icon.finish(raw, size)
+            if self.rig:
+                self.renderer.update_model_vertices(restore if restore is not None else self.rig.tpose)
+            else:
+                self.renderer.update_model_vertices(self._display_vertices())
+        return icon.build_pictures(head, body)
 
     def on_preview_icon(self):
-        picture = self._make_icon()
-        if picture is None:
+        pictures = self._make_icon()
+        if pictures is None:
             self.model_info.configure(text="Import a model first.", text_color=YELLOW)
             return
         window = ctk.CTkToplevel(self)
-        window.title("Character icon")
-        window.geometry("300x340")
-        big = picture.resize((256, 256))
-        shown = ctk.CTkImage(light_image=big, dark_image=big, size=big.size)
-        label = ctk.CTkLabel(window, image=shown, text="")
-        label.image = shown
-        label.pack(padx=12, pady=12)
-        ctk.CTkLabel(window, text="Front view of the head, taken at install time. Move the model (placement) "
-                                  "or the height if the head is cut off.", wraplength=270, justify="left",
-                     text_color=GREY).pack(padx=12)
+        window.title("Character icons")
+        row = ctk.CTkFrame(window, fg_color="#3f3f46")
+        row.pack(padx=12, pady=12)
+        for key, size in (("hud", 128), ("figure", 256), ("silhouette", 256)):
+            if key not in pictures:
+                continue
+            shown = ctk.CTkImage(light_image=pictures[key], dark_image=pictures[key], size=(size, size))
+            label = ctk.CTkLabel(row, image=shown, text="")
+            label.image = shown
+            label.pack(side="left", padx=6, pady=6)
+        text = ("HUD portrait, Virtual Reader figure and its locked silhouette, as installed in the game."
+                if "figure" in pictures else "HUD portrait. Build the rig to also get the Virtual Reader figure.")
+        ctk.CTkLabel(window, text=text + " Move the model (placement) or the height if the head is cut off.",
+                     wraplength=640, justify="left", text_color=GREY).pack(padx=12, pady=(0, 12))
         window.after(100, window.lift)
 
     def _model_pieces(self):
