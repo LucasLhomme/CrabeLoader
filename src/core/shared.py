@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from src.core.paths import BMS_SCRIPT, QUICKBMS, REENCRYPTER, WORK_DIR
+from src.core.paths import REENCRYPTER, WORK_DIR
 
 SHARED_SLUG = "zz_creator_shared"
 SHARED_PREFIX = "17"
@@ -115,53 +115,39 @@ def _stamp(files: dict[str, Path], vanilla: Path) -> str:
     return h.hexdigest()[:16]
 
 
-def _listing(archive: Path) -> set[str]:
-    import re
-    out = subprocess.run([str(QUICKBMS), "-l", str(BMS_SCRIPT), str(archive)], capture_output=True, text=True,
-                         creationflags=_NO_WINDOW).stdout
-    return {line.split(None, 2)[2].replace("\\", "/").lower() for line in out.splitlines()
-            if re.match(r"\s+[0-9a-f]{8}\s+\d+\s+\S", line)}
-
-
-def _vanilla_tree(vanilla: Path, stem: str, cache: Path) -> Path:
-    """The vanilla archive extracted once (kept in build/ and reused while the game file is unchanged)."""
-    st = vanilla.stat()
-    key = f"{st.st_size}_{st.st_mtime_ns}"
-    target = cache / stem
-    if (target / ".source").is_file() and (target / ".source").read_text() == key:
-        return target
-    shutil.rmtree(target, ignore_errors=True)
-    target.mkdir(parents=True)
-    subprocess.run([str(QUICKBMS), "-Y", str(BMS_SCRIPT), str(vanilla), str(target)], check=True, capture_output=True,
-                   creationflags=_NO_WINDOW)
-    (target / ".source").write_text(key)
-    return target
-
-
 def _build(vanilla: Path, stem: str, files: dict[str, Path], out: Path, work: Path, log: Log) -> int:
-    """out = vanilla archive + files (paths inside the archive, '<stem>/...'). Returns the number of entries."""
-    for tool in (QUICKBMS, BMS_SCRIPT, REENCRYPTER):
-        if not tool.exists():
-            raise FileNotFoundError(f"missing tool: {tool}")
-    tree = _vanilla_tree(vanilla, stem, work / "vanilla")
+    """out = vanilla archive + files (paths inside the archive, '<stem>/...'). Returns the number of entries.
+
+    Only the Creator files go through offsetting.exe (a small archive, which also gives the game's name hashes);
+    the game's own entries are copied byte for byte (octane_zip), so nothing is extracted or re-encrypted."""
+    from src.core import octane_zip
+    if not REENCRYPTER.exists():
+        raise FileNotFoundError(f"missing tool: {REENCRYPTER}")
     stage = work / "stage" / stem
     shutil.rmtree(stage.parent, ignore_errors=True)
-    shutil.copytree(tree / stem, stage)
+    stage.mkdir(parents=True)
     for rel, src in files.items():
         dst = stage.parent / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-    tmp = work / f"{stem}.zip"
-    tmp.unlink(missing_ok=True)
-    subprocess.run([str(REENCRYPTER), "whyjustwhy", "-e", ZIP_KEY, str(stage), str(tmp)], check=True,
+    small, tmp = work / f"{stem}_creator.zip", work / f"{stem}.zip"
+    small.unlink(missing_ok=True)
+    subprocess.run([str(REENCRYPTER), "whyjustwhy", "-e", ZIP_KEY, str(stage), str(small)], check=True,
                    capture_output=True, creationflags=_NO_WINDOW)
-    expected = _listing(vanilla) | set(files)
-    got = _listing(tmp)
-    if got != expected:
+    octane_zip.merge(vanilla, small, tmp, work / "digests" / f"{stem}.json")
+    # Check: every game file is still there and every Creator file reads back identical.
+    got = {e.name.lower(): e for e in octane_zip.read(tmp)}
+    expected = {e.name.lower() for e in octane_zip.read(vanilla)} | {r.split("/", 1)[1] for r in files}
+    if set(got) != expected:
         raise RuntimeError(f"{stem}.zip: {len(got)} entries, {len(expected)} expected")
+    for rel, src in files.items():
+        if got[rel.split("/", 1)[1]].data() != src.read_bytes():
+            raise RuntimeError(f"{stem}.zip: {rel} does not read back identical")
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(tmp), str(out))
+    small.unlink(missing_ok=True)
     shutil.rmtree(stage.parent, ignore_errors=True)
+    shutil.rmtree(work / "vanilla", ignore_errors=True)  # extraction cache of the previous method
     return len(got)
 
 
