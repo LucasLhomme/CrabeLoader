@@ -259,7 +259,7 @@ def rebuild(game_dir: Path, log: Log = print, force: bool = False) -> RebuildRep
         (shared / "mod.json").write_text(json.dumps({
             "manifestVersion": 1, "id": "creator.shared", "name": "Creator shared archives", "version": "1.0.0",
             "description": "Textures and icons of the Disney Infinity Creator characters (rebuilt game archives). "
-                           "Managed by Gerer_Mods.bat: do not edit by hand.",
+                           "Managed by Manage_Mods.bat: do not edit by hand.",
             "minLoaderVersion": "0.2.0", "entry": "shared.lua"}, indent=2) + "\n", encoding="utf-8")
         (shared / "shared.lua").write_text('print("[creator_shared] shared texture and icon archives loaded")\n',
                                            encoding="utf-8")

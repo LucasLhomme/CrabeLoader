@@ -1,4 +1,4 @@
-"""Gerer_Mods.bat: list, disable, delete and clean the characters made with Creator (separate from Creator).
+"""Manage_Mods.bat: list, disable, delete and clean the characters made with Creator (separate from Creator).
 
 Deleting goes to the Windows recycle bin. After every change the shared archives (zz_creator_shared: textures and
 icons of all characters) are rebuilt, so a removed character leaves nothing behind in the game.

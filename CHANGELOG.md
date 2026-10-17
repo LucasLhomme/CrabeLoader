@@ -5,8 +5,8 @@ Commits : `type(zone): résumé` (types `feat`, `fix`, `perf`, `refactor`, `docs
 dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `VERSION` et ce journal ; GitHub
 Actions crée alors l'étiquette et la release.
 
-## [Non publié]
-Points forts : icônes en jeu, relief des textures, mod partagé léger et `Gerer_Mods.bat`, os de torsion du jeu,
+## [1.0.0] - 2026-10-17
+Points forts : icônes en jeu, relief des textures, mod partagé léger et `Manage_Mods.bat`, os de torsion du jeu,
 auto-fit calibré sur les figures officielles, documentation en anglais.
 
 ### Ajouté
@@ -16,7 +16,7 @@ auto-fit calibré sur les figures officielles, documentation en anglais.
   archives reconstruites une fois pour tous : `textures/17.zip` (la plus petite archive du jeu, 5 Mo) et les
   icônes (`ui/icons`, `ui/virtualreadercharacters`). Reconstruit à chaque installation, seulement si ses sources
   ont changé (`manifest.json`). Remplace `zz_creator_ui` (fait à la main) et les archives par personnage.
-- `Gerer_Mods.bat` (outil à part) : liste des personnages Creator (taille, icône, état), suppression vers la
+- `Manage_Mods.bat` (outil à part) : liste des personnages Creator (taille, icône, état), suppression vers la
   corbeille, désactivation (préfixe `_`), nettoyage (migration des anciens personnages dans l'archive partagée,
   suppression des anciennes archives, sauvegardes d'anciennes versions à la corbeille) et reconstruction. Un
   personnage supprimé ne laisse rien dans le jeu. Options `--list`, `--rebuild`, `--clean`.
@@ -50,8 +50,9 @@ auto-fit calibré sur les figures officielles, documentation en anglais.
   chiffrée à part) : les fichiers du jeu sont recopiés octet pour octet et seuls ceux du Creator passent par
   `offsetting.exe`. De 1-2 minutes à quelques secondes ; quickbms n'est plus utilisé pour le mod partagé.
 ### Modifié
-- `Lancer_Creator.bat` devient `Launch_Creator.bat`. Au premier lancement, il crée `.venv` et installe les
-  dépendances (via `run.ps1 -SetupOnly`) : un seul fichier à lancer pour un nouvel utilisateur.
+- Lanceurs renommés en anglais : `Launch_Creator.bat` (ex-`Lancer_Creator.bat`), `Manage_Mods.bat`,
+  `Capture_Model.bat` (ex-`Capturer_Modele.bat`). Au premier lancement, `Launch_Creator.bat` crée `.venv` et
+  installe les dépendances (via `run.ps1 -SetupOnly`) : un seul fichier à lancer pour un nouvel utilisateur.
 - Dépendance ajoutée : `cryptography` (archives chiffrées du jeu).
 - README mis à jour (mod partagé, icônes, relief, `.dae`, limites connues) ; `.gitignore` réduit à ce qui concerne
   le projet (modèles 3D, ressources du jeu, réglages personnels exclus).

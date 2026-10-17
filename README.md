@@ -62,7 +62,7 @@ remplacé.
   modèle.
 - **Relief** : une normal map tirée de la texture donne l'aspect « figurine sculptée » des personnages du jeu.
 - **Mod partagé léger** : textures et icônes de tous tes personnages dans un seul mod (`zz_creator_shared`), au lieu
-  d'une archive de ~13 Mo par personnage ; `Gerer_Mods.bat` liste, désactive et supprime proprement tes personnages.
+  d'une archive de ~13 Mo par personnage ; `Manage_Mods.bat` liste, désactive et supprime proprement tes personnages.
 - **Journal d'erreurs** (`build/creator.log`) pour comprendre un plantage.
 - **Installation vérifiée** : chaque installation est contrôlée (tampons, poids, liens de fichiers) et l'ancienne
   version du mod est sauvegardée dans `backups/`.
@@ -270,7 +270,7 @@ personnage :
 - le mod **`mods/zz_creator_shared`** contient les archives reconstruites une fois pour tous les personnages actifs
   (les fichiers du jeu sont recopiés tels quels, seuls tes fichiers sont ajoutés). Ne le modifie pas à la main.
 
-**`Gerer_Mods.bat`** (outil à part, jeu fermé) :
+**`Manage_Mods.bat`** (outil à part, jeu fermé) :
 
 | Choix | Effet |
 | :--- | :--- |
@@ -310,9 +310,9 @@ Sans ouvrir l'interface (à lancer avec `.\.venv\Scripts\python.exe`) :
 | :--- | :--- |
 | `tools\batch_check.py dossier [--base ACTOR \| --suggest] [--blender chemin]` | Place et rigge tous les modèles d'un dossier, affiche le score ; avec `--suggest`, essaie toutes les figures et donne les meilleures |
 | `tools\capture.py modele.glb [--base ACTOR] [--amount 1.0] [--out dossier]` | Construit le rig d'un modèle et enregistre des images en 3 vues (repos, bras levés, marche, avec les arêtes étirées en rouge) et `report.txt` dans `build\captures\` |
-| `Capturer_Modele.bat` | Même chose en glissant un modèle sur le fichier |
+| `Capture_Model.bat` | Même chose en glissant un modèle sur le fichier |
 | `Audit_Animations.bat` | Audit des animations d'un modèle (rapport + images), hors Creator |
-| `Gerer_Mods.bat` / `tools\manage_mods.py` | Gérer les personnages installés (voir plus haut) |
+| `Manage_Mods.bat` / `tools\manage_mods.py` | Gérer les personnages installés (voir plus haut) |
 
 ## Jouer avec son personnage
 
@@ -390,7 +390,7 @@ maillage est remplacé par le tien, sous un nouveau nom.
 | Problème | À essayer |
 | :--- | :--- |
 | L'appli se ferme au lancement | Lance `Launch_Creator.bat` (la fenêtre reste ouverte) et consulte `build\creator.log` |
-| Textures noires ou icône « IN » en jeu | Ferme le jeu, `Gerer_Mods.bat` → 4. Reconstruire ; l'icône n'existe que si « Character icons » était coché à l'installation |
+| Textures noires ou icône « IN » en jeu | Ferme le jeu, `Manage_Mods.bat` → 4. Reconstruire ; l'icône n'existe que si « Character icons » était coché à l'installation |
 | Le personnage n'apparaît pas en jeu | Redémarre le jeu ; vérifie CrabeLoader ; consulte `loader.log` dans le dossier du jeu |
 | « model too detailed » | Réduis sous ~65 000 sommets (le nettoyage le fait) |
 | Modèle couché ou de dos | Onglet 1 : **Stand up**, **↻ 90°** / **↻ 180°**, **⇅ Flip** |

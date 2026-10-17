@@ -59,7 +59,7 @@ abilities, and no original character is replaced.
 - **In-game icons**: HUD portrait and character-grid figure, captured automatically from your model.
 - **Relief**: a normal map derived from the texture gives the "sculpted toy" look of the game's figures.
 - **Lightweight shared mod**: textures and icons of all your characters live in a single mod (`zz_creator_shared`)
-  instead of a ~13 MB archive per character; `Gerer_Mods.bat` lists, disables and cleanly deletes your characters.
+  instead of a ~13 MB archive per character; `Manage_Mods.bat` lists, disables and cleanly deletes your characters.
 - **Error log** (`build/creator.log`) to understand a crash.
 - **Verified installation**: every install is checked (buffers, weights, file links) and the previous version of the
   mod is backed up to `backups/`.
@@ -261,7 +261,7 @@ The game reads textures and icons only from its own archives (`assets/textures/1
 - the **`mods/zz_creator_shared`** mod holds the archives rebuilt once for all enabled characters (the game's files are
   copied as they are, only your files are added). Do not edit it by hand.
 
-**`Gerer_Mods.bat`** (separate tool, game closed; its menu is in French):
+**`Manage_Mods.bat`** (separate tool, game closed; its menu is in French):
 
 | Choice | Effect |
 | :--- | :--- |
@@ -301,9 +301,9 @@ Without opening the interface (run with `.\.venv\Scripts\python.exe`):
 | :--- | :--- |
 | `tools\batch_check.py folder [--base ACTOR \| --suggest] [--blender path]` | Places and rigs every model of a folder and prints the score; with `--suggest`, tries every figure and gives the best |
 | `tools\capture.py model.glb [--base ACTOR] [--amount 1.0] [--out folder]` | Builds a model's rig and saves 3-view pictures (rest, arms up, walk, with stretched edges in red) and `report.txt` to `build\captures\` |
-| `Capturer_Modele.bat` | Same, by dropping a model onto the file |
+| `Capture_Model.bat` | Same, by dropping a model onto the file |
 | `Audit_Animations.bat` | Animation audit of a model (report + pictures), outside Creator |
-| `Gerer_Mods.bat` / `tools\manage_mods.py` | Manage the installed characters (see above) |
+| `Manage_Mods.bat` / `tools\manage_mods.py` | Manage the installed characters (see above) |
 
 ## Playing your character
 
@@ -378,7 +378,7 @@ under a new name.
 | Problem | Try |
 | :--- | :--- |
 | The app closes on launch | Run `Launch_Creator.bat` (the window stays open) and read `build\creator.log` |
-| Black textures or "IN" icon in game | Close the game, `Gerer_Mods.bat` → 4 (rebuild); the icon only exists if "Character icons" was ticked at install |
+| Black textures or "IN" icon in game | Close the game, `Manage_Mods.bat` → 4 (rebuild); the icon only exists if "Character icons" was ticked at install |
 | The character does not show up in game | Restart the game; check CrabeLoader; read `loader.log` in the game folder |
 | "model too detailed" | Reduce below ~65,000 vertices (the cleanup does it) |
 | Model lying down or facing away | Tab 1: **Stand up**, **↻ 90°** / **↻ 180°**, **⇅ Flip** |

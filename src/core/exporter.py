@@ -126,8 +126,8 @@ def install(rig: RigResult, texture: Image.Image, ident: Identity, game_dir: Pat
             res = shared.rebuild(game_dir, log)
             report.notes.append(f"shared archives ({shared.SHARED_SLUG}): rebuilt {', '.join(res.built) or 'none'}")
         except Exception as exc:  # noqa: BLE001 - the character itself is installed; the archives can be redone
-            log(f"WARNING shared archives not rebuilt ({exc}). Close the game, then Gerer_Mods.bat -> Reconstruire.")
-            report.notes.append("shared archives NOT rebuilt: run Gerer_Mods.bat")
+            log(f"WARNING shared archives not rebuilt ({exc}). Close the game, then Manage_Mods.bat -> Reconstruire.")
+            report.notes.append("shared archives NOT rebuilt: run Manage_Mods.bat")
 
     note = ship_motions_if_needed(base, game_dir, mod_dir)
     report.notes.append(note)
