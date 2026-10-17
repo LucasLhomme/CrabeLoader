@@ -38,3 +38,23 @@ def test_torso_scale_widens_chest_only():
     w = np.array([[1.0, 0.0], [0.0, 1.0]])
     out = limbs.inflate(v, w, names, anchors, torso_scale=1.4)
     assert np.allclose(out[0], [0.21, 1.3, 0]) and np.allclose(out[1], v[1])
+
+
+def test_head_scale_grows_head_around_neck():
+    anchors = {"Neck": np.array([0, 1.6, 0])}
+    v = np.array([[0, 1.9, 0.1], [0.2, 1.0, 0]])  # head top, hip
+    names = ["Head", "Hips"]
+    w = np.array([[1.0, 0.0], [0.0, 1.0]])
+    out = limbs.inflate(v, w, names, anchors, head_scale=1.2)
+    assert np.allclose(out[0], [0, 1.96, 0.12]) and np.allclose(out[1], v[1])
+
+
+def test_forearm_scale_is_separate():
+    v = _arm(0.03)
+    names = ["Shoulder_Left", "Elbow_Left"]
+    w = np.zeros((len(v), 2))
+    w[v[:, 0] < 0.45, 0] = 1
+    w[v[:, 0] >= 0.45, 1] = 1
+    out = limbs.inflate(v, w, names, ANCHORS, arm_scale=1.0, forearm_scale=2.0)
+    r = np.hypot(out[:, 1] - 1.4, out[:, 2])
+    assert np.allclose(r[v[:, 0] < 0.45], 0.03) and np.allclose(r[v[:, 0] >= 0.45], 0.06)

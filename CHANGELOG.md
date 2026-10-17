@@ -7,6 +7,9 @@ Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
 ### Ajouté
+- Bouton « Disney Infinity style » : proportions moyennes de 30 personnages humanoïdes du jeu (tête, torse, bras,
+  avant-bras, jambes) appliquées en un clic ; « Match the base » conservé ; bouton « Reset ».
+- Curseurs « Head » (taille de la tête autour du cou) et « Forearms » (avant-bras séparés des bras).
 - Curseur « Shoulder roundness » (onglet Rig) : mélange en direct entre épaules rabattues (vestes, manches larges)
   et épaules rondes (bras nus) sur le rig construit.
 - Case « Preview in game pose » (onglet Squelette) : le modèle bras baissés, comme une fois installé, mis à jour

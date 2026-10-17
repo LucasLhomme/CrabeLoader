@@ -137,13 +137,15 @@ pire image, zones touchées), `report.json` et des images de la pire image des a
 étirées en rouge). Les clips sont les mouvements procéduraux de Creator, pas les animations d'origine du jeu. Les doigts
 suivent la main dans ces clips (avant, ils restaient en arrière et déchiraient les mains à l'écran).
 
-**Épaisseur des membres et du torse.** Onglet Squelette, curseurs « Arms », « Legs » et « Torso » (×0,8 à ×1,8).
-Le torse gonfle autour de la colonne (poitrine et ventre ; le bassin suit à moitié, cou et tête jamais). Les personnages Disney
-Infinity ont des bras épais ; un modèle aux membres fins paraît « bâton » en jeu, et le moteur pince encore plus les
-membres fins quand ils se tordent. Le bouton « Match the base » propose l'épaisseur de la base (membres plafonnés à ×1,6, torse à ×1,4 ; un
-pantalon ample compte comme épais). Les membres gonflent autour de leur axe, sans changer de longueur, en fondu avec les
-poids : épaules et hanches restent lisses. L'effet se voit en direct dans la vue (aperçu calculé depuis le squelette) et
-est appliqué pour de bon à la construction du rig.
+**Proportions (tête, torse, bras, avant-bras, jambes).** Onglet Squelette, cinq curseurs : « Head » (×0,8 à ×1,5,
+la tête grossit autour du cou, le cou suit à moitié), « Torso », « Arms », « Forearms » et « Legs » (×0,8 à ×1,8,
+gonflés autour de leur axe sans changer de longueur, en fondu avec les poids). Aperçu en direct, appliqué au rig.
+- **Disney Infinity style** : rapproche le modèle des proportions moyennes de 30 personnages humanoïdes du jeu (mesurées
+  dans le jeu : tête = 21 % de la hauteur, avant-bras plus épais que le bras, etc.). Jamais plus petit que le modèle,
+  plafonds : tête ×1,4, torse ×1,4, membres ×1,6.
+- **Match the base** : copie l'épaisseur de la base choisie (sans toucher à la tête).
+- **Reset** : revient aux proportions du modèle.
+Un vêtement ample (pantalon bouffant) compte comme épais : les jambes restent alors à ×1.
 
 **Pose du jeu pendant le réglage du squelette.** Onglet Squelette, case « Preview in game pose » : le modèle est
 montré bras baissés, comme le jeu l'affichera, et suit chaque curseur du squelette (aperçu calculé en quelques

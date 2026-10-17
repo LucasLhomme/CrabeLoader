@@ -22,10 +22,24 @@ def _segment_offsets(verts, a, b):
     return perp, length
 
 
+HEAD_NECK_SHARE = 0.5
+"""The neck follows half of the head scaling, so the head grows without a step at the collar."""
+MAX_HEAD = 1.4
+
+
 def inflate(verts: np.ndarray, weights: np.ndarray, names: list, anchors: dict,
-            arm_scale: float = 1.0, leg_scale: float = 1.0, torso_scale: float = 1.0) -> np.ndarray:
-    """T-pose vertices pushed away from their limb (or spine) axes by (scale - 1), weighted by each bone's weight."""
+            arm_scale: float = 1.0, leg_scale: float = 1.0, torso_scale: float = 1.0,
+            head_scale: float = 1.0, forearm_scale: float | None = None) -> np.ndarray:
+    """T-pose vertices pushed away from their limb (or spine) axes by (scale - 1), weighted by each bone's weight.
+    The head is scaled as a whole around the neck joint. `forearm_scale` defaults to `arm_scale`."""
     out = verts.copy()
+    if abs(head_scale - 1.0) >= 1e-3 and "Neck" in anchors:
+        w = np.zeros(len(verts))
+        if "Head" in names:
+            w += weights[:, names.index("Head")]
+        if "Neck" in names:
+            w += HEAD_NECK_SHARE * weights[:, names.index("Neck")]
+        out += ((head_scale - 1.0) * np.clip(w, 0, 1))[:, None] * (verts - anchors["Neck"])
     if abs(torso_scale - 1.0) >= 1e-3:
         for head, tail, share in TORSO_SEGMENTS:
             if head not in names or head not in anchors or tail not in anchors:
@@ -33,7 +47,9 @@ def inflate(verts: np.ndarray, weights: np.ndarray, names: list, anchors: dict,
             w = weights[:, names.index(head)]
             perp, length = _segment_offsets(verts, anchors[head], anchors[tail])
             out += ((torso_scale - 1.0) * share * w)[:, None] * perp
-    for segments, scale in ((ARM_SEGMENTS, arm_scale), (LEG_SEGMENTS, leg_scale)):
+    forearm_scale = arm_scale if forearm_scale is None else forearm_scale
+    for segments, scale in ((ARM_SEGMENTS[:1], arm_scale), (ARM_SEGMENTS[1:], forearm_scale),
+                            (LEG_SEGMENTS, leg_scale)):
         if abs(scale - 1.0) < 1e-3:
             continue
         for side in SIDES:
@@ -82,10 +98,11 @@ def suggest_torso(model_verts, anchors, base_verts, base_joints) -> float:
     return round(float(np.clip(value, 1.0, MAX_TORSO)) * 20) / 20
 
 
-def suggest(model_verts, anchors, base_verts, base_joints) -> tuple[float, float]:
-    """(arm, leg) scales that bring the model's limbs to the base figure's thickness (never thinner, at most 1.6)."""
+def suggest(model_verts, anchors, base_verts, base_joints) -> tuple[float, float, float]:
+    """(arm, forearm, leg) scales that bring the model's limbs to the base figure's thickness (never thinner, at
+    most 1.6)."""
     out = []
-    for segments in (ARM_SEGMENTS, LEG_SEGMENTS):
+    for segments in (ARM_SEGMENTS[:1], ARM_SEGMENTS[1:], LEG_SEGMENTS):
         ratios = []
         for side in SIDES:
             for head, tail in segments:
@@ -95,7 +112,7 @@ def suggest(model_verts, anchors, base_verts, base_joints) -> tuple[float, float
                     ratios.append(b / m)
         value = float(np.median(ratios)) if ratios else 1.0
         out.append(round(float(np.clip(value, 1.0, MAX_SUGGEST)) * 20) / 20)
-    return out[0], out[1]
+    return out[0], out[1], out[2]
 
 
 _OTHER = (("Hips", "Spine2"), ("Spine2", "Spine3"), ("Spine3", "Neck"), ("Neck", "Head"), ("Head", "HeadTop"))
@@ -128,11 +145,46 @@ def preview_weights(verts: np.ndarray, anchors: dict) -> tuple[np.ndarray, list]
 
 
 def preview(verts: np.ndarray, anchors: dict, arm_scale: float, leg_scale: float,
-            torso_scale: float = 1.0) -> np.ndarray:
-    if max(abs(arm_scale - 1), abs(leg_scale - 1), abs(torso_scale - 1)) < 1e-3:
+            torso_scale: float = 1.0, head_scale: float = 1.0, forearm_scale: float | None = None) -> np.ndarray:
+    forearm = arm_scale if forearm_scale is None else forearm_scale
+    if max(abs(arm_scale - 1), abs(leg_scale - 1), abs(torso_scale - 1), abs(head_scale - 1), abs(forearm - 1)) < 1e-3:
         return verts
     weights, names = preview_weights(verts, anchors)
-    return inflate(verts, weights, names, anchors, arm_scale, leg_scale, torso_scale)
+    return inflate(verts, weights, names, anchors, arm_scale, leg_scale, torso_scale, head_scale, forearm)
+
+
+DISNEY_STYLE = {"head": 0.212, "arm": 0.030, "forearm": 0.033, "thigh": 0.046, "torso": 0.076}
+"""Median proportions of 30 humanoid figures of the game, as a share of the figure's height: head (neck to top),
+upper arm, forearm and thigh radius, torso radius around the spine. Measured with the functions of this module."""
+
+
+def head_ratio(verts: np.ndarray, anchors: dict) -> float:
+    height = float(np.ptp(verts[:, 1]))
+    return float((verts[:, 1].max() - anchors["Neck"][1]) / max(height, 1e-9))
+
+
+def disney_style(verts: np.ndarray, anchors: dict) -> dict:
+    """Scales that bring a model to the game's average proportions (never smaller than the model, capped)."""
+    height = float(np.ptp(verts[:, 1]))
+
+    def ratio(target, current, cap):
+        if not current:
+            return 1.0
+        return round(float(np.clip(target * height / current, 1.0, cap)) * 20) / 20
+
+    def limb(head, tail):
+        values = [limb_radius(verts, anchors[f"{head}_{s}"], anchors[f"{tail}_{s}"]) for s in SIDES]
+        values = [v for v in values if v]
+        return float(np.median(values)) if values else None
+
+    head_now = head_ratio(verts, anchors) * height
+    return {
+        "head_scale": ratio(DISNEY_STYLE["head"], head_now, MAX_HEAD),
+        "arm_scale": ratio(DISNEY_STYLE["arm"], limb("Shoulder", "Elbow"), MAX_SUGGEST),
+        "forearm_scale": ratio(DISNEY_STYLE["forearm"], limb("Elbow", "Hand"), MAX_SUGGEST),
+        "leg_scale": ratio(DISNEY_STYLE["thigh"], limb("Thigh", "Knee"), MAX_SUGGEST),
+        "torso_scale": ratio(DISNEY_STYLE["torso"], torso_radius(verts, anchors), MAX_TORSO),
+    }
 
 
 _BAKE_KEY = {"_Clavicle": "Clavicle", "_Hand": "Hand", "_Ankle": "Ankle", "_Hips": "Hips"}

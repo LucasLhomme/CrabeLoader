@@ -518,23 +518,33 @@ class MainWindow(ctk.CTk):
         limbs = ctk.CTkFrame(tab, fg_color="transparent")
         limbs.grid(row=5, column=0, sticky="ew", pady=(6, 0))
         limbs.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(limbs, text="Thickness (Disney Infinity figures have thick arms and a chunky body; thin limbs "
-                                 "get pinched in game). Shown live, applied when the rig is built.", wraplength=330, justify="left",
+        ctk.CTkLabel(limbs, text="Proportions (Disney Infinity figures have a big head, chunky forearms and thick "
+                                 "limbs; thin limbs get pinched in game). Shown live, applied when the rig is built.",
+                     wraplength=330, justify="left",
                      text_color=GREY, font=ctk.CTkFont(size=11)).grid(row=0, column=0, columnspan=2, sticky="w")
         self.limb_sliders = {}
-        for i, (key, text) in enumerate((("arm_scale", "Arms"), ("leg_scale", "Legs"), ("torso_scale", "Torso"))):
+        for i, (key, text) in enumerate((("head_scale", "Head"), ("torso_scale", "Torso"), ("arm_scale", "Arms"),
+                                         ("forearm_scale", "Forearms"), ("leg_scale", "Legs"))):
             label = ctk.CTkLabel(limbs, text=f"{text}: ×1.00", font=ctk.CTkFont(size=12))
             label.grid(row=1 + 2 * i, column=0, sticky="w")
-            slider = ctk.CTkSlider(limbs, from_=0.8, to=1.8, command=lambda v, k=key: self.on_limb(k, v))
+            low, high = (0.8, 1.5) if key == "head_scale" else (0.8, 1.8)
+            slider = ctk.CTkSlider(limbs, from_=low, to=high, command=lambda v, k=key: self.on_limb(k, v))
             slider.set(1.0)
             slider.grid(row=2 + 2 * i, column=0, sticky="ew")
             self._value_entry(limbs, 1 + 2 * i, slider, lambda v, k=key: self.on_limb(k, v), "{:.2f}")
             self.limb_sliders[key] = (slider, label, text)
         self.limb_hint = ctk.CTkLabel(limbs, text="", font=ctk.CTkFont(size=10), text_color=GREY, wraplength=320,
                                       justify="left")
-        ctk.CTkButton(limbs, text="Match the base", height=24, fg_color="#27272a", hover_color="#3f3f46",
-                      command=self.on_limb_match).grid(row=7, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        self.limb_hint.grid(row=8, column=0, columnspan=2, sticky="w")
+        buttons = ctk.CTkFrame(limbs, fg_color="transparent")
+        buttons.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        buttons.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkButton(buttons, text="Disney Infinity style", height=24, fg_color="#1d4ed8", hover_color="#2563eb",
+                      command=self.on_disney_style).grid(row=0, column=0, sticky="ew", padx=(0, 2))
+        ctk.CTkButton(buttons, text="Match the base", height=24, fg_color="#27272a", hover_color="#3f3f46",
+                      command=self.on_limb_match).grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        ctk.CTkButton(buttons, text="Reset", height=22, fg_color="#27272a", hover_color="#3f3f46",
+                      command=self.on_limb_reset).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        self.limb_hint.grid(row=12, column=0, columnspan=2, sticky="w")
         ctk.CTkLabel(tab, text=legend, text_color=GREY, wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(
             row=6, column=0, sticky="w", pady=4)
 
@@ -545,8 +555,7 @@ class MainWindow(ctk.CTk):
         if self.anchors is None:
             return verts
         from src.core.limbs import preview, quick_game_pose
-        if max(abs(m.arm_scale - 1), abs(m.leg_scale - 1), abs(m.torso_scale - 1)) >= 1e-3:
-            verts = preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale)
+        verts = preview(verts, self.anchors, m.arm_scale, m.leg_scale, m.torso_scale, m.head_scale, m.forearm_scale)
         if getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get() and self.base is not None:
             verts = quick_game_pose(verts, self.anchors, self.base.joints)
         return verts
@@ -582,7 +591,7 @@ class MainWindow(ctk.CTk):
             return
         if self.rig is not None:
             self._geometry_changed()  # back to the T-pose model: the rig is stale
-            self.log("Limb thickness changed: build the rig again to apply it.")
+            self.log("Proportions changed: build the rig again to apply them.")
         else:
             self.renderer.update_model_vertices(self._display_vertices())
             self.renderer.request_render()
@@ -594,20 +603,46 @@ class MainWindow(ctk.CTk):
             return None
         base_verts = np.concatenate([p[0] for p in parts])
         verts = self.model.vertices()
-        arms, legs = suggest(verts, self.anchors, base_verts, self.base.joints)
-        return arms, legs, suggest_torso(verts, self.anchors, base_verts, self.base.joints)
+        arms, forearms, legs = suggest(verts, self.anchors, base_verts, self.base.joints)
+        return {"arm_scale": arms, "forearm_scale": forearms, "leg_scale": legs,
+                "torso_scale": suggest_torso(verts, self.anchors, base_verts, self.base.joints)}
+
+    def _apply_proportions(self, values: dict):
+        for key, value in values.items():
+            self.limb_sliders[key][0].set(value)
+            self.on_limb(key, value)
 
     def on_limb_match(self):
         values = self._limb_suggestion()
         if values is None:
             self.limb_hint.configure(text="Import a model and pick a base first.")
             return
-        for key, value in zip(("arm_scale", "leg_scale", "torso_scale"), values):
-            self.limb_sliders[key][0].set(value)
-            self.on_limb(key, value)
-        self.limb_hint.configure(text=f"Base thickness: arms ×{values[0]:.2f}, legs ×{values[1]:.2f}, torso "
-                                      f"×{values[2]:.2f} (limbs capped at ×1.60, torso at ×1.40; never thinner; "
-                                      "baggy clothes count as thick).")
+        values["head_scale"] = 1.0
+        self._apply_proportions(values)
+        self.limb_hint.configure(text="Matched to the base: " + self._proportions_text(values) +
+                                      " (head untouched; never thinner; baggy clothes count as thick).")
+
+    def on_disney_style(self):
+        """Bring the model to the average proportions of the game's humanoid figures."""
+        from src.core.limbs import disney_style
+        if not (self.model and self.anchors):
+            self.limb_hint.configure(text="Import a model first.")
+            return
+        values = disney_style(self.model.vertices(), self.anchors)
+        self._apply_proportions(values)
+        self.limb_hint.configure(text="Disney Infinity style (average of 30 figures of the game): "
+                                      + self._proportions_text(values) + ". Never smaller than your model; fine-tune "
+                                      "with the sliders.")
+
+    def on_limb_reset(self):
+        self._apply_proportions({key: 1.0 for key in self.limb_sliders})
+        self.limb_hint.configure(text="Proportions back to the model's own.")
+
+    @staticmethod
+    def _proportions_text(values: dict) -> str:
+        names = (("head_scale", "head"), ("torso_scale", "torso"), ("arm_scale", "arms"),
+                 ("forearm_scale", "forearms"), ("leg_scale", "legs"))
+        return ", ".join(f"{label} ×{values[key]:.2f}" for key, label in names if key in values)
 
     # -------------------------------------------------------- abilities & moveset
     def _build_abilities_tab(self, tab):
