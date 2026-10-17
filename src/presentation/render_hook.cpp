@@ -18,6 +18,7 @@
 #include <thread>
 
 #include "presentation/render_hook.hpp"
+#include "presentation/reshade_bridge.hpp"
 
 #include <algorithm>
 #include "imgui/imgui_internal.h"
@@ -273,6 +274,7 @@ bool RenderHook::initialize()
 // Restores window procedure, removes all hooks, and releases D3D11 resources.
 void RenderHook::uninitialize()
 {
+    ReShadeBridge::shutdown();
     if (_originalWndProc && _hwnd) {
         SetWindowLongPtrW(_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_originalWndProc));
         _originalWndProc = nullptr;
@@ -963,6 +965,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
+    ReShadeBridge::present(swapChain, flags);
 
     if (self._backendInitialized && self._device && self._context) {
         if (!self._renderTargetView) {
@@ -1063,6 +1066,7 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
     crabe::shared::Logger::getInstance().info("RenderHook: ResizeBuffers requested ({}x{}, format {}).",
                                               width, height, static_cast<uint32_t>(newFormat));
 
+    ReShadeBridge::beforeResize(swapChain);
     self.releaseRenderTarget();
 
     HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);

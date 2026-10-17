@@ -171,6 +171,7 @@ set(CRABELOADER_CORE_SOURCES
     # Presentation Layer
     src/presentation/overlay.cpp
     src/presentation/render_hook.cpp
+    src/presentation/reshade_bridge.cpp
     src/presentation/input_hook.cpp
     src/presentation/pad_state.cpp
     src/presentation/input_remap.cpp
