@@ -6,6 +6,10 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Outils
+- `tools/roundtrip.py` (développeur) : test « aller-retour ». Une figure officielle est remise en T-pose avec son
+  propre squelette, importée dans Creator, riggée sur elle-même et comparée à l'originale (forme en pose de jeu,
+  poids, squelette auto). Options `--true-skeleton` et `--official-weights` pour isoler chaque source d'erreur.
 ### Corrigé
 - Menton / cou étirés en pose de jeu quand le torse ou le cou du modèle n'a pas la longueur de celui de la base
   (Sora sur Gamora : 1,8 cm puis 1,1 cm d'écart) : le cou part maintenant du bout du torse et la tête du bout du
