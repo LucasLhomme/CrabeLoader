@@ -6,6 +6,14 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Amélioré
+- Auto-fit du squelette calibré sur les figures du jeu (`tools/fit_calibration.py`) : 70 figures humanoïdes remises
+  en T-pose et mesurées comme un modèle importé ; chaque articulation est prédite par un petit modèle linéaire.
+  Erreur (validation croisée, % de la hauteur) : largeur d'épaules 4,3 → 1,7 (les manches bouffantes et les
+  cheveux ne trompent plus la détection : Zelda 0,37 → 0,13), mains 6,2 → 2,9 (poignet trouvé sur l'avant-bras
+  corrigé), profondeur genoux 3,0 → 2,0, cou 4,6 → 4,3. Hanches et hauteur des bras volontairement non corrigées
+  (les proportions des figures, grosse tête et jambes courtes, fausseraient un modèle réaliste). Test aller-retour
+  sur 69 figures : écart médian 4,4 % → 4,1 %.
 ### Outils
 - `tools/roundtrip.py` (développeur) : test « aller-retour ». Une figure officielle est remise en T-pose avec son
   propre squelette, importée dans Creator, riggée sur elle-même et comparée à l'originale (forme en pose de jeu,

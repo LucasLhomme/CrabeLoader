@@ -286,7 +286,57 @@ def measure(vertices: np.ndarray, faces: np.ndarray, base: BaseCharacter,
         height=h, arm_y=float(arm_y), arm_z=arm_z, shoulder_x=shoulder_x, tip_x=float(tip_x), tip_y=float(tip_y),
         wrist=wrist, neck_y=neck_y, head_y=head_y, crotch_y=crotch_y, torso_z=torso_z,
         leg_x=leg_x, knee=0.48, knee_z=knee_z, ankle_y=ankle_y, ankle_z=ankle_z, toe_z=toe_z)
-    return props, FitReport(detected, estimated)
+    return calibrate(props), FitReport(detected, estimated)
+
+
+# Where the game puts its joints, learned from its own figures (tools/fit_calibration.py): 70 humanoid figures were
+# raised into a T-pose with their own skeleton and measured like any model; each joint is then predicted from the
+# raw measurements by a small linear model (fractions of the height; `wrist` is the 0-1 position along the arm).
+# Leave-one-out error, raw -> calibrated (% of the height): shoulder width 4.3 -> 1.7 (the raw edge of the torso is
+# fooled by puffy sleeves and hair; the arm span is not), hand 6.2 -> 2.9, knee depth 3.0 -> 2.0, neck 4.6 -> 4.3,
+# arm depth 2.1 -> 1.9.
+# Not calibrated on purpose: the hips (the figures' short legs and big heads would pull a realistic model's hips up),
+# the arm height (learned on perfect T-poses, it would drop the shoulders of a model whose arms hang a little) and a
+# wrist found where it should be (the figures' big hands would pull it towards the elbow).
+CALIBRATION = {
+    "shoulder_x": (("shoulder_x", "tip_x"), (-0.0707, 0.0754, 0.3557), 0.25),
+    "hand_x": (("shoulder_x", "tip_x", "wrist"), (0.0824, -0.2900, 0.6287, 0.0190), 0.12),
+    "arm_z": (("arm_z",), (-0.0120, 0.8841), 0.06),
+    "knee_z": (("knee_z",), (0.0236, 0.6451), 0.06),
+    "neck_y": (("neck_y",), (0.1550, 0.7641), 0.06),
+}
+"""joint: (raw measurements used, (intercept, coefficients...), largest move allowed in fractions of the height)."""
+WRIST_PLAUSIBLE = (0.55, 0.9)
+"""A raw wrist outside this range sits on the forearm or in the hand (gloves, sleeves, bracelets): use the model."""
+
+
+def calibrate(p: Proportions) -> Proportions:
+    """Raw measurements -> where the game's own figures have their joints (see CALIBRATION)."""
+    h = p.height
+    raw = {"shoulder_x": p.shoulder_x / h, "tip_x": p.tip_x / h, "wrist": p.wrist,
+           "arm_z": p.arm_z / h, "knee_z": p.knee_z / h, "neck_y": p.neck_y / h}
+
+    def predict(name, current):
+        feats, c, limit = CALIBRATION[name]
+        value = c[0] + sum(k * raw[f] for k, f in zip(c[1:], feats))
+        return float(np.clip(value, current - limit, current + limit)) * h
+
+    old_hand = p.shoulder_x + p.wrist * (max(p.tip_x, p.shoulder_x + 0.05 * h) - p.shoulder_x)
+    # The game's joints often sit inside the torso edge, but rarely deeper than ~60% of it (10th percentile). An
+    # edge found beyond half the arm span is not the torso (puffy sleeves, hair): no floor then.
+    floor = 0.6 * p.shoulder_x if p.shoulder_x < 0.5 * p.tip_x else 0.0
+    shoulder_x = float(np.clip(max(predict("shoulder_x", raw["shoulder_x"]), floor), 0.05 * h, 0.8 * p.tip_x))
+    tip_x = max(p.tip_x, shoulder_x + 0.05 * h)
+    if WRIST_PLAUSIBLE[0] <= p.wrist <= WRIST_PLAUSIBLE[1]:
+        hand_x = old_hand  # keep the wrist where it was found on the mesh
+    else:
+        hand_x = predict("hand_x", old_hand / h)
+    wrist = float(np.clip((hand_x - shoulder_x) / (tip_x - shoulder_x), 0.45, 0.92))
+    arm_y = p.arm_y
+    neck_y = float(np.clip(predict("neck_y", raw["neck_y"]), arm_y + 0.01 * h, 0.97 * h))
+    head_y = neck_y + (p.head_y - p.neck_y) * (h - neck_y) / max(h - p.neck_y, 1e-6)
+    return p.adjusted(shoulder_x=shoulder_x, wrist=wrist, arm_z=predict("arm_z", raw["arm_z"]),
+                      knee_z=predict("knee_z", raw["knee_z"]), neck_y=neck_y, head_y=head_y)
 
 
 def build_anchors(p: Proportions, base: BaseCharacter) -> dict[str, np.ndarray]:

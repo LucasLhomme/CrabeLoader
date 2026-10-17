@@ -113,7 +113,9 @@ class TestV2Features(unittest.TestCase):
         combined = trimesh.util.concatenate([torso, arm_l, arm_r])
 
         props, report = measure(combined.vertices, combined.faces, None)
-        self.assertGreater(props.shoulder_x, 0.20)  # Should sit near torso edge (r=0.25), not pulled into chest
+        # Inside the torso edge (r=0.25) like the game's own figures, but not pulled into the chest.
+        self.assertGreater(props.shoulder_x, 0.13)
+        self.assertLess(props.shoulder_x, 0.26)
         self.assertAlmostEqual(props.arm_y, 0.7, delta=0.05)
 
 
