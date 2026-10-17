@@ -330,4 +330,134 @@ suite.cases[#suite.cases + 1] = {
     end,
 }
 
+-- Match startup: the API is injected before C++ registers the settings natives.
+local function registerSettingsNatives(state)
+    local crabe = state.Crabe
+    crabe._patchGetResolutionCount = function() return 1, 1 end
+    crabe._patchGetResolution = function() return 2560, 1440, "2560 x 1440" end
+    crabe._patchGetFrameLimitChoicesCount = function() return 2 end
+    crabe._patchGetFrameLimitChoice = function(i) return ({ "Unlimited", "60 FPS" })[i] end
+    crabe._patchGetFrameLimit = function() return 1 end
+    crabe._patchSetFrameLimit = function() end
+    crabe._patchGetBorderless = function() return 2 end
+    crabe._patchSetBorderless = function() end
+    crabe._patchKeybindGetActionCount = function() return 0 end
+end
+
+suite.cases[#suite.cases + 1] = {
+    "built-in settings initialize after native registration and survive reload without duplicates",
+    function(state)
+        state._G = state
+        state.UI_CurrentWorldName = function() return "frontend" end
+        assertEquals(state.Crabe.Settings._buildHooks, nil,
+                     "injection alone must not install settings before natives exist")
+        assertFalse(state.Crabe.Settings.initBuiltins(), "initialization must wait for native callbacks")
+        registerSettingsNatives(state)
+        assertTrue(state.Crabe.Settings.initBuiltins())
+
+        -- The actual screens may only load after startup has finished.
+        local menu = newScreen(state, "SettingsMenu")
+        local video = newScreen(state, "SettingsVideo")
+        state.Crabe.Settings._install("SettingsMenu")
+        state.Crabe.Settings._install("SettingsVideo")
+        menu:BuildList()
+        video:BuildList()
+        assertEquals(idsIn(menu.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings")
+        assertEquals(idsIn(video.listData), "gamma,resolution,crabeFrameLimit,crabeWindowMode")
+        assertEquals(video.resolutionWidths[1], 2560)
+        assertEquals(video.resolutionHeights[1], 1440)
+        assertEquals(video.listData[4].enumValue, "Borderless")
+
+        state.Crabe.Mod.reload()
+        assertTrue(state.Crabe.Settings.initBuiltins())
+        menu:BuildList()
+        video:BuildList()
+        assertEquals(idsIn(menu.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings")
+        assertEquals(idsIn(video.listData), "gamma,resolution,crabeFrameLimit,crabeWindowMode")
+        assertEquals(#state.Crabe.Settings._buildHooks.SettingsMenu, 1)
+        assertEquals(#state.Crabe.Settings._buildHooks.SettingsVideo, 1)
+    end,
+}
+suite.cases[#suite.cases + 1] = {
+    "lowercase presentation chunks install builtins before the first menu build",
+    function(state)
+        state._G = state
+        state.UI_CurrentWorldName = function() return "frontend" end
+        local patches = {}
+        state.Crabe.Hooks.patchNamedChunk = function(name, source)
+            patches[name] = source
+        end
+        registerSettingsNatives(state)
+        assertTrue(state.Crabe.Settings.initBuiltins())
+        assertNotNil(patches["presentation/settingsmenu.lua"])
+        assertNotNil(patches["presentation/settingsvideo.lua"])
+
+        -- The engine executes a lowercase-named class chunk, then creates its
+        -- first instance immediately, without waiting for a scheduler tick.
+        for _,name in ipairs({"SettingsMenu", "SettingsVideo"}) do
+            local screen = newScreen(state, name)
+            local patch = assert(loadstring(patches["presentation/" .. name:lower() .. ".lua"]))
+            setfenv(patch, state)
+            patch()
+            screen:BuildList()
+            if name == "SettingsMenu" then
+                assertEquals(idsIn(screen.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings")
+            else
+                assertEquals(idsIn(screen.listData), "gamma,resolution,crabeFrameLimit,crabeWindowMode")
+            end
+        end
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "front-end bindings do not depend on a transient world name",
+    function(state)
+        state._G = state
+        state.UI_CurrentWorldName = function() return "EMP_Master" end
+        registerSettingsNatives(state)
+        state.Crabe.Settings.initBuiltins()
+        local menu = newScreen(state, "SettingsMenu")
+        menu.className = function() return "SettingsMenu" end
+        state.Crabe.Settings._install("SettingsMenu")
+        menu:BuildList()
+        assertEquals(idsIn(menu.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings")
+        menu.className = function() return "InGameSettingsMenu" end
+        menu:BuildList()
+        assertEquals(idsIn(menu.listData), "gamma,resolution", "pause-menu subclasses stay unchanged")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "a persistent Options list built before hook installation is refreshed once",
+    function(state)
+        state._G = state
+        state.UI_CurrentWorldName = function() return "EMP_Master" end
+        local menu = newScreen(state, "SettingsMenu")
+        menu:BuildList() -- The first list exists before the settings API is ready.
+        menu.className = function() return "SettingsMenu" end
+        local rebuilds = 0
+        menu.Rebuild = function() rebuilds = rebuilds + 1 end
+        state.UI = {
+            INVALID_UI_HANDLE = -1,
+            GetHandleFromName = function(name, player)
+                assertEquals(name, "SettingsMenu")
+                assertEquals(player, 0)
+                return 16
+            end,
+            GetScreenFromScreenHandle = function(handle)
+                assertEquals(handle, 16)
+                return menu
+            end,
+        }
+        registerSettingsNatives(state)
+        state.Crabe.Settings.initBuiltins()
+        for _ = 1, 30 do state.Game._runTicks(0.016) end
+        assertEquals(idsIn(menu.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings")
+        assertEquals(rebuilds, 1)
+        for _ = 1, 120 do state.Game._runTicks(0.016) end
+        assertEquals(rebuilds, 1, "an unchanged list must not be refreshed repeatedly")
+        assertEquals(#menu.listData, 4, "bindings must not duplicate")
+    end,
+}
+
 return suite
