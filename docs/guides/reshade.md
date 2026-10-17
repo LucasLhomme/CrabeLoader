@@ -80,9 +80,8 @@ The leading explanation for this pause is ReShade's synchronous update check.
 In 6.8, runtime construction calls `check_for_update()` immediately after the
 adapter log. That function opens `https://api.github.com/repos/crosire/reshade/tags`
 synchronously and applies its two-second request timeouts only *after*
-`InternetOpenUrl` returns. A separate request to api.github.com failed to connect
-on the test system during the investigation. This matches the log gap, but the network
-call itself was not instrumented, so the attribution remains an inference.
+`InternetOpenUrl` returns. The network call itself was not instrumented, so the
+attribution remains an inference.
 The installed effect shaders compiled afterward in roughly 0.2 seconds.
 No startup-delay workaround has been applied.
 
