@@ -6,6 +6,9 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Corrigé
+- Onglet Squelette : le bloc des proportions et ses boutons sortaient de l'écran sans pouvoir défiler ; ils sont
+  maintenant dans la zone qui défile, qui prend toute la hauteur disponible.
 
 ## [0.4.0] - 2026-10-17
 ### Ajouté

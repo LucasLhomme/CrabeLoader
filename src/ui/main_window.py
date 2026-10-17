@@ -497,6 +497,7 @@ class MainWindow(ctk.CTk):
         self._status_icons, self._status_text = {}, {}
         scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent", height=380)
         scroll.grid(row=4, column=0, sticky="nsew")
+        tab.grid_rowconfigure(4, weight=1)  # the scrolling area takes all the height left
         scroll.grid_columnconfigure(0, weight=1)
         for i, (name, text, lo, hi, rel) in enumerate(SKELETON_SLIDERS):
             label = ctk.CTkLabel(scroll, text=text, font=ctk.CTkFont(size=12))
@@ -515,8 +516,9 @@ class MainWindow(ctk.CTk):
         legend = ("• Green skeleton: Fitted to your 3D model (arms, legs, head).\n"
                   "• Cyan skeleton: Base character reference (on the ghost figure).\n"
                   "• Note: The builder automatically retargets your model to the game's bind pose.")
-        limbs = ctk.CTkFrame(tab, fg_color="transparent")
-        limbs.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        # Everything below the fitting sliders sits in the same scrolling area: the tab is taller than the window.
+        limbs = ctk.CTkFrame(scroll, fg_color="transparent")
+        limbs.grid(row=3 * len(SKELETON_SLIDERS), column=0, columnspan=3, sticky="ew", pady=(10, 0))
         limbs.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(limbs, text="Proportions (Disney Infinity figures have a big head, chunky forearms and thick "
                                  "limbs; thin limbs get pinched in game). Shown live, applied when the rig is built.",
@@ -545,8 +547,8 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(buttons, text="Reset", height=22, fg_color="#27272a", hover_color="#3f3f46",
                       command=self.on_limb_reset).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
         self.limb_hint.grid(row=12, column=0, columnspan=2, sticky="w")
-        ctk.CTkLabel(tab, text=legend, text_color=GREY, wraplength=330, justify="left", font=ctk.CTkFont(size=10)).grid(
-            row=6, column=0, sticky="w", pady=4)
+        ctk.CTkLabel(scroll, text=legend, text_color=GREY, wraplength=320, justify="left", font=ctk.CTkFont(size=10)).grid(
+            row=3 * len(SKELETON_SLIDERS) + 1, column=0, columnspan=3, sticky="w", pady=4)
 
     def _display_vertices(self):
         """The model as shown before the rig is built: placed, with the limb thickness previewed."""
