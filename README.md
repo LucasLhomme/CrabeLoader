@@ -195,7 +195,7 @@ CrabeLoader is part of the **DIM2** open-source modding suite for Disney Infinit
 | :--- | :--- | :---: |
 | **CrabeMenu** | Autonomous in-game mod menu (`F5`) with full gamepad and keyboard navigation. | [GitHub](https://github.com/LucasLhomme/CrabeMenu) |
 | **DisneyInfinityPortal** | Physical Disney Infinity Base (Portal) support & figure progress gateway. | [GitHub](https://github.com/LucasLhomme/DisneyInfinityPortal) |
-| **DisneyInfinityCreator** | Comprehensive character creation, model extraction, and modding toolkit. | [GitHub](https://github.com/LucasLhomme/DisneyInfinityCreator) |
+| **Disney Infinity Creator** | Desktop app that turns any 3D model into a playable figure (rigging, preview, icons, install). Bundled in this repository. | [tools/creator](tools/creator/README.en.md) |
 
 ---
 

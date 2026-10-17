@@ -74,6 +74,11 @@ const PAGES = [
     description: 'Build a custom character from zero, declare it in mod.json and test it in game.',
   },
   {
+    slug: 'guides/disney-infinity-creator', src: 'docs/guides/disney_infinity_creator.md',
+    title: 'Disney Infinity Creator', order: 8, badge: NEW,
+    description: 'Desktop app that turns any 3D model into a playable figure: rigging, preview, icons, install.',
+  },
+  {
     slug: 'guides/virtual-reader', src: 'docs/guides/virtual_reader.md',
     title: 'Virtual reader & figures', order: 9, badge: NEW,
     description: 'Manage virtual figure slots, antenna allocation, deterministic SKUs, and in-game character swaps.',
