@@ -124,11 +124,12 @@ s'affiche en direct dans la vue 3D et dans « Preview the texture atlas » (vers
 bouge, pleine résolution au relâchement) et c'est celui qui est exporté dans le jeu. Le second curseur « Match the base figure's
 brightness » rapproche la luminosité moyenne de celle de la texture de la base choisie (0 = désactivé).
 
-**Icône du personnage.** Case « Character icon » (onglet Modèle) : à l'installation, Creator photographie la tête du
-modèle (vue de face, T-pose, texture avec le filtre) et écrit dans le mod `<actor>_icon.png` plus la texture HUD
-(`textures/<hash>.tbody`) et son `<actor>.mtb`, au format du pipeline CrabeLoader (`make_icon.py`). Le bouton
-« Preview » montre le résultat. Expérimental : si la grille de sélection garde l'icône par défaut, le PNG reste
-utilisable tel quel.
+**Icônes du personnage.** Case « Character icons » (onglet Modèle) : à l'installation, Creator photographie le
+modèle (texture avec le filtre, pose de jeu une fois riggé) et écrit les images au format des fichiers du jeu :
+le portrait HUD 128 px (`ui/icons/hud_playericons_<acteur>.mtb` + texture, nommé dans `mod.json` par
+`"icon": "HUD_PlayerIcons_<Acteur>"`) et la figure du Virtual Reader (`ui/virtualreadercharacters/<acteur>.mtb`,
+`_sm`, et la silhouette `_s`). `<acteur>_icon.png` reste à la racine du mod. Le bouton « Preview » montre les trois
+images.
 
 **Audit des animations (outil à part, hors Creator).** Glisse un modèle sur `Audit_Animations.bat` (base par défaut
 TCW_Anakin ; une autre en 2ᵉ argument). L'outil construit le rig, joue toutes les animations dessus et écrit dans
