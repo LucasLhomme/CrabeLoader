@@ -6,6 +6,14 @@ dit pourquoi et comment c'est vérifié. Publier une version : mettre à jour `V
 Actions crée alors l'étiquette et la release.
 
 ## [Non publié]
+### Corrigé
+- Nettoyage Blender des fichiers `.dae` : Blender 5 n'a plus d'import COLLADA. Le `.dae` est lu par Creator
+  (pièces fusionnées, textures en un atlas) puis confié à Blender en `.glb` avec un matériau PBR neutre, ce qui
+  garde les couleurs à l'identique (vérifié sur Ganondorf Smash : texture moyenne 54,35 avant et après).
+- Rapport du nettoyage : la sortie de Blender est lue en UTF-8 ; sous Windows, les accents cassés empêchaient de
+  filtrer les avertissements d'orientation sans objet (« Modèle debout »).
+- Aperçu « in game pose » : le squelette de base (fantôme et points) suit la pose de jeu au lieu de rester en
+  T-pose, et l'aperçu se met à jour en direct avec les curseurs du squelette.
 ### Amélioré
 - Auto-fit du squelette calibré sur les figures du jeu (`tools/fit_calibration.py`) : 70 figures humanoïdes remises
   en T-pose et mesurées comme un modèle importé ; chaque articulation est prédite par un petit modèle linéaire.

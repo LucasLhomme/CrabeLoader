@@ -582,6 +582,7 @@ class MainWindow(ctk.CTk):
             return
         self.renderer.update_model_vertices(self._display_vertices())
         self._update_skeleton_overlay()
+        self._show_base_rest(self._model_shown_in_tpose())
         self.renderer.request_render()
 
     def _update_skeleton_overlay(self):
@@ -1294,7 +1295,7 @@ class MainWindow(ctk.CTk):
             if self.model and self.model.match > 0:
                 self.model.match_target = self._base_brightness()
                 self.on_look(self.look_slider.get())
-            self._show_base_rest(self.pose == "tpose")
+            self._show_base_rest(self.pose == "tpose" and self._model_shown_in_tpose())
             game_dir = Path(self.game_entry.get().strip()) if hasattr(self, "game_entry") and self.game_entry.get() else None
             self._refresh_moveset_clips()
             self._update_abilities_summary()
@@ -2012,7 +2013,7 @@ class MainWindow(ctk.CTk):
         if hasattr(self, "timeline"):
             self.timeline.set_rig_ready(False)
         self.pose = "tpose"
-        self._show_base_rest(True)
+        self._show_base_rest(self._model_shown_in_tpose())
         self.pose_buttons.set("T-pose")
         self.pose_buttons.configure(state="disabled")
         self.renderer.set_heat_lines(None)
@@ -2023,7 +2024,7 @@ class MainWindow(ctk.CTk):
         else:
             self.renderer.update_model_vertices(self._display_vertices())
         self._update_skeleton_overlay()
-        self._show_base_rest(True)
+        self._show_base_rest(self._model_shown_in_tpose())
         self.renderer.request_render()
 
     def _sync_placement_controls(self):
@@ -2106,6 +2107,10 @@ class MainWindow(ctk.CTk):
         self._sync_sliders()
         self._geometry_changed()
 
+    def _model_shown_in_tpose(self) -> bool:
+        """False while the Skeleton tab previews the game pose (arms down): the comparison figure follows it."""
+        return not (getattr(self, "game_pose_var", None) is not None and self.game_pose_var.get())
+
     def _show_base_rest(self, tpose: bool):
         """Comparison figure and its skeleton: raised to T-pose when the model is shown in T-pose (and the option is
         on), in the native bind pose otherwise."""
@@ -2117,12 +2122,11 @@ class MainWindow(ctk.CTk):
         else:
             joints = self.base.joints
             self.renderer.reset_ghost_vertices(self.base_parts)
-        if tpose:
-            self.renderer.set_base_skeleton(base_skeleton_segments(joints), base_joint_points(joints))
+        self.renderer.set_base_skeleton(base_skeleton_segments(joints), base_joint_points(joints))
 
     def on_ghost_tpose(self):
         self.settings.update(ghost_tpose=bool(self.ghost_tpose_var.get()))
-        self._show_base_rest(self.pose == "tpose")
+        self._show_base_rest(self.pose == "tpose" and self._model_shown_in_tpose())
         self.renderer.request_render()
 
     def on_ghost(self):
@@ -2188,7 +2192,7 @@ class MainWindow(ctk.CTk):
         self._show_base_rest(self.pose == "tpose")
         if self.pose == "tpose":
             self.renderer.set_skeleton(skeleton_segments(self.anchors), joint_points(self.anchors))
-        elif self.pose == "bind":  # in-game rest pose: the points follow the model there
+        elif self.pose == "bind":  # in-game rest pose: the points follow the model there, the base is in its own
             from src.core.limbs import posed_anchors
             posed = posed_anchors(self.anchors, self.rig.base.joints)
             self.renderer.set_skeleton(skeleton_segments(posed), joint_points(posed))

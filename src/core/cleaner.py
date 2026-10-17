@@ -42,6 +42,23 @@ def is_skinned_glb(path: Path) -> bool:
         return False
 
 
+def dae_to_glb(path: Path, out: Path) -> Path:
+    """Blender 5 dropped its COLLADA importer: the built-in loader reads the .dae (pieces merged, textures packed
+    into one atlas) and hands Blender an equivalent .glb. The material is written as plain PBR (white factor, no
+    metal) so the colours come back unchanged."""
+    import numpy as np
+    import trimesh
+
+    from src.core.model import load_source
+    src = load_source(path)
+    mat = trimesh.visual.material.PBRMaterial(baseColorTexture=src.texture, baseColorFactor=[255, 255, 255, 255],
+                                              metallicFactor=0.0, roughnessFactor=1.0)
+    uv = np.c_[src.uvs[:, 0], 1 - src.uvs[:, 1]]
+    trimesh.Trimesh(src.vertices, src.faces, visual=trimesh.visual.TextureVisuals(uv=uv, material=mat),
+                    process=False).export(out)
+    return out
+
+
 def clean_model(path: str | Path, blender: str | Path, max_vertices: int = 65000, max_triangles: int = 0):
     """Return (cleaned .glb path in a temp folder, list of report lines). Raises RuntimeError with details on failure."""
     path, blender = Path(path), Path(blender)
@@ -60,10 +77,16 @@ def clean_model(path: str | Path, blender: str | Path, max_vertices: int = 65000
             raise RuntimeError("Freezing the skeleton failed:\n" + (proc.stdout + proc.stderr)[-800:])
         report.append("Rigged model: skeleton frozen in rest pose.")
         source = baked
+    if path.suffix.lower() == ".dae":
+        try:
+            source = dae_to_glb(path, work / "from_dae.glb")
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"Reading the .dae failed: {exc}") from exc
+        report.append("COLLADA (.dae): converted to .glb for Blender.")
     out = work / "clean.glb"
     proc = subprocess.run([str(blender), "--background", "--factory-startup", "--python-exit-code", "1",
                            "--python", str(CLEAN_SCRIPT), "--", str(source), str(out), str(max_vertices), str(max_triangles)],
-                          capture_output=True, text=True, errors="replace", creationflags=flags)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags)
     lines = (proc.stdout + "\n" + proc.stderr).splitlines()
     clean_lines = [ln[len("[clean] "):] for ln in lines if ln.startswith("[clean]")]
     if proc.returncode != 0 or not out.is_file():
