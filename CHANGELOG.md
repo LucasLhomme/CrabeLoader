@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Built-in Options and Video settings could be missing on first open: they now initialize once the native callbacks exist, and also hook the game's lowercase chunk paths.
+- The bindings rows identify the settings screen by class instead of the world name, and an already-built Options list gets them on the next check.
+
 ## [1.1.0] - 2026-10-16
 
 ### Added
