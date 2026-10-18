@@ -394,6 +394,8 @@ void Loader::drainPendingSnippets(void* L)
     drainLuaOutput(L);
 }
 
+// Prepares a newly detected game Lua state: injects the API and natives, then initializes the built-in settings.
+// The settings Lua is injected before the natives exist, so it can only initialize after they are registered.
 void Loader::ensureRuntimeReady(void* L)
 {
     if (!L)
@@ -449,9 +451,8 @@ void Loader::ensureRuntimeReady(void* L)
     crabe::infrastructure::patch::PatchBorderless::apply(L);
     crabe::infrastructure::patch::PatchKeybind::apply(L);
 
-    // Settings Lua is injected before these natives exist; initialize its menus now.
     if (!crabe::infrastructure::LuaCall::get().runSnippet(L,
-            "assert(Crabe.Settings.initBuiltins(), 'native settings callbacks are not registered')")) {
+            "assert(Crabe.Settings._initBuiltins(), 'native settings callbacks are not registered')")) {
         crabe::shared::Logger::getInstance().error("Loader: failed to initialize built-in settings.");
     }
     if (!_characterInjectionScript.empty()) {

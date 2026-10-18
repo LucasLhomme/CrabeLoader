@@ -153,7 +153,8 @@ function Crabe.Settings._install(screenName)
     return true
 end
 
--- Arms chunk patch for the settings screen.
+-- Arms chunk patch for the settings screen, under the shipped lowercase path and the legacy one.
+-- Named patches are case-sensitive, so each spelling needs its own hook.
 local function armPatch(screenName)
     if not Crabe.Settings._armed[screenName .. ":patch"] then
         Crabe.Settings._armed[screenName .. ":patch"] = true
@@ -162,9 +163,6 @@ local function armPatch(screenName)
             .. "Crabe.Settings._retry('" .. screenName .. "') end"
 
         if Crabe.Hooks and Crabe.Hooks.patchNamedChunk then
-            -- The shipped game's chunk names are lowercase. Named patches are
-            -- case-sensitive; missing this hook leaves the first visible list
-            -- unmodified until the periodic retry installs the wrapper later.
             Crabe.Hooks.patchNamedChunk("presentation/" .. string.lower(screenName) .. ".lua", installer)
             Crabe.Hooks.patchNamedChunk("Presentation/" .. screenName .. ".lua", installer)
         end
@@ -457,19 +455,24 @@ local function openKeybindsExtras(menu, page)
     end
 end
 
+local keybindsAttached = false
+
+-- Returns the class name the game's class factory stores on a screen, or nil.
+local function screenClassName(menu)
+    local name = menu.className or menu.ClassName
+    if type(name) == "string" then return name end
+    return nil
+end
+
 -- Injects keyboard and controller bindings options into SettingsMenu.
 local function installKeybindsMenu(menu)
-    -- The front-end list can build before the world name changes to
-    -- "frontend". Identify the actual screen instead of sampling that state.
-    local className = menu.ClassName
-    if type(menu.className) == "function" then
-        local ok, name = pcall(menu.className, menu)
-        if ok then className = name end
-    end
-    if className == "InGameSettingsMenu" then return end
+    if screenClassName(menu) == "InGameSettingsMenu" then return end
     if not menu.listData then return end
     for _, item in ipairs(menu.listData) do
-        if item.id == "Crabe_KeyboardBindings" then return end
+        if item.id == "Crabe_KeyboardBindings" then
+            keybindsAttached = true
+            return
+        end
     end
     local pos = #menu.listData + 1
     for i, item in ipairs(menu.listData) do
@@ -504,6 +507,27 @@ local function installKeybindsMenu(menu)
             if orig then return orig(self, opt, ...) end
         end
     end
+    keybindsAttached = true
+end
+
+-- Adds the bindings rows to the persistent SettingsMenu when it was built before the hooks attached.
+-- Rebuilds it once, then stops: no screen lookup runs after any list carries the rows.
+local function repairPersistentSettingsMenu()
+    if keybindsAttached then return end
+    local ui = rawget(kGlobals, "UI")
+    if type(ui) ~= "table" or type(ui.GetHandleFromName) ~= "function"
+            or type(ui.GetScreenFromScreenHandle) ~= "function" then
+        return
+    end
+    local handle = ui.GetHandleFromName("SettingsMenu", 0)
+    if handle == nil or handle == (ui.INVALID_UI_HANDLE or -1) then return end
+    local menu = ui.GetScreenFromScreenHandle(handle)
+    if type(menu) ~= "table" or type(menu.listData) ~= "table" or #menu.listData == 0 then return end
+    local count = #menu.listData
+    installKeybindsMenu(menu)
+    if #menu.listData ~= count and type(menu.Rebuild) == "function" then
+        menu:Rebuild()
+    end
 end
 
 -- Initializes built-in native key and controller bindings menu hooks.
@@ -514,29 +538,8 @@ local function initKeybindSettings()
     if Game and Game.onTick then
         local menuPollTicks = 0
         Game.onTick(function()
-            -- SettingsMenu is persistent: attaching its BuildList hook after
-            -- onEnter does not rebuild the already visible list. Repair it once
-            -- when it becomes available; leave selection and later frames alone.
             menuPollTicks = menuPollTicks + 1
-            if menuPollTicks % kPollTicks == 0 then
-                local ui = rawget(kGlobals, "UI")
-                if type(ui) == "table" and type(ui.GetHandleFromName) == "function"
-                        and type(ui.GetScreenFromScreenHandle) == "function" then
-                    local handle = ui.GetHandleFromName("SettingsMenu", 0)
-                    if handle ~= nil and handle ~= -1 and handle ~= ui.INVALID_UI_HANDLE then
-                        local menu = ui.GetScreenFromScreenHandle(handle)
-                        if type(menu) == "table" and type(menu.listData) == "table" then
-                            local count = #menu.listData
-                            if count > 0 then
-                                installKeybindsMenu(menu)
-                                if #menu.listData ~= count and type(menu.Rebuild) == "function" then
-                                    menu:Rebuild()
-                                end
-                            end
-                        end
-                    end
-                end
-            end
+            if menuPollTicks % kPollTicks == 0 then repairPersistentSettingsMenu() end
             if not capturingRow or not currentExtrasScreen then return end
             local finished, idx, display = Crabe._patchKeybindPoll()
             if finished ~= nil then
@@ -552,11 +555,10 @@ local function initKeybindSettings()
     end
 end
 
--- The loader calls this after registering the native settings callbacks.
--- API injection runs first to create Crabe/Game, so initializing at module load
--- would silently skip the built-in options on every fresh Lua state.
+-- Registers the built-in video and bindings settings once the loader has registered the native callbacks.
+-- Returns false while they are missing; idempotent, called by the loader.
 local builtinsInitialized = false
-function Crabe.Settings.initBuiltins()
+function Crabe.Settings._initBuiltins()
     if builtinsInitialized then return true end
     if not (Crabe._patchGetResolutionCount and Crabe._patchGetBorderless
             and Crabe._patchKeybindGetActionCount) then
