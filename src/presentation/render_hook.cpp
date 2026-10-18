@@ -24,6 +24,7 @@
 #include "presentation/draw_buffer.hpp"
 #include "presentation/texture_cache.hpp"
 #include "application/loader.hpp"
+#include "application/plugin_api.hpp"
 #include "domain/config.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/crash_reporter.hpp"
@@ -963,6 +964,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
+    crabe::application::PluginApi::get().dispatchPresent(swapChain, flags);
 
     if (self._backendInitialized && self._device && self._context) {
         if (!self._renderTargetView) {
@@ -1063,6 +1065,7 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
     crabe::shared::Logger::getInstance().info("RenderHook: ResizeBuffers requested ({}x{}, format {}).",
                                               width, height, static_cast<uint32_t>(newFormat));
 
+    crabe::application::PluginApi::get().dispatchBeforeResize(swapChain);
     self.releaseRenderTarget();
 
     HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);

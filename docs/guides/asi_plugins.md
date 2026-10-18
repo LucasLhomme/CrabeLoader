@@ -141,6 +141,8 @@ thread, before the game's own code runs. It passes a table of functions that sta
 | `removeHooks(api)` | Removes every hook your plugin installed. |
 | `runLua(api, code)` | Queues a Lua chunk for the game's Lua state, with `Crabe` and `Game` available. It runs on the next loader tick, and errors are logged under your plugin's name. |
 | `setValue(api, key, value)` / `getValue(api, key, buffer, size)` | Share text values with Lua mods (`Crabe.Plugins.get` / `Crabe.Plugins.set`) and with other plugins. |
+| `onPresent(api, callback, user)` | *(API v2)* Calls `callback(swapChain, flags, user)` on the render thread in every `IDXGISwapChain::Present`, before CrabeLoader's overlay. `NULL` removes it. |
+| `onBeforeResize(api, callback, user)` | *(API v2)* Calls `callback(swapChain, user)` in `IDXGISwapChain::ResizeBuffers`, before the buffers are released. Drop every back-buffer reference there. `NULL` removes it. |
 
 Every function takes the table first and can be called from any thread. Strings are UTF-8.
 
@@ -167,6 +169,34 @@ And from a Lua mod:
 if Crabe.Plugins.get("my_plugin.ready") == "yes" then
     Crabe.Plugins.set("my_plugin.speed", 2)
 end
+```
+
+CrabeLoader already hooks `Present` and `ResizeBuffers`, so a plugin that renders uses these two callbacks
+instead of hooking them itself. Each plugin has one callback of each kind; setting it again replaces it.
+Keep the callbacks cheap, because they run every frame. Do file reads and `LoadLibrary` in `CrabePluginInit`.
+A callback that raises an exception is logged, and that plugin's render callbacks are not called again.
+
+```cpp
+static void __cdecl onPresent(void* swapChain, uint32_t flags, void* user)
+{
+    if (flags & DXGI_PRESENT_TEST)
+        return;
+    static_cast<MyRenderer*>(user)->draw(static_cast<IDXGISwapChain*>(swapChain));
+}
+
+static void __cdecl onBeforeResize(void* swapChain, void* user)
+{
+    static_cast<MyRenderer*>(user)->releaseBackBuffer();
+}
+
+extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginApi* api)
+{
+    if (api->version < 2)
+        return;
+    static MyRenderer renderer;
+    api->onPresent(api, &onPresent, &renderer);
+    api->onBeforeResize(api, &onBeforeResize, &renderer);
+}
 ```
 
 A plugin without `CrabePluginInit` still loads normally: the API is optional. Keys are shared by everyone,

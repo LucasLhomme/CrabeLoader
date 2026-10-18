@@ -297,7 +297,7 @@ void testPluginApi(const fs::path& probe, const fs::path& crashingProbe)
     crabe::application::PluginApi api(host);
     require(api.startPlugins({record}) == 1, "the plugin receives the API");
     require(host.logged("[api_probe.asi] probe started {not a format}"), "log is prefixed and not a format string");
-    require(host.logged("api_probe.asi started with plugin API v1"), "the start is logged");
+    require(host.logged("api_probe.asi started with plugin API v2"), "the start is logged");
     require(api.value("probe.name") == "api_probe.asi", "pluginName and setValue reach the shared values");
     require(api.value("probe.readBack") == "ok", "getValue returns the full length and cuts the copy short");
     require(api.value("probe.missing") == "ok", "getValue answers -1 for an unset key");
@@ -309,6 +309,20 @@ void testPluginApi(const fs::path& probe, const fs::path& crashingProbe)
     require(host.hooks[0].name == "api_probe.asi:target", "the hook is named after the plugin");
     require(host.lua.size() == 1 && host.lua[0].first == "api_probe.asi", "runLua queues under the plugin's name");
     require(host.lua[0].second == "Crabe.write('probe')", "runLua queues the chunk unchanged");
+
+    require(api.value("probe.renderRegistered") == "ok", "onPresent and onBeforeResize accept a callback");
+    int fakeSwapChain = 0;
+    api.dispatchPresent(&fakeSwapChain, 1);
+    api.dispatchPresent(&fakeSwapChain, 1);
+    const std::optional<std::string> present = api.value("probe.present");
+    require(present.has_value() && present->starts_with("2 "), "dispatchPresent calls the callback every time");
+    require(present->ends_with(" 1 user"), "the Present callback gets the flags and its user pointer");
+    api.dispatchBeforeResize(&fakeSwapChain);
+    require(host.logged("api_probe.asi raised exception 0xC0000005 in its ResizeBuffers callback"),
+            "a faulting render callback is caught and logged");
+    api.dispatchPresent(&fakeSwapChain, 1);
+    api.dispatchBeforeResize(&fakeSwapChain);
+    require(api.value("probe.present")->starts_with("2 "), "a plugin whose render callback faulted is not called again");
 
     require(api.startPlugins({record}) == 0, "a plugin receives the API only once");
     crabe::infrastructure::AsiLoadRecord system{};

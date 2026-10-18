@@ -11,7 +11,9 @@
 #ifndef CRABELOADER_APPLICATION_PLUGIN_API_HPP_
 #define CRABELOADER_APPLICATION_PLUGIN_API_HPP_
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -64,13 +66,28 @@ namespace crabe::application {
         /// Returns a shared value, or nothing when the key is not set.
         [[nodiscard]] std::optional<std::string> value(const std::string& key) const;
 
+        /// Calls every plugin's Present callback in load order, each under SEH. Takes no lock: safe in Present.
+        void dispatchPresent(void* swapChain, std::uint32_t flags);
+
+        /// Calls every plugin's ResizeBuffers callback in load order, each under SEH. Takes no lock.
+        void dispatchBeforeResize(void* swapChain);
+
         struct Entry;
+        struct RenderCallbacks;
 
     private:
         PluginHost& _host;
         mutable std::mutex _mutex;
         std::vector<std::unique_ptr<Entry>> _entries;
         std::map<std::string, std::string> _values;
+        std::atomic<const RenderCallbacks*> _render{nullptr};
+        std::vector<std::unique_ptr<const RenderCallbacks>> _publishedRender;
+
+        /// Rebuilds the callback list from every entry and publishes it; call with _mutex held.
+        void publishRenderCallbacks();
+
+        /// Logs a render callback's fault once and stops calling that plugin's render callbacks.
+        void disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception);
 
         friend struct PluginApiAccess;
     };

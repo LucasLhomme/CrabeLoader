@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-#define CRABE_PLUGIN_API_VERSION 1
+#define CRABE_PLUGIN_API_VERSION 2
 
 enum {
     CRABE_LOG_DEBUG = 0,
@@ -27,6 +27,14 @@ enum {
 };
 
 typedef struct CrabePluginApi CrabePluginApi;
+
+/* Runs on the render thread inside IDXGISwapChain::Present, before CrabeLoader draws its overlay.
+   `swapChain` is the game's IDXGISwapChain*, `flags` the DXGI_PRESENT_* flags it passed, `user` the registered pointer. */
+typedef void(__cdecl* CrabePresentFn)(void* swapChain, uint32_t flags, void* user);
+
+/* Runs inside IDXGISwapChain::ResizeBuffers, before the buffers are released: drop every reference to them here.
+   `swapChain` is the game's IDXGISwapChain*, `user` the registered pointer. */
+typedef void(__cdecl* CrabeResizeFn)(void* swapChain, void* user);
 
 /* Every function takes the table it came from first, so CrabeLoader knows which plugin is calling.
    Strings are UTF-8 and copied before the call returns. Every function may be called from any thread. */
@@ -64,6 +72,14 @@ struct CrabePluginApi {
     /* Copies a shared value into `buffer` (always NUL-terminated, cut short if it does not fit).
        Returns the value's full length in bytes, or -1 when the key is not set. */
     int(__cdecl* getValue)(const CrabePluginApi* self, const char* key, char* buffer, uint32_t bufferSize);
+
+    /* Version 2. Sets the plugin's Present callback, replacing its previous one; NULL removes it.
+       A callback that raises an exception is logged and never called again. Returns 1, or 0 for a bad table. */
+    int(__cdecl* onPresent)(const CrabePluginApi* self, CrabePresentFn callback, void* user);
+
+    /* Version 2. Sets the plugin's ResizeBuffers callback, replacing its previous one; NULL removes it.
+       A callback that raises an exception is logged and never called again. Returns 1, or 0 for a bad table. */
+    int(__cdecl* onBeforeResize)(const CrabePluginApi* self, CrabeResizeFn callback, void* user);
 };
 
 /* The function a plugin exports to receive the table; the table stays valid until the game exits.

@@ -10,6 +10,7 @@
 
 #include <windows.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "sdk/crabe_plugin.h"
@@ -26,6 +27,26 @@ namespace {
     int __cdecl probeDetour(int value)
     {
         return value + 2;
+    }
+
+    const CrabePluginApi* probeApi = nullptr;
+    int presentCount = 0;
+
+    /// Counts Present calls and records the arguments of the last one in the shared values.
+    void __cdecl probePresent(void* swapChain, uint32_t flags, void* user)
+    {
+        char text[64] = {};
+        std::snprintf(text, sizeof(text), "%d %p %u %s", ++presentCount, swapChain, flags,
+                      user == &presentCount ? "user" : "nouser");
+        probeApi->setValue(probeApi, "probe.present", text);
+    }
+
+    /// Faults on purpose, so the test sees the loader turn this plugin's render callbacks off.
+    void __cdecl probeResize(void* swapChain, void* user)
+    {
+        (void)swapChain;
+        (void)user;
+        *static_cast<volatile int*>(nullptr) = 3;
     }
 
 } // namespace
@@ -78,5 +99,9 @@ extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginA
     api->runLua(api, "Crabe.write('probe')");
     api->setValue(api, "probe.blankLua", api->runLua(api, "  \n") == 0 ? "ok" : "bad");
     api->setValue(api, "probe.loader", api->loaderVersion);
+    probeApi = api;
+    const int present = api->onPresent(api, &probePresent, &presentCount);
+    const int resize = api->onBeforeResize(api, &probeResize, nullptr);
+    api->setValue(api, "probe.renderRegistered", present == 1 && resize == 1 ? "ok" : "bad");
 #endif
 }

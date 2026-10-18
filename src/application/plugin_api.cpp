@@ -26,11 +26,49 @@ namespace crabe::application {
         void* module{nullptr};
         std::string name;
         std::string owner;
+        CrabePresentFn present{nullptr};
+        void* presentUser{nullptr};
+        CrabeResizeFn resize{nullptr};
+        void* resizeUser{nullptr};
+        std::atomic<bool> renderFaulted{false};
+    };
+
+    struct PluginApi::RenderCallbacks {
+        struct Present {
+            PluginApi::Entry* entry;
+            CrabePresentFn callback;
+            void* user;
+        };
+        struct Resize {
+            PluginApi::Entry* entry;
+            CrabeResizeFn callback;
+            void* user;
+        };
+        std::vector<Present> present;
+        std::vector<Resize> resize;
     };
 
     struct PluginApiAccess {
         /// Returns the host of the instance an entry belongs to.
         static PluginHost& host(const PluginApi::Entry& entry) { return entry.api->_host; }
+
+        /// Stores a plugin's Present callback and republishes the list the render thread reads.
+        static void setPresent(PluginApi::Entry& entry, CrabePresentFn callback, void* user)
+        {
+            const std::lock_guard lock(entry.api->_mutex);
+            entry.present = callback;
+            entry.presentUser = user;
+            entry.api->publishRenderCallbacks();
+        }
+
+        /// Stores a plugin's ResizeBuffers callback and republishes the list the render thread reads.
+        static void setResize(PluginApi::Entry& entry, CrabeResizeFn callback, void* user)
+        {
+            const std::lock_guard lock(entry.api->_mutex);
+            entry.resize = callback;
+            entry.resizeUser = user;
+            entry.api->publishRenderCallbacks();
+        }
     };
 
     namespace {
@@ -146,6 +184,56 @@ namespace crabe::application {
             }
         }
 
+        /// CrabePluginApi::onPresent.
+        int __cdecl apiOnPresent(const CrabePluginApi* self, CrabePresentFn callback, void* user)
+        {
+            try {
+                PluginApi::Entry* entry = entryOf(self);
+                if (!entry)
+                    return 0;
+                PluginApiAccess::setPresent(*entry, callback, user);
+                return 1;
+            } catch (...) {
+                return 0;
+            }
+        }
+
+        /// CrabePluginApi::onBeforeResize.
+        int __cdecl apiOnBeforeResize(const CrabePluginApi* self, CrabeResizeFn callback, void* user)
+        {
+            try {
+                PluginApi::Entry* entry = entryOf(self);
+                if (!entry)
+                    return 0;
+                PluginApiAccess::setResize(*entry, callback, user);
+                return 1;
+            } catch (...) {
+                return 0;
+            }
+        }
+
+        /// Calls a plugin's Present callback under SEH; returns the exception code it raised, or 0.
+        DWORD callPresentGuarded(CrabePresentFn callback, void* swapChain, uint32_t flags, void* user) noexcept
+        {
+            __try {
+                callback(swapChain, flags, user);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return GetExceptionCode();
+            }
+            return 0;
+        }
+
+        /// Calls a plugin's ResizeBuffers callback under SEH; returns the exception code it raised, or 0.
+        DWORD callResizeGuarded(CrabeResizeFn callback, void* swapChain, void* user) noexcept
+        {
+            __try {
+                callback(swapChain, user);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return GetExceptionCode();
+            }
+            return 0;
+        }
+
         /// Calls a plugin's CrabePluginInit under SEH; returns the exception code it raised, or 0.
         DWORD callInitGuarded(CrabePluginInitFn init, const CrabePluginApi* table) noexcept
         {
@@ -214,6 +302,8 @@ namespace crabe::application {
             entry->table.runLua = &apiRunLua;
             entry->table.setValue = &apiSetValue;
             entry->table.getValue = &apiGetValue;
+            entry->table.onPresent = &apiOnPresent;
+            entry->table.onBeforeResize = &apiOnBeforeResize;
 
             const CrabePluginApi* table = &entry->table;
             const std::string name = entry->name;
@@ -257,6 +347,56 @@ namespace crabe::application {
         if (it == _values.end())
             return std::nullopt;
         return it->second;
+    }
+
+    void PluginApi::dispatchPresent(void* swapChain, std::uint32_t flags)
+    {
+        const RenderCallbacks* callbacks = _render.load(std::memory_order_acquire);
+        if (!callbacks)
+            return;
+        for (const RenderCallbacks::Present& slot : callbacks->present) {
+            if (slot.entry->renderFaulted.load(std::memory_order_relaxed))
+                continue;
+            const DWORD exception = callPresentGuarded(slot.callback, swapChain, flags, slot.user);
+            if (exception != 0)
+                disableRenderCallbacks(*slot.entry, "Present", exception);
+        }
+    }
+
+    void PluginApi::dispatchBeforeResize(void* swapChain)
+    {
+        const RenderCallbacks* callbacks = _render.load(std::memory_order_acquire);
+        if (!callbacks)
+            return;
+        for (const RenderCallbacks::Resize& slot : callbacks->resize) {
+            if (slot.entry->renderFaulted.load(std::memory_order_relaxed))
+                continue;
+            const DWORD exception = callResizeGuarded(slot.callback, swapChain, slot.user);
+            if (exception != 0)
+                disableRenderCallbacks(*slot.entry, "ResizeBuffers", exception);
+        }
+    }
+
+    // Published lists are never freed before the API itself: the render thread may still be walking an old one.
+    void PluginApi::publishRenderCallbacks()
+    {
+        auto callbacks = std::make_unique<RenderCallbacks>();
+        for (const std::unique_ptr<Entry>& entry : _entries) {
+            if (entry->present)
+                callbacks->present.push_back({entry.get(), entry->present, entry->presentUser});
+            if (entry->resize)
+                callbacks->resize.push_back({entry.get(), entry->resize, entry->resizeUser});
+        }
+        _render.store(callbacks.get(), std::memory_order_release);
+        _publishedRender.push_back(std::move(callbacks));
+    }
+
+    void PluginApi::disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception)
+    {
+        if (entry.renderFaulted.exchange(true))
+            return;
+        _host.log(CRABE_LOG_ERROR, std::format("PluginApi: {} raised exception 0x{:08X} in its {} callback; its render "
+                                               "callbacks are off until the game restarts.", entry.name, exception, event));
     }
 
 } // namespace crabe::application
