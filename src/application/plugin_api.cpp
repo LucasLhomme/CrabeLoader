@@ -377,7 +377,6 @@ namespace crabe::application {
         }
     }
 
-    // Published lists are never freed before the API itself: the render thread may still be walking an old one.
     void PluginApi::publishRenderCallbacks()
     {
         auto callbacks = std::make_unique<RenderCallbacks>();

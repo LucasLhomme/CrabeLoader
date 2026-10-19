@@ -84,6 +84,7 @@ namespace crabe::application {
         std::vector<std::unique_ptr<const RenderCallbacks>> _publishedRender;
 
         /// Rebuilds the callback list from every entry and publishes it; call with _mutex held.
+        /// Old lists stay in _publishedRender until the API is destroyed: the render thread may still be walking one.
         void publishRenderCallbacks();
 
         /// Logs a render callback's fault once and stops calling that plugin's render callbacks.
