@@ -5,7 +5,7 @@
 ** real loads of three probe plugins built next to this test, and the plugin API they call.
 ** Works in a temporary folder and leaves the real game alone.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #include <cstddef>

@@ -2,10 +2,10 @@
 ** CrabeLoader
 ** File description:
 ** Declares the bridge between .asi plugins and CrabeLoader: the table sdk/crabe_plugin.h describes.
-** Hands each plugin exporting CrabePluginInit its own table, and keeps the values shared with Lua.
+** Hands each CrabePluginInit exporter its own table; keeps shared values and render callbacks.
 ** Reaches the log, hooks and Lua only through a PluginHost, so tests can stand in for the loader.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #ifndef CRABELOADER_APPLICATION_PLUGIN_API_HPP_
@@ -67,10 +67,10 @@ namespace crabe::application {
         [[nodiscard]] std::optional<std::string> value(const std::string& key) const;
 
         /// Calls every plugin's Present callback in load order, each under SEH. Takes no lock: safe in Present.
-        void dispatchPresent(void* swapChain, std::uint32_t flags);
+        void dispatchPresent(void* swapChain, std::uint32_t flags) noexcept;
 
         /// Calls every plugin's ResizeBuffers callback in load order, each under SEH. Takes no lock.
-        void dispatchBeforeResize(void* swapChain);
+        void dispatchBeforeResize(void* swapChain) noexcept;
 
         struct Entry;
         struct RenderCallbacks;
@@ -88,7 +88,7 @@ namespace crabe::application {
         void publishRenderCallbacks();
 
         /// Logs a render callback's fault once and stops calling that plugin's render callbacks.
-        void disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception);
+        void disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception) noexcept;
 
         friend struct PluginApiAccess;
     };

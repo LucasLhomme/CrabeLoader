@@ -5,7 +5,7 @@
 ** Export CrabePluginInit and CrabeLoader calls it once, right after loading the plugin.
 ** Plain C with fixed-size types, so any 32-bit compiler can use it; nothing to link against.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #ifndef CRABE_PLUGIN_H_

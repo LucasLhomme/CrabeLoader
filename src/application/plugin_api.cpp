@@ -3,9 +3,9 @@
 ** File description:
 ** Builds one CrabePluginApi table per plugin and implements its functions as C callbacks.
 ** A callback finds its plugin from the table pointer, so one set of functions serves every plugin.
-** No callback lets a C++ exception escape into the plugin, and CrabePluginInit runs under SEH.
+** No callback lets a C++ exception escape; CrabePluginInit and render callbacks run under SEH.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #include "application/plugin_api.hpp"
@@ -349,7 +349,7 @@ namespace crabe::application {
         return it->second;
     }
 
-    void PluginApi::dispatchPresent(void* swapChain, std::uint32_t flags)
+    void PluginApi::dispatchPresent(void* swapChain, std::uint32_t flags) noexcept
     {
         const RenderCallbacks* callbacks = _render.load(std::memory_order_acquire);
         if (!callbacks)
@@ -363,7 +363,7 @@ namespace crabe::application {
         }
     }
 
-    void PluginApi::dispatchBeforeResize(void* swapChain)
+    void PluginApi::dispatchBeforeResize(void* swapChain) noexcept
     {
         const RenderCallbacks* callbacks = _render.load(std::memory_order_acquire);
         if (!callbacks)
@@ -390,12 +390,16 @@ namespace crabe::application {
         _publishedRender.push_back(std::move(callbacks));
     }
 
-    void PluginApi::disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception)
+    void PluginApi::disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception) noexcept
     {
         if (entry.renderFaulted.exchange(true))
             return;
-        _host.log(CRABE_LOG_ERROR, std::format("PluginApi: {} raised exception 0x{:08X} in its {} callback; its render "
-                                               "callbacks are off until the game restarts.", entry.name, exception, event));
+        try {
+            _host.log(CRABE_LOG_ERROR, std::format("PluginApi: {} raised exception 0x{:08X} in its {} callback; its "
+                                                   "render callbacks are off until the game restarts.", entry.name,
+                                                   exception, event));
+        } catch (...) {
+        }
     }
 
 } // namespace crabe::application

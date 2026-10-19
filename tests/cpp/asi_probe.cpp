@@ -5,7 +5,7 @@
 ** Built three times: plain (also exercising the plugin API), refusing in DllMain, crashing in CrabePluginInit.
 ** Does nothing else, so loading it into the test process is harmless.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #include <windows.h>

@@ -5,7 +5,7 @@
 ** A window mode change is applied here because only this thread may touch the swap chain.
 ** Persists nothing itself; the stored mode is read and written through domain::Config.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #include <atomic>

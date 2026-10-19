@@ -176,26 +176,39 @@ instead of hooking them itself. Each plugin has one callback of each kind; setti
 Keep the callbacks cheap, because they run every frame. Do file reads and `LoadLibrary` in `CrabePluginInit`.
 A callback that raises an exception is logged, and that plugin's render callbacks are not called again.
 
+This plugin logs every 600th frame and every resize. A real renderer casts `swapChain` to `IDXGISwapChain*`
+and passes its own state as `user`.
+
 ```cpp
+#include <windows.h>
+#include <dxgi.h>
+#include "crabe_plugin.h"
+
+static const CrabePluginApi* g_api = nullptr;
+static unsigned int g_frames = 0;
+
 static void __cdecl onPresent(void* swapChain, uint32_t flags, void* user)
 {
-    if (flags & DXGI_PRESENT_TEST)
-        return;
-    static_cast<MyRenderer*>(user)->draw(static_cast<IDXGISwapChain*>(swapChain));
+    (void)swapChain;
+    (void)user;
+    if (!(flags & DXGI_PRESENT_TEST) && ++g_frames % 600 == 0)
+        g_api->log(g_api, CRABE_LOG_INFO, "600 more frames presented");
 }
 
 static void __cdecl onBeforeResize(void* swapChain, void* user)
 {
-    static_cast<MyRenderer*>(user)->releaseBackBuffer();
+    (void)swapChain;
+    (void)user;
+    g_api->log(g_api, CRABE_LOG_INFO, "the swap chain is resizing");
 }
 
 extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginApi* api)
 {
     if (api->version < 2)
         return;
-    static MyRenderer renderer;
-    api->onPresent(api, &onPresent, &renderer);
-    api->onBeforeResize(api, &onBeforeResize, &renderer);
+    g_api = api;
+    api->onPresent(api, &onPresent, nullptr);
+    api->onBeforeResize(api, &onBeforeResize, nullptr);
 }
 ```
 

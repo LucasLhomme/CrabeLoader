@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Plugin render callbacks (plugin API v2):** `onPresent` and `onBeforeResize` in `include/sdk/crabe_plugin.h` let an `.asi` plugin render on the game's swap chain without hooking `Present` itself. `onPresent` runs on the render thread in every `Present`, before CrabeLoader's overlay; `onBeforeResize` runs in `ResizeBuffers` before the buffers are released. Dispatch takes no lock, each callback runs under SEH, and a plugin whose callback faults is logged once and not called again.
+- Plugin API v2: `onPresent` and `onBeforeResize` let an `.asi` plugin render on the game's swap chain, before the overlay, without hooking `Present`.
 
 ### Fixed
 - Built-in Options and Video settings could be missing on first open: they now initialize once the native callbacks exist, and also hook the game's lowercase chunk paths.
