@@ -181,8 +181,9 @@ game keeps running.
 CrabeLoader already hooks `Present` and `ResizeBuffers`, so a plugin that draws on the game's swap chain
 uses `onPresent` and `onBeforeResize` (plugin API v2) instead of hooking them itself. Each plugin has one
 callback of each kind; setting it again replaces it. Keep the callbacks cheap, because they run every frame:
-do file reads and `LoadLibrary` in `CrabePluginInit`. A callback that raises an exception is logged, and that
-plugin's render callbacks are not called again.
+do file reads and `LoadLibrary` in `CrabePluginInit`, and register the callbacks there once rather than every
+frame. A `Present` callback that raises an exception is logged and not called again, but your resize callback
+still runs so you can release the buffers. A resize callback that raises an exception turns both off.
 
 This plugin logs every 600th frame and every resize. A real renderer casts `swapChain` to `IDXGISwapChain*`
 and passes its own state as `user`.

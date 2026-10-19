@@ -75,12 +75,12 @@ struct CrabePluginApi {
     int(__cdecl* getValue)(const CrabePluginApi* self, const char* key, char* buffer, uint32_t bufferSize);
 
     /* Version 2. Sets the plugin's Present callback, replacing its previous one; NULL removes it.
-       If either render callback raises an exception, it is logged and neither is called again.
+       If this callback raises an exception, it is logged and not called again; the resize callback still runs.
        Returns 1, or 0 for a table CrabeLoader did not hand out. */
     int(__cdecl* onPresent)(const CrabePluginApi* self, CrabePresentFn callback, void* user);
 
     /* Version 2. Sets the plugin's ResizeBuffers callback, replacing its previous one; NULL removes it.
-       If either render callback raises an exception, it is logged and neither is called again.
+       If this callback raises an exception, it is logged and neither render callback is called again.
        Returns 1, or 0 for a table CrabeLoader did not hand out. */
     int(__cdecl* onBeforeResize)(const CrabePluginApi* self, CrabeResizeFn callback, void* user);
 };

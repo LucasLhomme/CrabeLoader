@@ -87,7 +87,8 @@ namespace crabe::application {
         /// Old lists stay in _publishedRender until the API is destroyed: the render thread may still be walking one.
         void publishRenderCallbacks();
 
-        /// Logs a render callback's fault once and stops calling that plugin's render callbacks.
+        /// Logs a render callback's fault once. A Present fault stops Present only, so the plugin can still release
+        /// its buffers on resize; a ResizeBuffers fault stops both.
         void disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception) noexcept;
 
         friend struct PluginApiAccess;

@@ -30,7 +30,8 @@ namespace crabe::application {
         void* presentUser{nullptr};
         CrabeResizeFn resize{nullptr};
         void* resizeUser{nullptr};
-        std::atomic<bool> renderFaulted{false};
+        std::atomic<bool> presentOff{false};
+        std::atomic<bool> resizeOff{false};
     };
 
     struct PluginApi::RenderCallbacks {
@@ -56,6 +57,8 @@ namespace crabe::application {
         static void setPresent(PluginApi::Entry& entry, CrabePresentFn callback, void* user)
         {
             const std::lock_guard lock(entry.api->_mutex);
+            if (entry.present == callback && entry.presentUser == user)
+                return;
             entry.present = callback;
             entry.presentUser = user;
             entry.api->publishRenderCallbacks();
@@ -65,6 +68,8 @@ namespace crabe::application {
         static void setResize(PluginApi::Entry& entry, CrabeResizeFn callback, void* user)
         {
             const std::lock_guard lock(entry.api->_mutex);
+            if (entry.resize == callback && entry.resizeUser == user)
+                return;
             entry.resize = callback;
             entry.resizeUser = user;
             entry.api->publishRenderCallbacks();
@@ -355,7 +360,7 @@ namespace crabe::application {
         if (!callbacks)
             return;
         for (const RenderCallbacks::Present& slot : callbacks->present) {
-            if (slot.entry->renderFaulted.load(std::memory_order_relaxed))
+            if (slot.entry->presentOff.load(std::memory_order_relaxed))
                 continue;
             const DWORD exception = callPresentGuarded(slot.callback, swapChain, flags, slot.user);
             if (exception != 0)
@@ -369,7 +374,7 @@ namespace crabe::application {
         if (!callbacks)
             return;
         for (const RenderCallbacks::Resize& slot : callbacks->resize) {
-            if (slot.entry->renderFaulted.load(std::memory_order_relaxed))
+            if (slot.entry->resizeOff.load(std::memory_order_relaxed))
                 continue;
             const DWORD exception = callResizeGuarded(slot.callback, swapChain, slot.user);
             if (exception != 0)
@@ -392,12 +397,18 @@ namespace crabe::application {
 
     void PluginApi::disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception) noexcept
     {
-        if (entry.renderFaulted.exchange(true))
+        const bool fromResize = event == "ResizeBuffers";
+        const bool already = fromResize ? entry.resizeOff.exchange(true) : entry.presentOff.exchange(true);
+        if (fromResize)
+            entry.presentOff.store(true);
+        if (already)
             return;
+        const std::string_view effect = fromResize
+            ? "its render callbacks are off until the game restarts."
+            : "its Present callback is off until the game restarts; its ResizeBuffers callback still runs.";
         try {
-            _host.log(CRABE_LOG_ERROR, std::format("PluginApi: {} raised exception 0x{:08X} in its {} callback; its "
-                                                   "render callbacks are off until the game restarts.", entry.name,
-                                                   exception, event));
+            _host.log(CRABE_LOG_ERROR, std::format("PluginApi: {} raised exception 0x{:08X} in its {} callback; {}",
+                                                   entry.name, exception, event, effect));
         } catch (...) {
         }
     }
