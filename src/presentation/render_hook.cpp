@@ -5,7 +5,7 @@
 ** A window mode change is applied here because only this thread may touch the swap chain.
 ** Persists nothing itself; the stored mode is read and written through domain::Config.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #include <atomic>
@@ -24,6 +24,7 @@
 #include "presentation/draw_buffer.hpp"
 #include "presentation/texture_cache.hpp"
 #include "application/loader.hpp"
+#include "application/plugin_api.hpp"
 #include "domain/config.hpp"
 #include "infrastructure/crash_handler.hpp"
 #include "infrastructure/crash_reporter.hpp"
@@ -950,7 +951,7 @@ HRESULT WINAPI RenderHook::hkD3D11CreateDeviceAndSwapChain(
         SDKVersion, descToUse, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
 }
 
-// Drives frame rendering, pending mode application, and UI overlay rendering.
+// Drives frame rendering: pending mode application, plugins' Present callbacks, then the UI overlay.
 HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
 {
     RenderHook& self = RenderHook::get();
@@ -963,6 +964,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
 
     self.ensureBackendInit(swapChain);
     self.applyPendingWindowMode(swapChain);
+    crabe::application::PluginApi::get().dispatchPresent(swapChain, flags);
 
     if (self._backendInitialized && self._device && self._context) {
         if (!self._renderTargetView) {
@@ -1041,7 +1043,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     return hr;
 }
 
-// Releases and recreates render target view across swapchain resizing.
+// Runs plugins' resize callbacks, then releases and recreates the render target view.
 HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
                                             UINT width, UINT height, DXGI_FORMAT newFormat,
                                             UINT swapChainFlags)
@@ -1063,6 +1065,7 @@ HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bu
     crabe::shared::Logger::getInstance().info("RenderHook: ResizeBuffers requested ({}x{}, format {}).",
                                               width, height, static_cast<uint32_t>(newFormat));
 
+    crabe::application::PluginApi::get().dispatchBeforeResize(swapChain);
     self.releaseRenderTarget();
 
     HRESULT hr = self.originalResizeBuffers()(swapChain, bufferCount, width, height, newFormat, swapChainFlags);

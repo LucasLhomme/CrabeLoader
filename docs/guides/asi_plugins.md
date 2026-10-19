@@ -3,7 +3,8 @@
 CrabeLoader loads `.asi` plugins: native 32-bit DLLs with a `.asi` extension. It loads them the same way
 Ultimate ASI Loader does, so most existing plugins work unchanged. Lua mods remain the way to build gameplay
 features. An `.asi` plugin is for the rare job that needs native code of its own. Through the optional
-[plugin API](#talking-to-crabeloader-the-plugin-api), such a plugin can log, hook and talk to Lua mods.
+[plugin API](#talking-to-crabeloader-the-plugin-api), such a plugin can log, hook, talk to Lua mods and
+[draw on the game's swap chain](#drawing-on-the-games-swap-chain).
 
 ## CrabeLoader is an `.asi` too
 
@@ -141,6 +142,8 @@ thread, before the game's own code runs. It passes a table of functions that sta
 | `removeHooks(api)` | Removes every hook your plugin installed. |
 | `runLua(api, code)` | Queues a Lua chunk for the game's Lua state, with `Crabe` and `Game` available. It runs on the next loader tick, and errors are logged under your plugin's name. |
 | `setValue(api, key, value)` / `getValue(api, key, buffer, size)` | Share text values with Lua mods (`Crabe.Plugins.get` / `Crabe.Plugins.set`) and with other plugins. |
+| `onPresent(api, callback, user)` | *(API v2)* Calls `callback(swapChain, flags, user)` on the render thread in every `IDXGISwapChain::Present`, before CrabeLoader's overlay. `NULL` removes it. |
+| `onBeforeResize(api, callback, user)` | *(API v2)* Calls `callback(swapChain, user)` in `IDXGISwapChain::ResizeBuffers`, before the buffers are released. Drop every back-buffer reference there. `NULL` removes it. |
 
 Every function takes the table first and can be called from any thread. Strings are UTF-8.
 
@@ -172,6 +175,51 @@ end
 A plugin without `CrabePluginInit` still loads normally: the API is optional. Keys are shared by everyone,
 so prefix them with your plugin or mod name. If `CrabePluginInit` raises an exception, it is logged, and the
 game keeps running.
+
+## Drawing on the game's swap chain
+
+CrabeLoader already hooks `Present` and `ResizeBuffers`, so a plugin that draws on the game's swap chain
+uses `onPresent` and `onBeforeResize` (plugin API v2) instead of hooking them itself. Each plugin has one
+callback of each kind; setting it again replaces it. Keep the callbacks cheap, because they run every frame:
+do file reads and `LoadLibrary` in `CrabePluginInit`, and register the callbacks there once rather than every
+frame. A `Present` callback that raises an exception is logged and not called again, but your resize callback
+still runs so you can release the buffers. A resize callback that raises an exception turns both off.
+
+This plugin logs every 600th frame and every resize. A real renderer casts `swapChain` to `IDXGISwapChain*`
+and passes its own state as `user`.
+
+```cpp
+#include <windows.h>
+#include <dxgi.h>
+#include "crabe_plugin.h"
+
+static const CrabePluginApi* g_api = nullptr;
+static unsigned int g_frames = 0;
+
+static void __cdecl onPresent(void* swapChain, uint32_t flags, void* user)
+{
+    (void)swapChain;
+    (void)user;
+    if (!(flags & DXGI_PRESENT_TEST) && ++g_frames % 600 == 0)
+        g_api->log(g_api, CRABE_LOG_INFO, "600 more frames presented");
+}
+
+static void __cdecl onBeforeResize(void* swapChain, void* user)
+{
+    (void)swapChain;
+    (void)user;
+    g_api->log(g_api, CRABE_LOG_INFO, "the swap chain is resizing");
+}
+
+extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginApi* api)
+{
+    if (api->version < 2)
+        return;
+    g_api = api;
+    api->onPresent(api, &onPresent, nullptr);
+    api->onBeforeResize(api, &onBeforeResize, nullptr);
+}
+```
 
 ## Other ASI loaders
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Plugin API v2: `onPresent` and `onBeforeResize` let an `.asi` plugin render on the game's swap chain, before the overlay, without hooking `Present`.
+
 ### Fixed
 - Built-in Options and Video settings could be missing on first open: they now initialize once the native callbacks exist, and also hook the game's lowercase chunk paths.
 - The bindings rows identify the settings screen by class instead of the world name, and an already-built Options list gets them on the next check.
