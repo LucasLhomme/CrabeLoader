@@ -951,7 +951,7 @@ HRESULT WINAPI RenderHook::hkD3D11CreateDeviceAndSwapChain(
         SDKVersion, descToUse, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
 }
 
-// Drives frame rendering, pending mode application, and UI overlay rendering.
+// Drives frame rendering: pending mode application, plugins' Present callbacks, then the UI overlay.
 HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
 {
     RenderHook& self = RenderHook::get();
@@ -1043,7 +1043,7 @@ HRESULT __stdcall RenderHook::hkPresent(IDXGISwapChain* swapChain, UINT syncInte
     return hr;
 }
 
-// Releases and recreates render target view across swapchain resizing.
+// Runs plugins' resize callbacks, then releases and recreates the render target view.
 HRESULT __stdcall RenderHook::hkResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount,
                                             UINT width, UINT height, DXGI_FORMAT newFormat,
                                             UINT swapChainFlags)

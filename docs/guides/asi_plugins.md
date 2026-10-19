@@ -3,7 +3,8 @@
 CrabeLoader loads `.asi` plugins: native 32-bit DLLs with a `.asi` extension. It loads them the same way
 Ultimate ASI Loader does, so most existing plugins work unchanged. Lua mods remain the way to build gameplay
 features. An `.asi` plugin is for the rare job that needs native code of its own. Through the optional
-[plugin API](#talking-to-crabeloader-the-plugin-api), such a plugin can log, hook and talk to Lua mods.
+[plugin API](#talking-to-crabeloader-the-plugin-api), such a plugin can log, hook, talk to Lua mods and
+[draw on the game's swap chain](#drawing-on-the-games-swap-chain).
 
 ## CrabeLoader is an `.asi` too
 
@@ -171,10 +172,17 @@ if Crabe.Plugins.get("my_plugin.ready") == "yes" then
 end
 ```
 
-CrabeLoader already hooks `Present` and `ResizeBuffers`, so a plugin that renders uses these two callbacks
-instead of hooking them itself. Each plugin has one callback of each kind; setting it again replaces it.
-Keep the callbacks cheap, because they run every frame. Do file reads and `LoadLibrary` in `CrabePluginInit`.
-A callback that raises an exception is logged, and that plugin's render callbacks are not called again.
+A plugin without `CrabePluginInit` still loads normally: the API is optional. Keys are shared by everyone,
+so prefix them with your plugin or mod name. If `CrabePluginInit` raises an exception, it is logged, and the
+game keeps running.
+
+## Drawing on the game's swap chain
+
+CrabeLoader already hooks `Present` and `ResizeBuffers`, so a plugin that draws on the game's swap chain
+uses `onPresent` and `onBeforeResize` (plugin API v2) instead of hooking them itself. Each plugin has one
+callback of each kind; setting it again replaces it. Keep the callbacks cheap, because they run every frame:
+do file reads and `LoadLibrary` in `CrabePluginInit`. A callback that raises an exception is logged, and that
+plugin's render callbacks are not called again.
 
 This plugin logs every 600th frame and every resize. A real renderer casts `swapChain` to `IDXGISwapChain*`
 and passes its own state as `user`.
@@ -211,10 +219,6 @@ extern "C" __declspec(dllexport) void __cdecl CrabePluginInit(const CrabePluginA
     api->onBeforeResize(api, &onBeforeResize, nullptr);
 }
 ```
-
-A plugin without `CrabePluginInit` still loads normally: the API is optional. Keys are shared by everyone,
-so prefix them with your plugin or mod name. If `CrabePluginInit` raises an exception, it is logged, and the
-game keeps running.
 
 ## Other ASI loaders
 

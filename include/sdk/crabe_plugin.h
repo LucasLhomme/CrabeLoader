@@ -29,11 +29,12 @@ enum {
 typedef struct CrabePluginApi CrabePluginApi;
 
 /* Runs on the render thread inside IDXGISwapChain::Present, before CrabeLoader draws its overlay.
-   `swapChain` is the game's IDXGISwapChain*, `flags` the DXGI_PRESENT_* flags it passed, `user` the registered pointer. */
+   `swapChain` is the game's IDXGISwapChain*, `flags` the DXGI_PRESENT_* flags the game passed,
+   `user` the pointer given to onPresent. */
 typedef void(__cdecl* CrabePresentFn)(void* swapChain, uint32_t flags, void* user);
 
-/* Runs inside IDXGISwapChain::ResizeBuffers, before the buffers are released: drop every reference to them here.
-   `swapChain` is the game's IDXGISwapChain*, `user` the registered pointer. */
+/* Runs inside IDXGISwapChain::ResizeBuffers, before the buffers are released: drop every reference to them.
+   `swapChain` is the game's IDXGISwapChain*, `user` the pointer given to onBeforeResize. */
 typedef void(__cdecl* CrabeResizeFn)(void* swapChain, void* user);
 
 /* Every function takes the table it came from first, so CrabeLoader knows which plugin is calling.
@@ -74,11 +75,13 @@ struct CrabePluginApi {
     int(__cdecl* getValue)(const CrabePluginApi* self, const char* key, char* buffer, uint32_t bufferSize);
 
     /* Version 2. Sets the plugin's Present callback, replacing its previous one; NULL removes it.
-       A callback that raises an exception is logged and never called again. Returns 1, or 0 for a bad table. */
+       If either render callback raises an exception, it is logged and neither is called again.
+       Returns 1, or 0 for a table CrabeLoader did not hand out. */
     int(__cdecl* onPresent)(const CrabePluginApi* self, CrabePresentFn callback, void* user);
 
     /* Version 2. Sets the plugin's ResizeBuffers callback, replacing its previous one; NULL removes it.
-       A callback that raises an exception is logged and never called again. Returns 1, or 0 for a bad table. */
+       If either render callback raises an exception, it is logged and neither is called again.
+       Returns 1, or 0 for a table CrabeLoader did not hand out. */
     int(__cdecl* onBeforeResize)(const CrabePluginApi* self, CrabeResizeFn callback, void* user);
 };
 
