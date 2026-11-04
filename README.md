@@ -153,6 +153,9 @@ Run it and follow the prompts. It finds the game in your Steam libraries (or let
 
 Already have an ASI loader installed as `dinput8.dll` (such as Ultimate ASI Loader)? Keep it, and copy only `CrabeLoader.asi` next to `DisneyInfinity3.exe`: your ASI loader starts CrabeLoader. In that case the `.asi` plugins in the game folder, `scripts/` and `plugins/` are loaded by your ASI loader, CrabeLoader loads only the ones inside mod folders, and CrabeLoader's start time depends on your ASI loader. See [Native `.asi` Plugins](docs/guides/asi_plugins.md#other-asi-loaders).
 
+### Here is a short video on how to install: 
+https://github.com/user-attachments/assets/5da980d5-be0c-4cce-8e3c-d097bb72b340
+
 ### Uninstalling
 
 Delete `dinput8.dll` and `CrabeLoader.asi`. No game file was changed by the install.
