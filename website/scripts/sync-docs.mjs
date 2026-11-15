@@ -161,7 +161,7 @@ const PAGES = [
   {
     slug: 'reference/rva-reference', src: 'docs/rva_reference.md',
     title: 'Engine RVAs (DisneyInfinity3.exe)', order: 4, badge: NEW,
-    description: '363 verified RVA usages (271 unique addresses) in DisneyInfinity3.exe.',
+    description: '271 verified Relative Virtual Addresses (RVAs) in DisneyInfinity3.exe, organized by engine subsystem.',
   },
   {
     slug: 'contributing/guide', src: 'CONTRIBUTING.md',
