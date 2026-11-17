@@ -2,16 +2,18 @@
 ** CrabeLoader
 ** File description:
 ** Declares the bridge between .asi plugins and CrabeLoader: the table sdk/crabe_plugin.h describes.
-** Hands each plugin exporting CrabePluginInit its own table, and keeps the values shared with Lua.
+** Hands each CrabePluginInit exporter its own table; keeps shared values and render callbacks.
 ** Reaches the log, hooks and Lua only through a PluginHost, so tests can stand in for the loader.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @lightningcal
 */
 
 #ifndef CRABELOADER_APPLICATION_PLUGIN_API_HPP_
 #define CRABELOADER_APPLICATION_PLUGIN_API_HPP_
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -64,13 +66,30 @@ namespace crabe::application {
         /// Returns a shared value, or nothing when the key is not set.
         [[nodiscard]] std::optional<std::string> value(const std::string& key) const;
 
+        /// Calls every plugin's Present callback in load order, each under SEH. Takes no lock: safe in Present.
+        void dispatchPresent(void* swapChain, std::uint32_t flags) noexcept;
+
+        /// Calls every plugin's ResizeBuffers callback in load order, each under SEH. Takes no lock.
+        void dispatchBeforeResize(void* swapChain) noexcept;
+
         struct Entry;
+        struct RenderCallbacks;
 
     private:
         PluginHost& _host;
         mutable std::mutex _mutex;
         std::vector<std::unique_ptr<Entry>> _entries;
         std::map<std::string, std::string> _values;
+        std::atomic<const RenderCallbacks*> _render{nullptr};
+        std::vector<std::unique_ptr<const RenderCallbacks>> _publishedRender;
+
+        /// Rebuilds the callback list from every entry and publishes it; call with _mutex held.
+        /// Old lists stay in _publishedRender until the API is destroyed: the render thread may still be walking one.
+        void publishRenderCallbacks();
+
+        /// Logs a render callback's fault once. A Present fault stops Present only, so the plugin can still release
+        /// its buffers on resize; a ResizeBuffers fault stops both.
+        void disableRenderCallbacks(Entry& entry, std::string_view event, unsigned long exception) noexcept;
 
         friend struct PluginApiAccess;
     };

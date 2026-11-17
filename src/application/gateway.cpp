@@ -19,6 +19,7 @@
 #include <optional>
 #include <regex>
 #include <set>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -332,6 +333,9 @@ std::vector<Entry> parseExposedCharacters(const std::string& luaSource)
     static const std::regex kBase(R"rx(baseCharacter\s*=\s*["']([^"'\r\n]+)["'])rx");
     static const std::regex kProg(R"rx([Pp]rogressionTree\s*=\s*["']([^"'\r\n]+)["'])rx");
     static const std::regex kIcon(R"rx([Ii]con\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kPlayset(R"rx(GatewayPlayset\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kPackage(R"rx(GatewayPackage\s*=\s*["']([^"'\r\n]+)["'])rx");
+    static const std::regex kDisplay(R"rx(GatewayDisplayName\s*=\s*["']([^"'\r\n]+)["'])rx");
 
     std::vector<Entry> out;
     for (auto it = std::sregex_iterator(luaSource.begin(), luaSource.end(), kExpose);
@@ -352,6 +356,12 @@ std::vector<Entry> parseExposedCharacters(const std::string& luaSource)
             entry.progressionTree = m[1].str();
         if (std::regex_search(body, m, kIcon))
             entry.icon = m[1].str();
+        if (std::regex_search(body, m, kPlayset))
+            entry.playset = m[1].str();
+        if (std::regex_search(body, m, kPackage))
+            entry.package = m[1].str();
+        if (std::regex_search(body, m, kDisplay))
+            entry.displayName = m[1].str();
 
         out.push_back(std::move(entry));
     }
@@ -418,11 +428,23 @@ std::string buildInjectionLua(const std::vector<Entry>& entries)
         lua += "\n";
 
         for (const auto& f : kConstantFields) {
+            std::string text = f.text ? f.text : "";
+            if (std::string_view(f.key) == "displayName")
+                text = entry.displayName;
+            else if (std::string_view(f.key) == "playset")
+                text = entry.playset;
             lua += "t[";
             lua += luaLiteral(encryptString(f.key));
             lua += "] = ";
             lua += luaLiteral(f.isNumber ? encryptNumber(f.number)
-                                         : encryptString(f.text));
+                                         : encryptString(text));
+            lua += "\n";
+        }
+        if (!entry.package.empty()) {
+            lua += "t[";
+            lua += luaLiteral(encryptString("package"));
+            lua += "] = ";
+            lua += luaLiteral(encryptString(entry.package));
             lua += "\n";
         }
 
@@ -475,6 +497,11 @@ std::vector<Entry> parseManifestCharacters(const std::string& jsonSource, const 
                 entry.icon = obj["icon"].get<std::string>();
             else if (obj.contains("Icon") && obj["Icon"].is_string())
                 entry.icon = obj["Icon"].get<std::string>();
+
+            if (obj.contains("playset") && obj["playset"].is_string())
+                entry.playset = obj["playset"].get<std::string>();
+            if (obj.contains("package") && obj["package"].is_string())
+                entry.package = obj["package"].get<std::string>();
 
             if (obj.contains("progressionTree") && obj["progressionTree"].is_string())
                 entry.progressionTree = obj["progressionTree"].get<std::string>();

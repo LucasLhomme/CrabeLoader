@@ -159,6 +159,11 @@ const PAGES = [
     description: 'The Lua natives the game itself registers, which ones are confirmed, and how to regenerate the list.',
   },
   {
+    slug: 'reference/rva-reference', src: 'docs/rva_reference.md',
+    title: 'Engine RVAs (DisneyInfinity3.exe)', order: 4, badge: NEW,
+    description: '271 verified Relative Virtual Addresses (RVAs) in DisneyInfinity3.exe, organized by engine subsystem.',
+  },
+  {
     slug: 'contributing/guide', src: 'CONTRIBUTING.md',
     title: 'Contributing', order: 1,
     description: 'Architecture invariants, development setup, Git workflow, coding standards and the PR checklist.',

@@ -59,6 +59,7 @@ constexpr auto kTagListPeriod = std::chrono::milliseconds(3000);
 constexpr auto kRequestTimeout = std::chrono::milliseconds(1500);
 constexpr auto kRemovalGrace = std::chrono::milliseconds(1500);
 constexpr std::uint8_t kMaxTries = 3;
+constexpr std::size_t kMaxInFlight = 2;
 
 std::uint32_t ReadBe32(const std::uint8_t* p) {
     return (static_cast<std::uint32_t>(p[0]) << 24) | (static_cast<std::uint32_t>(p[1]) << 16) |
@@ -116,8 +117,13 @@ void DisneyBaseProtocol::DropAllTags() {
 
 bool DisneyBaseProtocol::PopOutgoing(Report& out) {
     if (m_outgoing.empty()) return false;
+    const auto inFlight = std::ranges::count_if(m_pending, [](const Pending& p) { return p.inFlight; });
+    if (static_cast<std::size_t>(inFlight) >= kMaxInFlight) return false;
+
     out = m_outgoing.front();
     m_outgoing.pop_front();
+    Pending& pending = m_pending[out[3]];
+    if (pending.kind != Kind::None) pending.inFlight = true;
     return true;
 }
 

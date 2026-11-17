@@ -23,6 +23,8 @@ namespace crabe::application::gateway {
         std::string displayName;
         std::string icon;
         std::string progressionTree;
+        std::string playset;
+        std::string package;
         std::string origin;
     };
 

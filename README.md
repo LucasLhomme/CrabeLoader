@@ -1,6 +1,7 @@
 # CrabeLoader v1.1.0
 
 [![CI - Build & Test](https://github.com/LucasLhomme/CrabeLoader/actions/workflows/ci.yml/badge.svg)](https://github.com/LucasLhomme/CrabeLoader/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue.svg)](https://lucaslhomme.github.io/CrabeLoader/)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Win32%20(x86)-lightgrey.svg)]()
@@ -123,7 +124,7 @@ enabled = ["*"]
 
 ## Documentation Suite
 
-Comprehensive technical guides are available in the [`docs/`](docs/) directory:
+Read the full documentation online at **[https://lucaslhomme.github.io/CrabeLoader/](https://lucaslhomme.github.io/CrabeLoader/)**, or browse the source guides in [`docs/`](docs/):
 
 | Document | Description |
 | :--- | :--- |
@@ -132,6 +133,7 @@ Comprehensive technical guides are available in the [`docs/`](docs/) directory:
 | **[Character & Figurine Guide](docs/guides/characters.md)** | Figurine resolution pipeline, custom character registration, and costume variants. |
 | **[Native `.asi` Plugins](docs/guides/asi_plugins.md)** | Where `.asi` plugins load from and when, `[plugins]`, `Crabe.Plugins`, and the C plugin API (`include/sdk/crabe_plugin.h`). |
 | **[Update Check & Installer](docs/guides/updates_and_installer.md)** | The launch-time update prompt (and how to disable it), `CrabeInstaller.exe` and the two files it installs, and what each sends or changes. |
+| **[Engine RVA Reference](docs/rva_reference.md)** | 271 verified Relative Virtual Addresses (RVAs) in `DisneyInfinity3.exe`, organized by engine subsystem. |
 | **[API Type Definitions](docs/crabe_api.def.lua)** | EmmyLua annotations providing full IntelliSense and autocomplete for IDEs. |
 | **[Architecture Blueprint](docs/ARCHITECTURE_BLUEPRINT.md)** | Core architectural invariants, threading rules, and layer definitions. |
 
