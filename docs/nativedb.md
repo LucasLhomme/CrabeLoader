@@ -93,6 +93,124 @@ Called with zero or `(playerID)` and returned without error — tested from the 
 | `Catalog_GetList`         | `() -> string`         | tested: empty string — no error, plausibly nothing pending in this save                                     |
 | `Catalog_GetItemInfo`     | `(itemName) -> string` | tested with`"Test"` (not a real item): empty string, no error — takes a string here, unlike the two below |
 
+
+### Video and Graphic Settings
+
+Engine video configuration exposed via Luabind (`0xf0d840` / `0x741500`).
+
+| Native                                 | Signature                           | Notes                                                    |
+| -------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `Settings_GetBloomEnabled`             | `() -> bool`                        | Queries bloom post-processing state                      |
+| `Settings_SetBloomEnabled`             | `(enabled: bool)`                   | Enables or disables bloom                                |
+| `Settings_GetDepthOfFieldEnabled`      | `() -> bool`                        | Queries camera depth of field state                      |
+| `Settings_SetDepthOfFieldEnabled`      | `(enabled: bool)`                   | Enables or disables DoF                                  |
+| `Settings_GetDynamicResolutionEnabled` | `() -> bool`                        | Dynamic resolution scaling active flag                   |
+| `Settings_SetDynamicResolutionEnabled` | `(enabled: bool)`                   | Toggles dynamic resolution scaling                       |
+| `Settings_GetFXAAEnabled`              | `() -> bool`                        | Fast Approximate Anti-Aliasing state                     |
+| `Settings_SetFXAAEnabled`              | `(enabled: bool)`                   | Toggles FXAA anti-aliasing                               |
+| `Settings_GetMotionBlurEnabled`        | `() -> bool`                        | Camera/object motion blur state                          |
+| `Settings_SetMotionBlurEnabled`        | `(enabled: bool)`                   | Toggles motion blur                                      |
+| `Settings_GetSSAOEnabled`              | `() -> bool`                        | Screen Space Ambient Occlusion state                     |
+| `Settings_SetSSAOEnabled`              | `(enabled: bool)`                   | Toggles SSAO                                             |
+| `Settings_GetGamma`                    | `() -> number`                      | Returns current display gamma scalar                     |
+| `Settings_SetGamma`                    | `(gamma: number)`                   | Adjusts display gamma                                    |
+| `Settings_GetDifficulty`               | `() -> number`                      | Gameplay difficulty index (0 = Easy, 1 = Normal, etc.)   |
+| `Settings_SetDifficulty`               | `(difficulty: number)`              | Sets gameplay difficulty index                           |
+| `Settings_GetSubtitle`                 | `() -> bool`                        | Subtitle visibility state                                |
+| `Settings_SetSubtitle`                 | `(enabled: bool)`                   | Toggles subtitles on/off                                 |
+| `Settings_GetTouchEnabled`             | `() -> bool`                        | Touch input mode flag (tablets/WinRT)                    |
+| `Settings_GetNumResolutions`           | `() -> number`                      | Total count of supported display resolutions             |
+| `Settings_GetResolutionWidth`          | `(index: number) -> number`         | Returns width in pixels for resolution index             |
+| `Settings_GetResolutionHeight`         | `(index: number) -> number`         | Returns height in pixels for resolution index            |
+| `Settings_SetResolution`               | `(width: number, height: number)`   | Changes active display resolution                        |
+| `Settings_ApplyVideoSettings`          | `()`                                | Flushes pending video configuration changes to renderer  |
+| `Settings_Save`                        | `()`                                | Persists active settings to user profile                 |
+
+### System, Timers and Engine State
+
+Low-level engine diagnostics and time management (`0x114ebe0` direct C-closure).
+
+| Native                                 | Signature                           | Notes                                                    |
+| -------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `System_TimerSec`                      | `() -> number`                      | Continuous engine elapsed time in seconds (`g_timer`)    |
+| `System_TimerSecNow`                   | `() -> number`                      | Current wall-clock second timestamp                      |
+| `System_TimerSecPausable`              | `() -> number`                      | Engine timer stopped during active pause screens         |
+| `System_TimerFrameDeltaSec`            | `() -> number`                      | Delta time for current frame in seconds (`d_frameSec`)   |
+| `System_TimerFrameNum`                 | `() -> number`                      | Total rendered frame counter (`d_frameCount`)            |
+| `System_InFrontEnd`                    | `() -> bool`                        | `true` when in main menu or character select screens     |
+| `System_GetLanguage`                   | `() -> string`                      | Returns active locale string (`"en"`, `"fr"`, etc.)      |
+| `System_GetVersionString`              | `() -> string`                      | Build version string of the engine executable            |
+| `System_SendMessage`                   | `(message: string)`                 | Dispatches system-level event string                     |
+| `System_SendMessageFromPlayer`         | `(playerID: number, msg: string)`   | Sends message routed from specific player slot           |
+| `System_StartButtonPushed`             | `(playerID: number) -> bool`        | Checks if Start/Menu button was pressed this tick        |
+| `System_LockController`                | `(controllerIndex: number)`         | Restricts input to specified gamepad                     |
+| `System_UnlockAllControllers`          | `()`                                | Clears input lock across all gamepads                    |
+
+### Pause and Game Lifecycle
+
+Game flow and screen transitions.
+
+| Native                                 | Signature                           | Notes                                                    |
+| -------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `Pause_PauseGame`                      | `()`                                | Freezes gameplay ticks and opens pause overlay           |
+| `Pause_UnPauseFromPausedScreen`        | `()`                                | Resumes execution from pause state                       |
+| `Pause_ExitGame`                       | `()`                                | Triggers graceful teardown and exits to OS               |
+| `Pause_OKToSaveInPause`                | `() -> bool`                        | Validates if save state write is permitted at pause      |
+| `UI_QuitGame`                          | `()`                                | Direct engine shutdown request                           |
+| `UI_ReturnToHub`                       | `()`                                | Exits active level back to Toy Box Hub or Playset Hub    |
+| `UI_LaunchLevel`                       | `(worldName: string)`               | Loads requested zone or playset map (e.g. `"DOR_Reef"`)  |
+| `UI_LaunchMainMenu`                    | `()`                                | Loads root frontend menu                                 |
+| `UI_IsSteamGame`                       | `() -> bool`                        | `true` on Gold Edition Steam releases                    |
+
+### Audio and Sound Effects
+
+Audio cues and dialog playback.
+
+| Native                                 | Signature                           | Notes                                                    |
+| -------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `Sfx_Play2D`                           | `(sfxName: string)`                 | Fires UI or 2D stereo sound effect                       |
+| `Sfx_PlayDialog`                       | `(dialogName: string)`              | Triggers localized voice line                            |
+| `AddMusicCue`                          | `(cueName: string)`                 | Pushes soundtrack/ambient music cue to audio stack       |
+| `StopMusic`                            | `()`                                | Fades out active music tracks                            |
+| `Mute` / `UnMute`                      | `()`                                | Master audio channel mute toggle                         |
+| `CanPlayBinkMovie`                     | `() -> bool`                        | Validates Bink video decoder readiness                   |
+| `PlayBinkMovie` / `PlayFMV`            | `(moviePath: string)`               | Streams full-screen Bink cinematic                      |
+
+### Save and Load Management
+
+Storage profile and world persistence.
+
+| Native                                 | Signature                           | Notes                                                    |
+| -------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `SaveLoad_IsSaving`                    | `() -> bool`                        | `true` while background file write is in progress        |
+| `SaveLoad_CanSave`                     | `() -> bool`                        | Checks if active gameplay zone allows saving             |
+| `SaveLoad_Save`                        | `(slot: number)`                    | Writes world and player progress to numbered slot        |
+| `SaveLoad_Load`                        | `(slot: number)`                    | Restores state from specified slot                       |
+| `SaveLoad_Delete`                      | `(slot: number)`                    | Deletes save archive in target slot                      |
+| `SaveLoad_LocalSaveExists`             | `(slot: number) -> bool`            | Verifies presence of header in save folder               |
+| `SaveLoad_AutoSaveProfile`             | `()`                                | Commits player progression and unlocked feats            |
+| `SaveLoad_AutoSaveWorld`               | `()`                                | Checkpoints current world block state                    |
+
+### Virtual Reader PC (Base & Power Discs)
+
+Virtual reader hardware emulation on PC Gold.
+
+| Native                                 | Signature                           | Notes                                                    |
+| -------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `VirtualReaderPC_GetCurrentCharacter`  | `(slot: number) -> string`          | Reads active character identifier in slot (0 or 1)        |
+| `VirtualReaderPC_SetCurrentCharacter`  | `(slot: number, charId: string)`    | Places character virtual token on the reader base        |
+| `VirtualReaderPC_GetCurrentHexCoins`   | `() -> table`                       | Returns array of placed hexagonal power discs            |
+| `VirtualReaderPC_SetCurrentHexCoin`    | `(slot: number, coinId: string)`    | Equips hex power disc on portal                          |
+| `VirtualReaderPC_RemoveHexCoin`        | `(slot: number)`                    | Unequips hex power disc from portal                      |
+| `VirtualReaderPC_GetCurrentRoundCoins` | `() -> table`                       | Returns array of circular ability power discs            |
+| `VirtualReaderPC_SetCurrentRoundCoin`  | `(slot: number, coinId: string)`    | Equips round ability disc                                |
+| `VirtualReaderPC_RemoveRoundCoin`      | `(slot: number)`                    | Unequips round ability disc                              |
+| `VirtualReaderPC_IsItemLocked`         | `(itemName: string) -> bool`        | Checks store/progression lock status                     |
+| `VirtualReaderPC_IsItemAvatar`         | `(itemName: string) -> bool`        | `true` if item token corresponds to playable character   |
+| `VirtualReaderPC_IsItemPlayset`        | `(itemName: string) -> bool`        | `true` if item token is a playset piece                  |
+| `VirtualReaderPC_AvatarLevelUp`        | `(playerID: number)`                | Increments character experience level                    |
+| `VirtualReaderPC_ActivateChanges`      | `()`                                | Flushes pending virtual reader changes to game engine    |
+
 ## To verify — wired into Game.*
 
 Named clearly enough to wire up, still guessed. `Game.*` calls them through a `pcall` — move a row up once the console confirms its behavior.
@@ -366,6 +484,23 @@ A native's own name is usually the best hint for its arguments — `Set*`/`Get*`
 `Building_ReleaseRumpusObjectLock`
 
 </details>
+
+
+## Engine Native Registration Architecture (PC Gold)
+
+Our reverse engineering of `DisneyInfinity3.exe` (Win32, DirectX 11) identified two primary registration pipelines that expose C++ functions to Lua's `_G`:
+
+1. **Direct C Closures (`0x114ebe0`) — 464 natives:**
+   - The engine passes `(lua_State* L, const char* name, lua_CFunction fn)`.
+   - Used for `UI_*`, `Activity_*`, `Mission_*`, `System_*`, `Prestige_*`.
+   - Inspection: each native handler is located by finding references to `0x114ebe0`, preceded by `mov eax, <handler_rva>` and `push <string_rva>`.
+
+2. **Luabind Userdata Dispatchers (`0xf0d840` / `0x741500`) — 409 natives:**
+   - The engine calls `lua_pushstring` (`0xf0d840`), creates an 8 or 12 byte userdata block via `lua_newuserdata` (`0xf0e270`), stores the C++ member/function pointer inside (`[eax + 4]`), and associates a shared C-closure dispatcher at `0x741500`.
+   - Used for `Place_*`, `VirtualReaderPC_*`, `Settings_*`, `SaveLoad_*`.
+   - The actual implementation address can be retrieved by reading the inner function pointer passed into `ebx` prior to the dispatcher registration.
+
+Full RVA maps and complete MSVC RTTI vtable hierarchies can be queried dynamically with `python research/tools/find_symbol.py <name_or_address>`.
 
 ## Known gaps
 
