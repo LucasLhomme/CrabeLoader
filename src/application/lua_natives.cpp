@@ -40,6 +40,7 @@
 #include "infrastructure/engine_actors.hpp"
 #include "infrastructure/engine_avatar.hpp"
 #include "infrastructure/engine_kinematics.hpp"
+#include "infrastructure/engine_script_call.hpp"
 #include "infrastructure/engine_sky.hpp"
 #include "infrastructure/message_hook.hpp"
 #include "infrastructure/vfs_override_manager.hpp"
@@ -1106,6 +1107,71 @@ namespace {
         return 3;
     }
 
+
+    // Crabe._callNative(name, ...) -> ok, results... : calls a Script VM native with the Lua arguments.
+    // Integral numbers go as script ints (handles stay exact), other numbers as floats, strings as strings,
+    // booleans and nil as 0/1. Results come back in push order: ints, floats and handles as numbers, strings as strings.
+    int __cdecl nativeCallNative(void* L)
+    {
+        crabe::infrastructure::LuaCall& lua = crabe::infrastructure::LuaCall::get();
+        using crabe::infrastructure::EngineScriptCall;
+        const char* name = lua.argToString(L, 1);
+        if (!name || !lua.hasReturnSupport()) return 0;
+
+        std::vector<EngineScriptCall::Value> args;
+        const int top = lua.getTop(L);
+        for (int i = 2; i <= top; ++i) {
+            EngineScriptCall::Value value;
+            if (lua.isNumber(L, i)) {
+                const double number = lua.argToNumber(L, i);
+                const double integral = static_cast<double>(static_cast<std::int64_t>(number));
+                if (integral == number && number >= -2147483648.0 && number <= 4294967295.0) {
+                    value.type = EngineScriptCall::Type::Int;
+                    value.bits = static_cast<std::uint32_t>(static_cast<std::int64_t>(number));
+                } else {
+                    const float single = static_cast<float>(number);
+                    value.type = EngineScriptCall::Type::Float;
+                    std::memcpy(&value.bits, &single, sizeof(single));
+                }
+            } else if (const char* text = lua.argToString(L, i)) {
+                value.type = EngineScriptCall::Type::String;
+                value.bits = static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(text));
+            } else {
+                value.type = EngineScriptCall::Type::Int;
+                value.bits = lua.argToBoolean(L, i) ? 1u : 0u;
+            }
+            args.push_back(value);
+        }
+
+        std::vector<EngineScriptCall::Value> results;
+        const bool ok = EngineScriptCall::get().call(name, args, results);
+        lua.pushBoolean(L, ok);
+        for (const EngineScriptCall::Value& value : results) {
+            switch (value.type) {
+            case EngineScriptCall::Type::Float: {
+                float single = 0.0f;
+                std::memcpy(&single, &value.bits, sizeof(single));
+                lua.pushNumber(L, static_cast<double>(single));
+                break;
+            }
+            case EngineScriptCall::Type::String: {
+                const auto* text = reinterpret_cast<const char*>(static_cast<std::uintptr_t>(value.bits));
+                if (text && crabe::memory::isReadable(value.bits, 1))
+                    lua.pushString(L, text);
+                else
+                    lua.pushNil(L);
+                break;
+            }
+            case EngineScriptCall::Type::Handle:
+                lua.pushNumber(L, static_cast<double>(value.bits));
+                break;
+            default:
+                lua.pushNumber(L, static_cast<double>(static_cast<std::int32_t>(value.bits)));
+                break;
+            }
+        }
+        return 1 + static_cast<int>(results.size());
+    }
 } // namespace
 
 // Registers all Crabe native C functions into the game Lua state.
@@ -1127,6 +1193,7 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_moduleBase",            &nativeModuleBase },
         { "_engineFreeCamera",      &nativeEngineFreeCamera },
         { "_loadSkyDome",           &nativeLoadSkyDome },
+        { "_callNative",            &nativeCallNative },
         { "_engineFreeCameraActive", &nativeEngineFreeCameraActive },
         { "_engineSceneGeneration", &nativeEngineSceneGeneration },
         { "_cameraEye",             &nativeCameraEye },
