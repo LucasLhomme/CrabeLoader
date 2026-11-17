@@ -96,6 +96,8 @@ own.
 | `ProgressionTree` | recommended | name of a real `assets/gamedb/core/<x>.lua` |
 | `Icon` | no | omit to fall back to `HUD_PlayerIcons_Default` |
 | `Description`, `MetaData` | no | localisation key and brand/filter tags |
+| `GatewayPlayset` | no | `playset` field of the injected figure slot, e.g. `"Dory"`. Empty means Toy Box only: outside the Toy Box the game rejects a figure whose playset does not name the zone's `PlaysetProperties`, and the avatar stays `AV_Proxy` |
+| `GatewayPackage`, `GatewayDisplayName` | no | `package` and `displayName` fields of the injected figure slot |
 
 Raises if `Name` is missing, if `baseCharacter` is passed, or if the `Name` or
 the resulting `sku_id` is already in the grid.
