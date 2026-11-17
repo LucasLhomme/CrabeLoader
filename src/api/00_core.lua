@@ -113,6 +113,19 @@ function Crabe.native(name, caller)
     return fn
 end
 
+-- Calls a Script VM native of the engine (the .sx script natives, not Lua globals) by its registered name.
+-- Arguments go in declaration order; returns true and the native's results, or false when it is absent or faulted.
+-- Natives that need a calling script (its owner actor) are not supported: they fault and return false.
+function Crabe.callNative(name, ...)
+    if type(name) ~= "string" or name == "" then
+        error("Crabe.callNative: expected a native name", 2)
+    end
+    if type(Crabe._callNative) ~= "function" then
+        return false
+    end
+    return Crabe._callNative(name, ...)
+end
+
 -- Resolves the target player id, defaulting to the host player.
 function Crabe.hostPlayer(playerId)
     return playerId or (type(Players_GetHostPlayerID) == "function" and Players_GetHostPlayerID() or 0)
