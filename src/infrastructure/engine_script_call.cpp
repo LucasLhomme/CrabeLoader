@@ -2,8 +2,8 @@
 ** CrabeLoader
 ** File description:
 ** Calls Script VM natives with a private frame: value slots at +0x0C, stack top at +0x20.
-** Arguments go in declaration order since natives pop them right to left; results come back in push order.
-** Natives that read other frame members (the calling script's owner) are not supported and fault safely.
+** Arguments go in declaration order (natives pop right to left); results come back in push order.
+** Natives that read other frame members (the calling script's owner) fault safely instead.
 **
 ** Authors: @LucasLhomme
 */
