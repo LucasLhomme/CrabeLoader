@@ -13,6 +13,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstring>
 #include <filesystem>
@@ -30,7 +31,7 @@ constexpr const char* kProbeMarker = "crabe_probe_asset_loader.txt";
 constexpr const char* kDisableMarker = "crabe_disable_asset_override.txt";
 constexpr const char* kLoadFileSymbol = "Asset_LoadFile";
 constexpr const char* kAllocSymbol = "Engine_Alloc";
-constexpr const char* kOverridableExtension = ".tbody";
+constexpr std::array<const char*, 2> kOverridableExtensions = {".tbody", ".mtb"};
 constexpr std::uint32_t kMaxTextureLines = 4000;
 constexpr std::uint32_t kMaxOtherLines = 300;
 constexpr std::uint32_t kMaxServedLines = 500;
@@ -108,8 +109,10 @@ bool writeSize(std::uint32_t* sizeOut, std::size_t size) noexcept
 bool hasOverridableExtension(const char* path) noexcept
 {
     const std::size_t length = std::strlen(path);
-    const std::size_t extension = std::strlen(kOverridableExtension);
-    return length > extension && _stricmp(path + length - extension, kOverridableExtension) == 0;
+    return std::ranges::any_of(kOverridableExtensions, [&](const char* extension) {
+        const std::size_t size = std::strlen(extension);
+        return length > size && _stricmp(path + length - size, extension) == 0;
+    });
 }
 
 bool isTexturePath(const std::string& lowered)
