@@ -279,9 +279,9 @@ def main():
     quickbms, bms_script = resolve_tools(args.quickbms, args.bms_script)
 
     if args.out:
-        out_root = Path(args.out)
+        out_root = Path(args.out).resolve()
     else:
-        out_root = Path("mods") / mod_id
+        out_root = (Path("mods") / mod_id).resolve()
 
     out_root.mkdir(parents=True, exist_ok=True)
     char_dest = out_root / "characters" / lname
@@ -352,14 +352,18 @@ def main():
     # Generate deploy.ps1
     create_deploy_script(out_root, mod_id, game_dir)
 
-    print(f"\n[SUCCESS] Character package built at: {out_root.resolve()}")
+    print(f"\n[SUCCESS] Character package built at: {out_root}")
     if args.deploy:
-        game_mods = game_dir / "mods" / mod_id
-        print(f"Deploying directly to: {game_mods}")
-        if game_mods.exists():
-            shutil.rmtree(game_mods)
-        shutil.copytree(out_root, game_mods)
-        print(f"[OK] Deployed to game directory.")
+        game_mods = (game_dir / "mods" / mod_id).resolve()
+        resolved_out = out_root.resolve()
+        if resolved_out == game_mods:
+            print(f"[OK] Character package was built directly in target mods folder: {game_mods}")
+        else:
+            print(f"Deploying directly to: {game_mods}")
+            if game_mods.exists():
+                shutil.rmtree(game_mods)
+            shutil.copytree(resolved_out, game_mods)
+            print(f"[OK] Deployed to game directory.")
 
 
 if __name__ == "__main__":
