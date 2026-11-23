@@ -4,10 +4,12 @@
 -- Allows mods to query override counts, test asset paths, and read resolution statistics.
 -- Defers file redirection and in-memory O(1) hash table lookup to native C++ services.
 --
--- Authors: @LucasLhomme
+-- Authors: @LucasLhomme, @Weresthebeef
 
 Crabe = Crabe or {}
 Crabe.Vfs = {}
+-- Capability flag: this build serves opted-in loose PC UI .mtb bundles as well as textures.
+Crabe.Vfs.supportsLooseMaterials = true
 
 -- Returns total number of registered VFS file overrides.
 function Crabe.Vfs.count()

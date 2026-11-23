@@ -478,6 +478,7 @@ target_include_directories(test_vfs_override PRIVATE
     include/shared
     src
 )
+target_link_libraries(test_vfs_override PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_vfs_override PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
