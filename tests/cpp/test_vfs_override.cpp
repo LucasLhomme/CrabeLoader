@@ -5,10 +5,11 @@
 ** Validates deterministic priority and benchmarks 100,000 lookups under 10 milliseconds.
 ** Runs offline as an independent C++23 test binary without requiring the game process.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -29,11 +30,11 @@ void require(bool condition, const char* message)
     }
 }
 
-void createDummyFile(const std::filesystem::path& path)
+void createDummyFile(const std::filesystem::path& path, const char* content = "test content")
 {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream out(path, std::ios::binary);
-    out << "test content";
+    out << content;
 }
 
 } // namespace
@@ -66,9 +67,9 @@ int main()
     }
 
     // 2. Multi-folder scan & deterministic resolution
-    std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "crabe_vfs_test_mods";
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path() /
+        ("crabe_vfs_test_mods_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::error_code ec;
-    std::filesystem::remove_all(tempDir, ec);
     std::filesystem::create_directories(tempDir);
 
     try {
@@ -155,6 +156,43 @@ int main()
         require(!vfs.readOverrideBytes("textures/ffffffffffffffff.tbody").has_value(), "Unknown texture must be absent");
         require(!vfs.readOverrideBytes("textures/empty.tbody").has_value(), "Empty loose file must be refused");
         std::cout << "[Test] Loose byte reads passed.\n";
+
+        std::cout << "[Test] 5. Opted-in loose UI materials and vanilla fallback...\n";
+        auto materialPath = modC / "assets/ui/icons/hud_playericons_probe.mtb";
+        std::filesystem::create_directories(materialPath.parent_path());
+        std::vector<std::uint8_t> material(64, 0);
+        std::memcpy(material.data(), "BNDL", 4);
+        std::uint32_t one = 1, size = 64;
+        std::memcpy(material.data() + 4, &one, 4);
+        std::memcpy(material.data() + 8, &size, 4);
+        auto saveMaterial = [&]() {
+            std::ofstream out(materialPath, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(material.data()), material.size());
+        };
+        saveMaterial();
+        vfs.scanModsDirectory(tempDir);
+        require(!vfs.readOverrideBytes("ui/icons/hud_playericons_probe.mtb", true), "Old mods must not activate dormant materials");
+        createDummyFile(modC / "mod.json", R"({"manifestVersion":1,"id":"local.probe","looseMaterialOverrides":true})");
+        vfs.scanModsDirectory(tempDir);
+        auto looseMaterial = vfs.readOverrideBytes("ASSETS\\UI\\ICONS\\HUD_PLAYERICONS_PROBE.MTB", true);
+        require(looseMaterial && *looseMaterial == material, "Opted-in material bytes must be returned exactly");
+        material[63] = 17; saveMaterial();
+        require(vfs.readOverrideBytes("ui/icons/hud_playericons_probe.mtb", true)->back() == 17, "Read changed material in place without repacking");
+        require(!vfs.readOverrideBytes("ui/icons/missing.mtb", true), "Missing UI resource falls back to the engine");
+        createDummyFile(modC / "assets/characters/not_ui.mtb", "BNDL");
+        vfs.scanModsDirectory(tempDir);
+        require(!vfs.readOverrideBytes("characters/not_ui.mtb", true), "New support is scoped to UI bundles");
+        material[0] = 'X'; saveMaterial();
+        require(!vfs.readOverrideBytes("ui/icons/hud_playericons_probe.mtb", true), "Invalid material falls back to the engine");
+        material[0] = 'B'; saveMaterial();
+        std::filesystem::remove(materialPath);
+        require(!vfs.readOverrideBytes("ui/icons/hud_playericons_probe.mtb", true), "Deleted loose material falls back to the engine");
+        saveMaterial();
+        createDummyFile(modC / "mod.json", R"({"looseMaterialOverrides":false})");
+        vfs.scanModsDirectory(tempDir);
+        require(!vfs.readOverrideBytes("ui/icons/hud_playericons_probe.mtb", true), "Rescan revokes material opt-in");
+        require(vfs.readOverrideBytes("textures/eb09ed7830de9976.tbody") == bytesCanonical, "Texture overrides retain previous behavior");
+        std::cout << "[Test] Opt-in, in-place updates and fallback passed.\n";
 
     } catch (...) {
         std::filesystem::remove_all(tempDir, ec);

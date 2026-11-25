@@ -5,7 +5,7 @@
 ** The id pattern is quoted verbatim in each message, so an author can compare it with theirs.
 ** Synthesises no id for a v0 manifest; that policy belongs to src/domain/mod_id.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "domain/mod_manifest.hpp"
@@ -32,15 +32,15 @@ namespace crabe::domain {
 
         constexpr std::string_view kIdPattern = "^[a-z0-9]+(\\.[a-z0-9-]+)+$";
 
-        constexpr std::array<std::string_view, 5> kKnownKeysV0 = {
-            "manifestVersion", "name", "version", "minLoaderVersion", "entry",
+        constexpr std::array<std::string_view, 6> kKnownKeysV0 = {
+            "manifestVersion", "name", "version", "minLoaderVersion", "entry", "looseMaterialOverrides",
         };
 
-        constexpr std::array<std::string_view, 15> kKnownKeysV1 = {
+        constexpr std::array<std::string_view, 16> kKnownKeysV1 = {
             "manifestVersion", "id", "name", "version", "authors",
             "license", "entry", "minLoaderVersion", "maxLoaderVersion",
             "dependencies", "optionalDependencies", "loadAfter", "loadBefore",
-            "conflicts", "provides",
+            "conflicts", "provides", "looseMaterialOverrides",
         };
 
         [[nodiscard]] std::string_view jsonTypeName(const Json& value) noexcept
@@ -535,6 +535,9 @@ namespace crabe::domain {
             manifest._entry = std::move(*value);
         else
             return std::unexpected(std::move(value.error()));
+
+        if (const Json* flag = reader.find("looseMaterialOverrides"); flag && !flag->is_boolean())
+            return std::unexpected(reader.wrongType("looseMaterialOverrides", "a boolean", *flag));
 
         if (manifest._manifestVersion == 0) {
             if (auto parsed = SemVer::parse(manifest._version); parsed)

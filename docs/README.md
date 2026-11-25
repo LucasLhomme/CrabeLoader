@@ -2,6 +2,8 @@
 
 Welcome to the documentation repository for **CrabeLoader v1.1.0** — the decoupled, high-performance modloader and engine platform for *Disney Infinity 3.0: Gold Edition (PC)*.
 
+> **Online Documentation:** [https://lucaslhomme.github.io/CrabeLoader/](https://lucaslhomme.github.io/CrabeLoader/)
+
 
 ---
 
@@ -19,6 +21,7 @@ A dedicated suite of structured guides in plain English explaining every modding
 * **[Quickstart Guide](modding.md)** — Minimal "Hello World" mod walkthrough to get your first script running in under two minutes.
 
 ### 3. Engine & API References
+* **[Engine RVA Reference (`DisneyInfinity3.exe`)](rva_reference.md)** — 271 verified Relative Virtual Addresses (RVAs) organized by engine subsystem.
 * **[Native Function Database](nativedb.md)** — Comprehensive catalog of 1,200+ native C++ engine functions exposed to Lua.
 * **[Lua API Type Definitions (`crabe_api.def.lua`)](crabe_api.def.lua)** — EmmyLua type definitions for code completion and static analysis in VS Code / IDEs.
 

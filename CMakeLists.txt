@@ -227,6 +227,7 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/engine_shaders.cpp
     src/infrastructure/engine_asset_loader.cpp
     src/infrastructure/engine_sky.cpp
+    src/infrastructure/engine_script_call.cpp
     src/infrastructure/script_natives.cpp
     src/infrastructure/message_hook.cpp
     src/infrastructure/lua_call.cpp
@@ -477,6 +478,7 @@ target_include_directories(test_vfs_override PRIVATE
     include/shared
     src
 )
+target_link_libraries(test_vfs_override PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_vfs_override PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX

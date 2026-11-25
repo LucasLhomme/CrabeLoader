@@ -54,7 +54,8 @@ public:
     // and stop scanning, before the running interval is set; unanswered requests are retried or dropped.
     void Tick(std::chrono::steady_clock::time_point now);
 
-    // Pops the next report to send to the base. False when the queue is empty.
+    // Pops the next report to send to the base. False when the queue is empty or when the base already
+    // holds as many unanswered requests as it can take: it stops accepting USB packets past about three.
     [[nodiscard]] bool PopOutgoing(Report& out);
 
     // Hands over and clears the figure events detected so far.
@@ -91,6 +92,7 @@ private:
         std::uint8_t lti{0};
         std::uint8_t progressIndex{0};
         Clock::time_point sentAt{};
+        bool inFlight{false};
     };
 
     static constexpr std::size_t kProgressBlockCount = 4;

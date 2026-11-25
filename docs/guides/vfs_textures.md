@@ -1,5 +1,24 @@
 # CrabeLoader V2 — Virtual File System (VFS) & Loose Textures
 
+## Local preview: loose UI material descriptors
+
+The local preview loader additionally supports PC `.mtb` files under `ui/icons/`
+and `ui/virtualreadercharacters/`. Put the individual files under a mod's
+`assets/` directory and set `"looseMaterialOverrides": true` in its `mod.json`.
+The feature flag `Crabe.Vfs.supportsLooseMaterials` identifies this implementation.
+Existing official builds without this change do not support these overrides.
+
+The engine file hook reads the selected loose file first, allocates its return
+buffer through the engine allocator, and uses the original asset loader when no
+eligible readable file exists. Invalid PC bundle headers also fall back. Texture
+overrides retain their existing behavior. Changes are read on the next engine
+load; an already-cached UI resource may need its screen or game reloaded.
+
+Material opt-in is deliberately per mod. Updating the loader does not activate
+older mods' dormant loose materials. Other asset types, archive mounting and audio
+dependencies are outside this extension. Mods can therefore ship only their UI
+descriptors and texture bodies, without replacing either original UI archive.
+
 Technical specification and developer guide for **Virtual File System (VFS)** loose texture interception in **Disney Infinity 3.0: Gold Edition**.
 
 ---
