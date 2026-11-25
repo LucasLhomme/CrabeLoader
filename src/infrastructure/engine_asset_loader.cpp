@@ -5,7 +5,7 @@
 ** Substitutes a loose .tbody for the archive member the engine would otherwise read.
 ** Doubles as a measurement probe while the marker file crabe_probe_asset_loader.txt exists.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "infrastructure/engine_asset_loader.hpp"
@@ -246,7 +246,9 @@ void* EngineAssetLoader::serveOverride(const char* path, std::uint32_t* sizeOut)
     if (!readCallSample(path, nullptr, sample) || !hasOverridableExtension(sample.path))
         return nullptr;
 
-    const auto bytes = VfsOverrideManager::get().readOverrideBytes(sample.path);
+    const auto length = std::strlen(sample.path);
+    const bool material = length > 4 && _stricmp(sample.path + length - 4, ".mtb") == 0;
+    const auto bytes = VfsOverrideManager::get().readOverrideBytes(sample.path, material);
     if (!bytes.has_value())
         return nullptr;
 

@@ -5,7 +5,7 @@
 ** Normalizes relative and absolute game paths to match loose files inside active mods.
 ** Intercepts no Win32 calls itself; the hooks are in infrastructure/vfs_hook.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "infrastructure/vfs_override_manager.hpp"
@@ -16,6 +16,8 @@
 #include <system_error>
 
 #include "shared/logger.hpp"
+#include "third_party/json.hpp"
+#include <cstring>
 
 namespace crabe::infrastructure {
 
@@ -131,6 +133,18 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
 
     for (const auto& modDir : modDirs) {
         const std::string modName = modDir.filename().string();
+        bool allowLooseMaterials = false;
+        try {
+            const auto manifestPath = modDir / "mod.json";
+            if (std::filesystem::exists(manifestPath) && std::filesystem::file_size(manifestPath) <= 1024 * 1024) {
+                std::ifstream manifestFile(manifestPath);
+                const auto manifest = nlohmann::json::parse(manifestFile, nullptr, false);
+                if (manifest.is_object()) {
+                    const auto flag = manifest.find("looseMaterialOverrides");
+                    allowLooseMaterials = flag != manifest.end() && flag->is_boolean() && flag->get<bool>();
+                }
+            }
+        } catch (...) { }
 
         for (const auto& fileEntry : std::filesystem::recursive_directory_iterator(modDir, ec)) {
             if (ec)
@@ -160,11 +174,13 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
                                 key, fileEntry.path().string(), it->second.originMod);
                     it->second.physicalPath = fileEntry.path();
                     it->second.originMod = modName;
+                    it->second.allowLooseMaterials = allowLooseMaterials;
                 } else {
                     fresh[key] = OverrideEntry{
                         .physicalPath = fileEntry.path(),
                         .originMod = modName,
-                        .hitCount = 0
+                        .hitCount = 0,
+                        .allowLooseMaterials = allowLooseMaterials
                     };
                 }
             };
@@ -311,12 +327,23 @@ std::optional<std::filesystem::path> VfsOverrideManager::resolve(
 
 // Reads the full binary content of an overridden asset file into memory.
 std::optional<std::vector<std::uint8_t>> VfsOverrideManager::readOverrideBytes(
-    std::string_view requestedPath) const noexcept
+    std::string_view requestedPath, bool materialRequest) const noexcept
 {
     constexpr std::streamoff kMaxOverrideBytes = 256LL * 1024 * 1024;
-
     std::filesystem::path physical;
-    if (!resolve(requestedPath, physical))
+
+    if (materialRequest) {
+        const auto key = normalizeVirtualPath(requestedPath);
+        if (!key.ends_with(".mtb") ||
+            !(key.starts_with("ui/icons/") || key.starts_with("ui/virtualreadercharacters/")))
+            return std::nullopt;
+        std::shared_lock<std::shared_mutex> lock(_mutex);
+        const auto entry = _overrides.find(key);
+        if (entry == _overrides.end() || !entry->second.allowLooseMaterials)
+            return std::nullopt;
+        physical = entry->second.physicalPath;
+    }
+    else if (!resolve(requestedPath, physical))
         return std::nullopt;
 
     try {
@@ -332,6 +359,15 @@ std::optional<std::vector<std::uint8_t>> VfsOverrideManager::readOverrideBytes(
         in.seekg(0);
         if (!in.read(reinterpret_cast<char*>(bytes.data()), length))
             return std::nullopt;
+        if (materialRequest) {
+            if (bytes.size() < 16 || std::memcmp(bytes.data(), "BNDL", 4) != 0)
+                return std::nullopt;
+            std::uint32_t version = 0, declaredSize = 0;
+            std::memcpy(&version, bytes.data() + 4, 4);
+            std::memcpy(&declaredSize, bytes.data() + 8, 4);
+            if (version != 1 || declaredSize != bytes.size())
+                return std::nullopt;
+        }
         return bytes;
     } catch (...) {
         return std::nullopt;

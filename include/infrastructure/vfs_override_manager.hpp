@@ -5,7 +5,7 @@
 ** Provides thread-safe normalized path resolution with zero disk access on hot lookups.
 ** Mod content lives under mods/; this service knows nothing about game-specific formats.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #ifndef CRABELOADER_INFRASTRUCTURE_VFS_OVERRIDE_MANAGER_HPP_
@@ -32,6 +32,7 @@ public:
         std::filesystem::path physicalPath;
         std::string originMod;
         mutable std::size_t hitCount{0};
+        bool allowLooseMaterials{false};
     };
 
     struct VfsStats {
@@ -60,7 +61,7 @@ public:
 
     // Resolves a requested asset path and reads the whole loose file into memory.
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> readOverrideBytes(
-        std::string_view requestedPath) const noexcept;
+        std::string_view requestedPath, bool materialRequest = false) const noexcept;
 
     // Optional-returning overload of asset path resolution.
     [[nodiscard]] std::optional<std::filesystem::path> resolve(
