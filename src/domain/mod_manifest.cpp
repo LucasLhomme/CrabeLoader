@@ -32,15 +32,15 @@ namespace crabe::domain {
 
         constexpr std::string_view kIdPattern = "^[a-z0-9]+(\\.[a-z0-9-]+)+$";
 
-        constexpr std::array<std::string_view, 6> kKnownKeysV0 = {
-            "manifestVersion", "name", "version", "minLoaderVersion", "entry", "looseMaterialOverrides",
+        constexpr std::array<std::string_view, 7> kKnownKeysV0 = {
+            "manifestVersion", "name", "version", "minLoaderVersion", "entry", "looseMaterialOverrides", "assetMounts",
         };
 
-        constexpr std::array<std::string_view, 16> kKnownKeysV1 = {
+        constexpr std::array<std::string_view, 17> kKnownKeysV1 = {
             "manifestVersion", "id", "name", "version", "authors",
             "license", "entry", "minLoaderVersion", "maxLoaderVersion",
             "dependencies", "optionalDependencies", "loadAfter", "loadBefore",
-            "conflicts", "provides", "looseMaterialOverrides",
+            "conflicts", "provides", "looseMaterialOverrides", "assetMounts",
         };
 
         [[nodiscard]] std::string_view jsonTypeName(const Json& value) noexcept
@@ -539,6 +539,43 @@ namespace crabe::domain {
         if (const Json* flag = reader.find("looseMaterialOverrides"); flag && !flag->is_boolean())
             return std::unexpected(reader.wrongType("looseMaterialOverrides", "a boolean", *flag));
 
+        if (const auto flag = root.find("looseMaterialOverrides"); flag != root.end() && flag->is_boolean())
+            manifest._allowLooseMaterials = flag->get<bool>();
+        if (const auto mounts = root.find("assetMounts"); mounts != root.end()) {
+            if (!mounts->is_array() || mounts->size() > 32)
+                return std::unexpected(reader.wrongType("assetMounts", "an array of at most 32 mount objects", *mounts));
+            manifest._assetMounts.clear();
+            const auto safe = [](const std::string& path, bool emptyAllowed) {
+                if (path.empty()) return emptyAllowed;
+                if (path.front() == '/' || path.front() == '\\' || path.find(':') != std::string::npos) return false;
+                std::string normalized = path;
+                std::ranges::replace(normalized, '\\', '/');
+                std::size_t start = 0;
+                while (start <= normalized.size()) {
+                    const auto end = normalized.find('/', start);
+                    const auto part = normalized.substr(start, end - start);
+                    if (part.empty() || part == "." || part == "..") return false;
+                    for (unsigned char c : part) if (c < 32 || c == 127 || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') return false;
+                    if (part.back() == '.' || part.back() == ' ') return false;
+                    if (end == std::string::npos) break;
+                    start = end + 1;
+                }
+                return true;
+            };
+            for (const auto& mount : *mounts) {
+                if (!mount.is_object() || mount.size() != 2 || !mount.contains("source") || !mount.contains("target") ||
+                    !mount["source"].is_string() || !mount["target"].is_string() ||
+                    !safe(mount["source"].get<std::string>(), false) || !safe(mount["target"].get<std::string>(), true))
+                    return std::unexpected(makeDiagnostic(ManifestError::InvalidJson, origin,
+                        "assetMounts entries require safe relative source and target strings; target may be empty", "/assetMounts"));
+                auto source = mount["source"].get<std::string>();
+                auto target = mount["target"].get<std::string>();
+                std::ranges::replace(source, '\\', '/');
+                std::ranges::replace(target, '\\', '/');
+                manifest._assetMounts.push_back({std::move(source), std::move(target)});
+            }
+        }
+
         if (manifest._manifestVersion == 0) {
             if (auto parsed = SemVer::parse(manifest._version); parsed)
                 manifest._semver = *parsed;
@@ -712,6 +749,11 @@ namespace crabe::domain {
     {
         return _entry;
     }
+
+    // Exposes the validated mount plan without rereading mod.json.
+    const std::vector<AssetMount>& ModManifest::getAssetMounts() const noexcept { return _assetMounts; }
+    // Exposes the UI override capability captured during manifest parsing.
+    bool ModManifest::allowsLooseMaterials() const noexcept { return _allowLooseMaterials; }
 
     const std::string& ModManifest::getLicense() const noexcept
     {

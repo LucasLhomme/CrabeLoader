@@ -5,7 +5,7 @@
 ** No native touches window state directly; a window change is posted to the render thread.
 ** Exposes no ImGui here -- the widget bindings are src/presentation/imgui_bindings.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include <array>
@@ -496,6 +496,37 @@ namespace {
             out += entry.originMod;
             out += '\n';
         }
+        lua.pushString(L, out);
+        return 1;
+    }
+
+    // Returns safe TSV provider records for the author-facing Lua explanation API.
+    int __cdecl nativeVfsExplain(void* L)
+    {
+        auto& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        const char* path = lua.getTop(L) >= 1 ? lua.argToString(L, 1) : nullptr;
+        if (!path) return 0;
+        const auto detail = crabe::infrastructure::VfsOverrideManager::get().explain(path);
+        std::string out;
+        for (const auto& entry : detail.providers) {
+            const bool winner = detail.winner && entry.physicalPath == detail.winner->physicalPath &&
+                entry.modId == detail.winner->modId && entry.mountIndex == detail.winner->mountIndex && entry.alias == detail.winner->alias;
+            out += entry.modId + "\t" + entry.originMod + "\t" + entry.physicalPath.string() + "\t" +
+                std::to_string(entry.order) + "\t" + entry.mount + "\t" + (entry.alias ? "1" : "0") + "\t" +
+                (winner ? "1" : "0") + "\t" + (winner ? detail.winner->reason : entry.reason) + "\n";
+        }
+        lua.pushString(L, out);
+        return 1;
+    }
+
+    // Returns sorted conflict keys for on-demand inspection, without disk access.
+    int __cdecl nativeVfsConflicts(void* L)
+    {
+        auto& lua = crabe::infrastructure::LuaCall::get();
+        if (!lua.hasReturnSupport()) return 0;
+        std::string out;
+        for (const auto& path : crabe::infrastructure::VfsOverrideManager::get().getConflictPaths()) out += path + "\n";
         lua.pushString(L, out);
         return 1;
     }
@@ -1240,6 +1271,8 @@ bool crabe::lua_runtime::registerNatives(void* L)
         { "_vfsGetOverrideCount",   &nativeVfsGetOverrideCount },
         { "_vfsResolve",            &nativeVfsResolve },
         { "_vfsList",               &nativeVfsList },
+        { "_vfsExplain",            &nativeVfsExplain },
+        { "_vfsConflicts",          &nativeVfsConflicts },
         { "_asiReport",             &nativeAsiReport },
         { "_pluginGetValue",        &nativePluginGetValue },
         { "_pluginSetValue",        &nativePluginSetValue },

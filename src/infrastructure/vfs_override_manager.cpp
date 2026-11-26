@@ -14,12 +14,24 @@
 #include <cctype>
 #include <fstream>
 #include <system_error>
+#include <set>
+#include <stdexcept>
 
 #include "shared/logger.hpp"
+#include "infrastructure/bank_dependency_patch.hpp"
 #include "third_party/json.hpp"
 #include <cstring>
 
 namespace crabe::infrastructure {
+namespace {
+thread_local bool scanningMods = false;
+// Prevents hooked I/O during rescans from reading the previous generation of overrides.
+struct ScanScope {
+    ScanScope() { scanningMods = true; }
+    ~ScanScope() { scanningMods = false; }
+};
+}
+
 
 // Returns the singleton instance of VfsOverrideManager.
 VfsOverrideManager& VfsOverrideManager::get() noexcept
@@ -92,10 +104,12 @@ std::string VfsOverrideManager::normalizeVirtualPath(std::string_view path) noex
 }
 
 // Initializes the VFS override manager with the root directory of the game.
-void VfsOverrideManager::initialize(const std::filesystem::path& gameRoot)
+void VfsOverrideManager::initialize(const std::filesystem::path& gameRoot,
+    std::function<bool(std::string_view)> modFilter)
 {
     std::unique_lock<std::shared_mutex> lock(_mutex);
     _gameRoot = gameRoot;
+    _modFilter = std::move(modFilter);
     std::filesystem::path modsFolder = gameRoot / "mods";
 
     lock.unlock();
@@ -105,98 +119,131 @@ void VfsOverrideManager::initialize(const std::filesystem::path& gameRoot)
 // Scans the mods directory recursively to index asset overrides.
 void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFolder)
 {
+    std::lock_guard scanLock(_scanMutex);
+    ScanScope scanScope;
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
-    std::error_code ec;
-
-    if (!std::filesystem::exists(modsFolder, ec) || !std::filesystem::is_directory(modsFolder, ec))
-        return;
-
-    std::vector<std::filesystem::path> modDirs;
-    for (const auto& entry : std::filesystem::directory_iterator(modsFolder, ec)) {
-        if (ec)
-            break;
-        if (!entry.is_directory(ec))
-            continue;
-
-        std::string dirName = entry.path().filename().string();
-        if (dirName.empty() || dirName[0] == '.' || dirName[0] == '_')
-            continue;
-
-        modDirs.push_back(entry.path());
+    try {
+    auto plan = std::make_shared<const crabe::domain::ModLoadPlan>(
+        crabe::domain::discoverModLoadPlan(modsFolder, _modFilter));
+    std::unordered_map<std::string, OverrideEntry> fresh;
+    std::unordered_map<std::string, std::vector<OverrideEntry>> providers;
+    std::vector<std::filesystem::path> bankPatches;
+    std::vector<std::string> patchMods;
+    const auto contained = [](const std::filesystem::path& file, const std::filesystem::path& root) {
+        const auto relative = std::filesystem::weakly_canonical(file).lexically_relative(std::filesystem::weakly_canonical(root));
+        return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
+    };
+    const auto add = [&](const std::string& key, OverrideEntry entry) {
+        auto& history = providers[key];
+        if (std::ranges::any_of(history, [&](const auto& previous) {
+            return previous.physicalPath == entry.physicalPath && previous.modId == entry.modId && previous.mountIndex == entry.mountIndex;
+        })) return;
+        const auto existing = fresh.find(key);
+        const bool sameModMount = existing != fresh.end() && existing->second.order == entry.order && existing->second.mountIndex == entry.mountIndex;
+        const bool losesToExact = sameModMount && !existing->second.alias && entry.alias;
+        entry.reason = existing == fresh.end() ? "only provider" :
+            existing->second.order != entry.order ? "later resolved mod wins" :
+            existing->second.mountIndex != entry.mountIndex ? "later declared mount wins" :
+            existing->second.alias != entry.alias ? "exact path preferred over texture alias" : "deterministic file order";
+        history.push_back(entry);
+        if (!losesToExact) fresh[key] = std::move(entry);
+        else fresh[key].reason = "exact path preferred over texture alias";
+    };
+    for (std::size_t position = 0; position < plan->resolution.sourceIndex.size(); ++position) {
+        const auto& mod = plan->candidates[plan->resolution.sourceIndex[position]];
+        if (!mod.isDirectory) continue;
+        const auto& modDir = mod.path;
+        if (!contained(modDir, modsFolder)) throw std::runtime_error("mod directory escapes mods root: " + modDir.string());
+        const auto bankPatch = modDir / "bank_dependencies.json";
+        if (std::filesystem::is_regular_file(bankPatch)) {
+            if (!contained(bankPatch, modDir)) throw std::runtime_error("bank patch escapes its mod directory");
+            bankPatches.push_back(bankPatch);
+            patchMods.push_back(mod.id);
+        }
+        const auto& mounts = mod.manifest.getAssetMounts();
+        for (std::size_t mountIndex = 0; mountIndex < mounts.size(); ++mountIndex) {
+            const auto& mount = mounts[mountIndex];
+            const auto directory = modDir / mount.source;
+            if (!std::filesystem::exists(directory)) continue;
+            if (!contained(directory, modDir)) throw std::runtime_error("asset mount escapes its mod directory: " + directory.string());
+            if (!std::filesystem::is_directory(directory)) throw std::runtime_error("asset mount is not a directory: " + directory.string());
+            std::vector<std::filesystem::path> mountedFiles;
+            for (const auto& file : std::filesystem::recursive_directory_iterator(directory)) {
+                if (!file.is_regular_file()) continue;
+                if (!contained(file.path(), modDir)) throw std::runtime_error("mounted file escapes its mod directory: " + file.path().string());
+                mountedFiles.push_back(file.path());
+            }
+            std::ranges::sort(mountedFiles);
+            for (const auto& file : mountedFiles) {
+                const auto relative = file.lexically_relative(directory).generic_string();
+                const auto extension = normalizeVirtualPath(file.extension().string());
+                if (extension == ".asi" || extension == ".dll" || extension == ".exe") continue;
+                if (mount.source == "characters" && mount.target == "characters" && (extension == ".lua" || extension == ".patch")) continue;
+                const auto key = normalizeVirtualPath(mount.target.empty() ? relative : mount.target + "/" + relative);
+                if (key.empty()) continue;
+                OverrideEntry entry{.physicalPath = file, .originMod = mod.name, .hitCount = 0,
+                    .allowLooseMaterials = mod.manifest.allowsLooseMaterials(), .modId = mod.id,
+                    .order = position, .mountIndex = mountIndex, .mount = mount.source + " -> " + mount.target};
+                add(key, entry);
+                if (extension == ".tbody") {
+                    const auto filename = normalizeVirtualPath(file.filename().string());
+                    entry.alias = true;
+                    add(filename, entry);
+                    add("textures/" + filename, entry);
+                    if (filename.size() >= 2) add("textures/" + filename.substr(0, 2) + "/" + filename, entry);
+                }
+            }
+        }
     }
 
-    std::ranges::sort(modDirs, [](const auto& a, const auto& b) {
-        return a.filename().string() < b.filename().string();
-    });
-
-    std::unordered_map<std::string, OverrideEntry> fresh;
-
-    for (const auto& modDir : modDirs) {
-        const std::string modName = modDir.filename().string();
-        bool allowLooseMaterials = false;
+    if (!bankPatches.empty()) {
+        const auto gameRoot = modsFolder.parent_path();
+        const auto effective = [&](std::string_view key) {
+            auto entry = fresh.find(std::string(key));
+            return entry != fresh.end() ? entry->second.physicalPath : gameRoot / "assets" / key;
+        };
         try {
-            const auto manifestPath = modDir / "mod.json";
-            if (std::filesystem::exists(manifestPath) && std::filesystem::file_size(manifestPath) <= 1024 * 1024) {
-                std::ifstream manifestFile(manifestPath);
-                const auto manifest = nlohmann::json::parse(manifestFile, nullptr, false);
-                if (manifest.is_object()) {
-                    const auto flag = manifest.find("looseMaterialOverrides");
-                    allowLooseMaterials = flag != manifest.end() && flag->is_boolean() && flag->get<bool>();
-                }
-            }
-        } catch (...) { }
-
-        for (const auto& fileEntry : std::filesystem::recursive_directory_iterator(modDir, ec)) {
-            if (ec)
-                break;
-            if (!fileEntry.is_regular_file(ec))
-                continue;
-
-            std::filesystem::path relPath = std::filesystem::relative(fileEntry.path(), modDir, ec);
-            if (ec)
-                continue;
-
-            std::string relStr = relPath.generic_string();
-            if (relStr == "mod.json" || relStr == "manifest.json")
-                continue;
-            if (relPath.extension() == ".asi" || relPath.extension() == ".ASI")
-                continue;
-
-            std::string virtualKey = normalizeVirtualPath(relStr);
-            if (virtualKey.empty())
-                continue;
-
-            auto registerKey = [&](const std::string& key) {
-                if (key.empty()) return;
-                auto it = fresh.find(key);
-                if (it != fresh.end()) {
-                    logger.info("VFS: Override: '{}' -> '{}' (superseded '{}')",
-                                key, fileEntry.path().string(), it->second.originMod);
-                    it->second.physicalPath = fileEntry.path();
-                    it->second.originMod = modName;
-                    it->second.allowLooseMaterials = allowLooseMaterials;
-                } else {
-                    fresh[key] = OverrideEntry{
-                        .physicalPath = fileEntry.path(),
-                        .originMod = modName,
-                        .hitCount = 0,
-                        .allowLooseMaterials = allowLooseMaterials
+            const auto source = effective("sound/bankloads.bdp");
+            const auto generated = buildBankDependencyOverlay(source, bankPatches,
+                modsFolder / ".crabeloader-cache" / "bank-dependencies",
+                [&](std::string_view name) {
+                    const auto path = effective("sound/" + std::string(name));
+                    const auto exists = [](const std::filesystem::path& file) {
+                        return std::filesystem::is_regular_file(file) && std::filesystem::file_size(file) > 0;
                     };
-                }
-            };
-
-            registerKey(virtualKey);
-
-            if (fileEntry.path().extension() == ".tbody") {
-                const std::string filename = fileEntry.path().filename().string();
-                const std::string lowerFilename = normalizeVirtualPath(filename);
-                registerKey(lowerFilename);
-                registerKey("textures/" + lowerFilename);
-                if (lowerFilename.size() >= 2) {
-                    const std::string prefix2 = lowerFilename.substr(0, 2);
-                    registerKey("textures/" + prefix2 + "/" + lowerFilename);
-                }
+                    if (exists(path)) return true;
+                    if (!(name.ends_with(".dbnk") || name.ends_with(".dlg"))) return false;
+                    std::set<std::string> languages;
+                    const auto dialog = gameRoot / "assets/sound/dialog";
+                    if (std::filesystem::is_directory(dialog)) {
+                        for (const auto& language : std::filesystem::directory_iterator(dialog))
+                            if (language.is_directory()) languages.insert(language.path().filename().string());
+                    }
+                    for (const auto& [key, entry] : fresh) {
+                        constexpr std::string_view prefix = "sound/dialog/";
+                        if (!key.starts_with(prefix)) continue;
+                        const auto slash = key.find('/', prefix.size());
+                        if (slash != std::string::npos) languages.insert(key.substr(prefix.size(), slash - prefix.size()));
+                    }
+                    for (const auto& language : languages)
+                        if (exists(effective("sound/dialog/" + language + "/" + std::string(name)))) return true;
+                    return false;
+                });
+            if (generated) {
+                std::string reason = "generated additive bank overlay; patches:";
+                for (const auto& id : patchMods) reason += " " + id;
+                OverrideEntry overlay{.physicalPath = *generated, .originMod = "bank-dependency-overlay",
+                    .modId = "@bank-dependency-overlay", .order = plan->resolution.sourceIndex.size(),
+                    .mount = "generated cache", .reason = reason};
+                providers["sound/bankloads.bdp"].push_back(overlay);
+                fresh["sound/bankloads.bdp"] = std::move(overlay);
+                logger.info("BankDependencies: merged {} patch file(s) over '{}' -> '{}' (restart game to reload sound banks).",
+                    bankPatches.size(), source.string(), generated->string());
+            } else {
+                logger.info("BankDependencies: requested dependencies already present; keeping effective table.");
             }
+        } catch (const std::exception& error) {
+            logger.warning("BankDependencies: overlay rejected; keeping effective table: {}", error.what());
         }
     }
 
@@ -207,14 +254,53 @@ void VfsOverrideManager::scanModsDirectory(const std::filesystem::path& modsFold
             entry.hitCount = previous->second.hitCount;
     }
     _overrides = std::move(fresh);
+    _providers = std::move(providers);
+    _modPlan = std::move(plan);
 
     {
         std::unique_lock<std::shared_mutex> fastLock(_fastCacheMutex);
         _fastCache.clear();
     }
 
-    logger.info("VFS: Indexed {} active virtual asset override(s) across {} mod directory(ies).",
-                _overrides.size(), modDirs.size());
+    const auto count = _overrides.size();
+    const auto modCount = _modPlan->resolution.loadOrder.size();
+    lock.unlock();
+    const auto conflicts = getConflictPaths();
+    logger.info("VFS: Indexed {} assets from {} resolved mods; {} conflicting paths.", count, modCount, conflicts.size());
+    std::size_t loggedConflicts = 0;
+    for (const auto& key : conflicts) {
+        if (loggedConflicts++ >= 64) break;
+        const auto detail = explain(key);
+        logger.info("VFS conflict: '{}' -> '{}' ({}, {} providers). Use Crabe.Vfs.explain for details.",
+            key, detail.winner->modId, detail.winner->reason, detail.providers.size());
+    }
+    if (conflicts.size() > 64) logger.info("VFS: {} more conflict paths available via Crabe.Vfs.conflicts().", conflicts.size() - 64);
+    } catch (const std::exception& error) {
+        logger.error("VFS: scan failed; keeping previous index and mod plan: {}", error.what());
+    }
+}
+
+// Returns the shared dependency plan from the same generation as the asset index.
+std::shared_ptr<const crabe::domain::ModLoadPlan> VfsOverrideManager::getModPlan() const {
+    std::shared_lock lock(_mutex);
+    return _modPlan;
+}
+// Explains providers and winner without changing lookup counters.
+VfsOverrideManager::Explanation VfsOverrideManager::explain(std::string_view path) const {
+    Explanation result;
+    result.path = normalizeVirtualPath(path);
+    std::shared_lock lock(_mutex);
+    if (const auto found = _overrides.find(result.path); found != _overrides.end()) result.winner = found->second;
+    if (const auto found = _providers.find(result.path); found != _providers.end()) result.providers = found->second;
+    return result;
+}
+// Lists conflicts deterministically for author tooling and log output.
+std::vector<std::string> VfsOverrideManager::getConflictPaths() const {
+    std::vector<std::string> result;
+    std::shared_lock lock(_mutex);
+    for (const auto& [key, providers] : _providers) if (providers.size() > 1) result.push_back(key);
+    std::ranges::sort(result);
+    return result;
 }
 
 // Manually registers a virtual asset override mapping.
@@ -230,9 +316,12 @@ bool VfsOverrideManager::registerOverride(std::string_view virtualPath,
     _overrides[key] = OverrideEntry{
         .physicalPath = physicalPath,
         .originMod = std::string(originMod),
-        .hitCount = 0
+        .hitCount = 0,
+        .modId = std::string(originMod),
+        .reason = "manual runtime override"
     };
 
+    _providers[key].push_back(_overrides[key]);
     std::unique_lock<std::shared_mutex> fastLock(_fastCacheMutex);
     _fastCache.clear();
     return true;
@@ -242,6 +331,7 @@ bool VfsOverrideManager::registerOverride(std::string_view virtualPath,
 bool VfsOverrideManager::resolve(std::string_view requestedPath,
                                  std::filesystem::path& outPhysicalPath) const noexcept
 {
+    if (scanningMods) return false;
     {
         std::shared_lock<std::shared_mutex> fastLock(_fastCacheMutex);
         auto cacheIt = _fastCache.find(requestedPath);
@@ -418,6 +508,8 @@ void VfsOverrideManager::clear() noexcept
 {
     std::unique_lock<std::shared_mutex> lock(_mutex);
     _overrides.clear();
+    _providers.clear();
+    _modPlan.reset();
     _resolutionCount.store(0, std::memory_order_relaxed);
     _hitCount.store(0, std::memory_order_relaxed);
 

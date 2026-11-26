@@ -163,4 +163,44 @@ suite.cases[#suite.cases + 1] = {
     end,
 }
 
+suite.cases[#suite.cases + 1] = {
+    "explain validates arguments and works without native support",
+    function(state)
+        state.Crabe._vfsExplain = nil
+        assertNil(state.Crabe.Vfs.explain(nil))
+        assertNil(state.Crabe.Vfs.explain(""))
+        local detail = state.Crabe.Vfs.explain("ui/missing.bin")
+        assertEquals(#detail.providers, 0)
+        assertNil(detail.winner)
+        assertEquals(detail.reason, "no mod override indexed")
+    end,
+}
+suite.cases[#suite.cases + 1] = {
+    "explain reports shadowed providers and resolved winner",
+    function(state)
+        state.Crabe._vfsExplain = function(path)
+            assertEquals(path, "ui/shared.bin")
+            return "local.first\tFirst\tC:/first.bin\t0\tassets -> \t0\t0\tonly provider\n" ..
+                   "local.last\tLast\tC:/last.bin\t1\tart -> ui\t0\t1\tlater resolved mod wins\n"
+        end
+        local detail = state.Crabe.Vfs.explain("ui/shared.bin")
+        assertEquals(#detail.providers, 2)
+        assertEquals(detail.winner.mod, "local.last")
+        assertEquals(detail.winner.physicalPath, "C:/last.bin")
+        assertEquals(detail.winner.order, 1)
+        assertFalse(detail.winner.alias)
+        assertEquals(detail.reason, "later resolved mod wins")
+    end,
+}
+suite.cases[#suite.cases + 1] = {
+    "conflicts filter prefixes and default to empty without native support",
+    function(state)
+        assertEquals(#state.Crabe.Vfs.conflicts(), 0)
+        state.Crabe._vfsConflicts = function() return "sound/bankloads.bdp\nui/icons/hud.mtb\n" end
+        local detail = state.Crabe.Vfs.conflicts("UI\\ICONS/")
+        assertEquals(#detail, 1)
+        assertEquals(detail[1].path, "ui/icons/hud.mtb")
+    end,
+}
+
 return suite

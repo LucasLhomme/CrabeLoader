@@ -5,7 +5,7 @@
 ** Substitutes requested asset paths with loose files from active mods under SEH armor.
 ** Indexing and priority rules are delegated to infrastructure/vfs_override_manager.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "infrastructure/vfs_hook.hpp"
@@ -48,6 +48,17 @@ thread_local bool t_reentrancyGuard = false;
 constexpr std::uint32_t kMaxTraceLines = 4000;
 std::atomic<bool> g_traceTextures{false};
 std::atomic<std::uint32_t> g_traceLines{0};
+
+std::atomic<std::uint32_t> bankTraceLines{0};
+// Confirms that startup table requests actually reach VFS after its hooks are installed.
+void traceBankTable(const char* scope, std::string_view requested,
+                    bool redirected, const std::filesystem::path& physical)
+{
+    if (VfsOverrideManager::normalizeVirtualPath(requested) != "sound/bankloads.bdp") return;
+    if (bankTraceLines.fetch_add(1, std::memory_order_relaxed) >= 16) return;
+    crabe::shared::Logger::getInstance().info("BankDependencies: {} '{}' -> '{}'", scope, requested,
+        redirected ? physical.string() : std::string(requested));
+}
 
 // Logs a texture-looking request and whether a mod override served it; a no-op unless tracing is on.
 void traceTexture(const char* scope, std::string_view requested, bool redirected)
@@ -107,6 +118,7 @@ Result redirectAnsi(LPCSTR path, Result failure, const Call& call, const char* s
         std::filesystem::path overridePath;
         const bool redirected = VfsOverrideManager::get().resolve(path, overridePath);
         traceTexture(scope, path, redirected);
+        traceBankTable(scope, path, redirected, overridePath);
         if (redirected)
             result = call(overridePath.string().c_str());
         else
@@ -133,6 +145,7 @@ Result redirectWide(LPCWSTR path, Result failure, const Call& call, const char* 
         std::filesystem::path overridePath;
         const bool redirected = !narrowName.empty() && VfsOverrideManager::get().resolve(narrowName, overridePath);
         traceTexture(scope, narrowName, redirected);
+        traceBankTable(scope, narrowName, redirected, overridePath);
         if (redirected)
             result = call(overridePath.c_str());
         else

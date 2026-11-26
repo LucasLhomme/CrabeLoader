@@ -4,7 +4,7 @@
 -- Installs when the screen's chunk loads, because the screen table does not exist before that.
 -- Renders nothing itself; the game's own BuildList owns the list this appends to.
 --
--- Authors: @LucasLhomme
+-- Authors: @LucasLhomme, @Weresthebeef
 
 Crabe = Crabe or {}
 Crabe.Settings = Crabe.Settings or {}
@@ -90,10 +90,10 @@ function Crabe.Settings._install(screenName)
         return false
     end
 
-    if screen.__crabeSettingsOriginal == nil then
+    if rawget(screen, "__crabeSettingsOriginal") == nil then
         screen.__crabeSettingsOriginal = screen.BuildList
     end
-    local original = screen.__crabeSettingsOriginal
+    local original = rawget(screen, "__crabeSettingsOriginal")
 
     screen.BuildList = function(self, ...)
         local result = original(self, ...)
@@ -116,10 +116,10 @@ function Crabe.Settings._install(screenName)
 
     screen.__crabeSettingsWrapper = screen.BuildList
 
-    if screen.__crabeSettingsNextEnum == nil and type(screen.NextEnumValue) == "function" then
+    if rawget(screen, "__crabeSettingsNextEnum") == nil and type(screen.NextEnumValue) == "function" then
         screen.__crabeSettingsNextEnum = screen.NextEnumValue
     end
-    local originalNextEnum = screen.__crabeSettingsNextEnum
+    local originalNextEnum = rawget(screen, "__crabeSettingsNextEnum")
     screen.NextEnumValue = function(self, id, newDirection, ...)
         local data = id ~= nil and self.listData and self.listData[tonumber(id)]
         local record = data and findChoice(screenName, data.id)
@@ -281,8 +281,8 @@ end
 local function isWrapped(screenName)
     local screen = rawget(kGlobals, screenName)
     return type(screen) == "table"
-        and screen.__crabeSettingsWrapper ~= nil
-        and screen.BuildList == screen.__crabeSettingsWrapper
+        and rawget(screen, "__crabeSettingsWrapper") ~= nil
+        and screen.BuildList == rawget(screen, "__crabeSettingsWrapper")
 end
 
 -- Schedules periodic retries to install settings wrapper on screen.
@@ -382,7 +382,8 @@ local function populateExtras(screen, page)
         local id, label, display = Crabe._patchKeybindGetAction(page, i)
         list[i] = {
             id = id,
-            text = label,
+            text = label .. " : " .. tostring(display or "Unbound"),
+            bindingLabel = label,
             widgetType = "Button",
             buttonState = "",
             enumValue = display,
@@ -399,78 +400,104 @@ local function populateExtras(screen, page)
     return list
 end
 
--- Opens the SettingsExtras screen configured for keyboard or controller rebinding.
+-- Rebuilds through MenuBase's native Flash contract, preserving its current selection.
+local function refreshBindingsScreen(screen)
+    if type(screen.Rebuild) == "function" then screen:Rebuild() end
+end
+
+-- Button rows display the binding in their text instead of relying on a toggle-only value.
+local function setBindingDisplay(screen, index, display)
+    local row = screen.listData and screen.listData[index]
+    if not row then return end
+    row.enumValue = display
+    row.text = row.bindingLabel .. " : " .. tostring(display or "Unbound")
+    refreshBindingsScreen(screen)
+end
+
+-- Uses the native Controls screen's established layout for a separate binding page.
+local pendingBindingsPage = nil
 local function openKeybindsExtras(menu, page)
-    if not (require and _G) then return end
-    pcall(require, "SettingsExtras")
-    local cls = rawget(_G, "SettingsExtras")
-    if cls and not cls.__crabeKeybindsHooked then
-        cls.__crabeKeybindsHooked = true
-        cls.GetHeaderLabel = function(self)
-            return (currentExtrasPage == "keyboard") and "Keyboard and mouse bindings" or "Controller bindings"
-        end
-        cls.BuildList = function(self)
-            currentExtrasScreen = self
-            return populateExtras(self, currentExtrasPage)
-        end
-        cls.SelectItem = function(self, opt, ...)
-            local idx = tonumber(opt)
-            if not idx or not self.listData then return end
-            if idx == #self.listData then
-                Crabe._patchKeybindResetPage(currentExtrasPage)
-                populateExtras(self, currentExtrasPage)
-                if self.CallFlashFunction then
-                    self:CallFlashFunction("_root.SetListData", self.listData)
-                end
-                return
+    local cls = rawget(kGlobals, "SettingsControls")
+    if type(cls) ~= "table" and type(require) == "function" then
+        pcall(require, "SettingsControls")
+        cls = rawget(kGlobals, "SettingsControls")
+    end
+    if type(cls) ~= "table" then
+        warn("SettingsControls could not be loaded; bindings screen was not opened")
+        return false
+    end
+    if not rawget(cls, "__crabeBindingsHooked") then
+        cls.__crabeBindingsHooked = true
+        local originalEnter, originalExit = cls.onEnter, cls.onExit
+        local originalHeader, originalSelect = cls.GetHeaderLabel, cls.SelectItem
+        local originalMovieLoaded = cls.MovieLoaded
+        cls.GetHeaderLabel = function(self, ...)
+            if self.__crabeBindingPage then
+                return self.__crabeBindingPage == "keyboard" and "Keyboard and mouse bindings" or "Controller bindings"
             end
-            local prompt = Crabe._patchKeybindSelectAction(currentExtrasPage, idx)
-            if prompt then
-                capturingRow = idx
-                self.listData[idx].enumValue = prompt
-                if self.CallFlashFunction then
-                    self:CallFlashFunction("_root.SetItemData", idx - 1, self.listData[idx])
-                end
+            if originalHeader then return originalHeader(self, ...) end
+        end
+        cls.onEnter = function(self, ...)
+            local requested = self.InstanceData and self.InstanceData.crabeBindingPage
+            self.__crabeBindingPage = requested or pendingBindingsPage
+            pendingBindingsPage = nil
+            if originalEnter then originalEnter(self, ...) end
+            if self.__crabeBindingPage then
+                currentExtrasPage = self.__crabeBindingPage
+                currentExtrasScreen = self
+                populateExtras(self, currentExtrasPage)
             end
         end
         cls.MovieLoaded = function(self, ...)
-            self:SetButtonLegend("Btn_Legend_Select,Btn_Legend_Back")
+            if originalMovieLoaded then originalMovieLoaded(self, ...) end
+            if self.__crabeBindingPage then
+                refreshBindingsScreen(self)
+                if self.SetButtonLegend then self:SetButtonLegend("Btn_Legend_Select,Btn_Legend_Back") end
+            end
+        end
+        cls.SelectItem = function(self, opt, ...)
+            if not self.__crabeBindingPage then
+                if originalSelect then return originalSelect(self, opt, ...) end
+                return
+            end
+            local idx = tonumber(opt)
+            if not idx or not self.listData or not self.listData[idx] then return end
+            self.SelectItemHandled = true
+            if self.listData[idx].id == "crabe_bind_reset" then
+                Crabe._patchKeybindResetPage(self.__crabeBindingPage)
+                populateExtras(self, self.__crabeBindingPage)
+                refreshBindingsScreen(self)
+                return
+            end
+            local prompt = Crabe._patchKeybindSelectAction(self.__crabeBindingPage, idx)
+            if prompt then
+                capturingRow = idx
+                setBindingDisplay(self, idx, prompt)
+            end
         end
         cls.onExit = function(self, ...)
-            if Crabe._patchKeybindCancelCapture then
-                Crabe._patchKeybindCancelCapture()
+            if self.__crabeBindingPage then
+                if Crabe._patchKeybindCancelCapture then Crabe._patchKeybindCancelCapture() end
+                if currentExtrasScreen == self then
+                    capturingRow, currentExtrasScreen = nil, nil
+                end
             end
-            capturingRow = nil
-            currentExtrasScreen = nil
+            if originalExit then return originalExit(self, ...) end
         end
     end
-
-    currentExtrasPage = page
-    if menu and menu.AddScreen then
-        menu:AddScreen({
-            screenName = "SettingsExtras",
-            playerNum = menu.InstanceData and menu.InstanceData.playerNum,
-        })
-        menu:SetFocus(false)
+    if menu and type(menu.AddScreen) == "function" then
+        pendingBindingsPage = page
+        menu:AddScreen({screenName="SettingsControls",
+            playerNum=menu.InstanceData and menu.InstanceData.playerNum, crabeBindingPage=page})
+        if menu.SetFocus then menu:SetFocus(false) end
     end
-end
-
-local keybindsAttached = false
-
--- Returns the class name the game's class factory stores on a screen, or nil.
-local function screenClassName(menu)
-    local name = menu.className or menu.ClassName
-    if type(name) == "string" then return name end
-    return nil
 end
 
 -- Injects keyboard and controller bindings options into SettingsMenu.
 local function installKeybindsMenu(menu)
-    if screenClassName(menu) == "InGameSettingsMenu" then return end
     if not menu.listData then return end
     for _, item in ipairs(menu.listData) do
         if item.id == "Crabe_KeyboardBindings" then
-            keybindsAttached = true
             return
         end
     end
@@ -507,26 +534,23 @@ local function installKeybindsMenu(menu)
             if orig then return orig(self, opt, ...) end
         end
     end
-    keybindsAttached = true
 end
 
--- Adds the bindings rows to the persistent SettingsMenu when it was built before the hooks attached.
--- Rebuilds it once, then stops: no screen lookup runs after any list carries the rows.
+-- Repairs already-built front-end and pause menus without rebuilding unchanged lists.
 local function repairPersistentSettingsMenu()
-    if keybindsAttached then return end
     local ui = rawget(kGlobals, "UI")
     if type(ui) ~= "table" or type(ui.GetHandleFromName) ~= "function"
-            or type(ui.GetScreenFromScreenHandle) ~= "function" then
-        return
-    end
-    local handle = ui.GetHandleFromName("SettingsMenu", 0)
-    if handle == nil or handle == (ui.INVALID_UI_HANDLE or -1) then return end
-    local menu = ui.GetScreenFromScreenHandle(handle)
-    if type(menu) ~= "table" or type(menu.listData) ~= "table" or #menu.listData == 0 then return end
-    local count = #menu.listData
-    installKeybindsMenu(menu)
-    if #menu.listData ~= count and type(menu.Rebuild) == "function" then
-        menu:Rebuild()
+            or type(ui.GetScreenFromScreenHandle) ~= "function" then return end
+    for _, name in ipairs({ "SettingsMenu", "InGameSettingsMenu" }) do
+        local handle = ui.GetHandleFromName(name, 0)
+        if handle ~= nil and handle ~= (ui.INVALID_UI_HANDLE or -1) then
+            local menu = ui.GetScreenFromScreenHandle(handle)
+            if type(menu) == "table" and type(menu.listData) == "table" and #menu.listData > 0 then
+                local count = #menu.listData
+                installKeybindsMenu(menu)
+                if #menu.listData ~= count and type(menu.Rebuild) == "function" then menu:Rebuild() end
+            end
+        end
     end
 end
 
@@ -534,6 +558,7 @@ end
 local function initKeybindSettings()
     if not Crabe._patchKeybindGetActionCount then return end
     Crabe.Settings.onBuild("SettingsMenu", installKeybindsMenu)
+    Crabe.Settings.onBuild("InGameSettingsMenu", installKeybindsMenu)
 
     if Game and Game.onTick then
         local menuPollTicks = 0
@@ -544,10 +569,7 @@ local function initKeybindSettings()
             local finished, idx, display = Crabe._patchKeybindPoll()
             if finished ~= nil then
                 if currentExtrasScreen.listData and currentExtrasScreen.listData[idx] then
-                    currentExtrasScreen.listData[idx].enumValue = display
-                    if currentExtrasScreen.CallFlashFunction then
-                        currentExtrasScreen:CallFlashFunction("_root.SetItemData", idx - 1, currentExtrasScreen.listData[idx])
-                    end
+                    setBindingDisplay(currentExtrasScreen, idx, display)
                 end
                 capturingRow = nil
             end

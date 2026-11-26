@@ -5,7 +5,7 @@
 ** An absent manifest is normal for a bare folder of .lua files and must stay silent.
 ** Chooses no id for a v0 manifest; that policy belongs to domain/mod_id.hpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #ifndef CRABELOADER_DOMAIN_MOD_MANIFEST_HPP_
@@ -76,6 +76,11 @@ namespace crabe::domain {
     // Validates a mod id string against reverse-DNS syntax requirements.
     [[nodiscard]] std::expected<void, std::string> validateModId(std::string_view id);
 
+    struct AssetMount {
+        std::string source;
+        std::string target;
+    };
+
     class ModManifest {
     public:
         ModManifest();
@@ -116,6 +121,11 @@ namespace crabe::domain {
         [[nodiscard]] const std::vector<std::string>& getConflicts() const noexcept;
         [[nodiscard]] const std::vector<std::string>& getProvides() const noexcept;
 
+        // Returns declared mounts, or conventional asset locations for legacy mods.
+        [[nodiscard]] const std::vector<AssetMount>& getAssetMounts() const noexcept;
+        // Whether loose UI material reads are enabled for this mod.
+        [[nodiscard]] bool allowsLooseMaterials() const noexcept;
+
         // Returns unrecognized keys present in the manifest.
         [[nodiscard]] const std::vector<std::string>& getIgnoredKeys() const noexcept;
 
@@ -145,6 +155,9 @@ namespace crabe::domain {
         std::vector<std::string> _conflicts;
         std::vector<std::string> _provides;
         std::vector<std::string> _ignoredKeys;
+        bool _allowLooseMaterials{false};
+        std::vector<AssetMount> _assetMounts{{"assets", ""}, {"textures", "textures"},
+            {"ui", "ui"}, {"sound", "sound"}, {"gamedb", "gamedb"}, {"characters", "characters"}};
     };
 
 } // namespace crabe::domain

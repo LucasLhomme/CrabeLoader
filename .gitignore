@@ -24,3 +24,9 @@ AUDIT_*.md
 DEVLOG_*.md
 telemetry_report.json
 embedded_api_def.hpp
+# Visual Studio local settings and caches
+.vs/
+*.suo
+*.user
+*.VC.db
+*.VC.VC.opendb

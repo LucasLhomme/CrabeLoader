@@ -246,6 +246,36 @@ function Crabe.Vfs.resolve(path) end
 ---@return CrabeVfsEntry[] entries
 function Crabe.Vfs.list(prefix) end
 
+---@class CrabeVfsProvider
+---@field mod string Stable resolved mod id.
+---@field folder string Display folder name.
+---@field physicalPath string
+---@field order number Zero-based position in the shared mod plan.
+---@field mount string Source and virtual prefix.
+---@field alias boolean
+---@field reason string
+
+---@class CrabeVfsExplanation
+---@field path string
+---@field providers CrabeVfsProvider[]
+---@field winner CrabeVfsProvider?
+---@field reason string
+
+--- Explains all indexed providers and the selected winner without reading disk.
+---@param path string
+---@return CrabeVfsExplanation? explanation
+function Crabe.Vfs.explain(path) end
+
+--- Lists explanations for competing providers, optionally filtered by virtual prefix.
+---@param prefix? string
+---@return CrabeVfsExplanation[] conflicts
+function Crabe.Vfs.conflicts(prefix) end
+
+--- Prints an asset explanation to the console and returns its structured form.
+---@param path string
+---@return CrabeVfsExplanation? explanation
+function Crabe.Vfs.printExplanation(path) end
+
 --- Returns operational lookup and hit statistics for the VFS.
 ---@return CrabeVfsStats stats
 function Crabe.Vfs.stats() end

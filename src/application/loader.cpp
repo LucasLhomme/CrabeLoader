@@ -5,7 +5,7 @@
 ** Multiplayer needs two gates open at once, the game profile and the config; both are reported.
 ** Loads no mod file -- discovery and ordering live in src/domain/mod_manager.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include <algorithm>
@@ -54,6 +54,8 @@
 #include "domain/config.hpp"
 #include "domain/game_profile.hpp"
 #include "domain/mod_manager.hpp"
+#include "domain/mod_manifest.hpp"
+#include "domain/mod_id.hpp"
 #include "shared/keybind_names.hpp"
 #include "shared/logger.hpp"
 
@@ -289,7 +291,6 @@ void Loader::runTicks(void* L)
 
     if (crabe::domain::ModManager::get().needsReload(L)) {
         crabe::infrastructure::CrashReporter::pushBreadcrumb("Loader: hot reload requested");
-        crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(std::filesystem::current_path() / "mods");
         crabe::domain::ModManager::get().reloadAllMods(L);
         crabe::infrastructure::patch::PatchResolution::apply(L);
         crabe::infrastructure::patch::PatchBorderless::apply(L);
@@ -638,6 +639,15 @@ bool Loader::initialize()
         logger.warning("========================================================================");
     }
 
+    // LuaCall installs live hooks: callbacks may run before initialize() returns.
+    // Publish their shared mod plan first so the earliest game state can load its mods.
+    crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path(),
+        [](std::string_view id) { return crabe::domain::Config::active().isModEnabled(id); });
+    if (!crabe::infrastructure::VfsOverrideManager::get().getModPlan()) {
+        logger.error("Loader: initial VFS mod plan could not be published; Lua hooks remain disabled.");
+        return false;
+    }
+
     if (!crabe::infrastructure::LuaCall::get().initialize(resolution.addresses)) {
         logger.error("Loader: failed to initialize LuaCall.");
         return false;
@@ -663,7 +673,6 @@ bool Loader::initialize()
     crabe::infrastructure::EngineGateway::get().initialize();
     crabe::infrastructure::EngineMeridian::get().initialize();
     crabe::infrastructure::EngineShaders::get().initialize();
-    crabe::infrastructure::VfsOverrideManager::get().initialize(std::filesystem::current_path());
     crabe::infrastructure::VfsHook::get().initialize();
     crabe::infrastructure::EngineAssetLoader::get().initialize();
     crabe::infrastructure::portal::PortalService::Instance().Initialize();

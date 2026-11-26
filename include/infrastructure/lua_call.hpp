@@ -5,7 +5,7 @@
 ** loadfile, loadbuffer and pcall are detoured to observe the game; the rest are only called.
 ** Finds none of those addresses -- that is infrastructure/lua_symbols.hpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #ifndef LUACALL_HPP_
@@ -24,6 +24,9 @@
 namespace crabe::infrastructure {
 
 struct LuaApiAddresses {
+    // Optional stdlib wrappers, independently verified against the matched game profile.
+    uintptr_t patchNext = 0;
+    uintptr_t patchRawget = 0;
     uintptr_t loadfile = 0;
     uintptr_t loadbuffer = 0;
     uintptr_t pcall = 0;
@@ -212,6 +215,8 @@ class LuaCall {
         t_lua_isnumber _isnumber = nullptr;
         t_lua_pushcclosure _pushcclosure = nullptr;
         t_lua_rawset _rawset = nullptr;
+        t_lua_cfunction _patchNext = nullptr;
+        t_lua_cfunction _patchRawget = nullptr;
 };
 
 } // namespace crabe::infrastructure

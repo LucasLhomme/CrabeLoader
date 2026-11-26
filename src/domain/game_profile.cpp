@@ -5,7 +5,7 @@
 ** PE field offsets come from the PE/COFF specification; the identity is read from a byte span.
 ** Reads no process; the running image is fetched by src/infrastructure/game_profile_detect.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "domain/game_profile.hpp"
@@ -64,6 +64,8 @@ namespace {
     }
 
     constexpr crabe::domain::SymbolRva kDi3GoldLuaSymbols[] = {
+        { "luaB_next",         0xF20380 },
+        { "luaB_rawget",       0xF20200 },
         { "luaL_loadfile",     0xF0EBF0 },
         { "luaL_loadbuffer",   0xF0EDE0 },
         { "lua_pcall",         0xF0DF60 },
