@@ -5,7 +5,7 @@
 ** Every path decision a mod folder gets is made here, so the loader and crabe-cli cannot disagree.
 ** Runs nothing and compiles nothing; it only answers what would run.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "domain/mod_entry.hpp"
@@ -13,6 +13,7 @@
 #include "domain/mod_manifest.hpp"
 
 #include <system_error>
+#include <algorithm>
 #include <utility>
 
 namespace crabe::domain {
@@ -95,6 +96,14 @@ ModEntryPlan planModEntry(const std::filesystem::path& modPath, const std::strin
             }
         }
     }
+
+    for (const auto& mount : manifest.getAssetMounts()) {
+        if (std::filesystem::is_directory(modPath / mount.source, ec) &&
+            std::ranges::find(plan.contentDirectories, mount.source) == plan.contentDirectories.end())
+            plan.contentDirectories.push_back(mount.source);
+    }
+    if (std::filesystem::is_regular_file(modPath / "bank_dependencies.json", ec))
+        plan.contentDirectories.emplace_back("bank_dependencies.json");
 
     plan.entryScriptExists = std::filesystem::exists(plan.entryScript, ec);
     if (plan.entryScriptExists)

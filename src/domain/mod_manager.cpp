@@ -5,10 +5,11 @@
 ** Mod names come from unpacked archives, so both Lua chunks are constants fed values as arguments.
 ** Decides no order itself -- the rules are in src/domain/dependency_resolver.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "domain/mod_manager.hpp"
+#include "domain/mod_load_plan.hpp"
 #include "domain/config.hpp"
 #include "domain/dependency_resolver.hpp"
 #include "domain/mod_entry.hpp"
@@ -67,13 +68,7 @@ namespace {
         return manifest.getVersion().empty() ? std::string("(no version)") : manifest.getVersion();
     }
 
-    struct Candidate {
-        std::string id;
-        std::string name;
-        std::filesystem::path path;
-        bool isDirectory{false};
-        ModManifest manifest;
-    };
+
 
 } // namespace
 
@@ -95,13 +90,13 @@ bool ModManager::needsReload(void* L) const
 // is reloaded from here, because "here" is whichever thread pressed the key.
 void ModManager::requestHotReload()
 {
-    _reloads.requestReload();
     crabe::shared::Logger::getInstance().info(
         "ModManager: hot-reload requested (F4). Re-scanning VFS overrides & invalidating texture cache...");
     const std::filesystem::path modsFolder = _modsFolder.empty()
         ? (std::filesystem::current_path() / "mods")
         : _modsFolder;
     crabe::infrastructure::VfsOverrideManager::get().scanModsDirectory(modsFolder);
+    _reloads.requestReload();
 }
 
 // Returns the collection of discovered and tracked mods.
@@ -208,108 +203,13 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
     crabe::shared::Logger& logger = crabe::shared::Logger::getInstance();
     logger.debug("ModManager: reading mods folder '{}'...", modsFolder.string());
 
-    std::error_code ec;
-    if (!std::filesystem::exists(modsFolder, ec)) {
-        logger.info("ModManager: mods folder does not exist, creating...");
-        std::filesystem::create_directories(modsFolder, ec);
+    const auto plan = crabe::infrastructure::VfsOverrideManager::get().getModPlan();
+    if (!plan || plan->folder.lexically_normal() != modsFolder.lexically_normal()) {
+        logger.error("ModManager: no published VFS mod plan for '{}'; refusing independent discovery.", modsFolder.string());
         return;
     }
-
-    std::vector<Candidate> candidates;
-
-    for (const auto& entry : std::filesystem::directory_iterator(modsFolder, ec)) {
-        if (entry.is_directory()) {
-            std::string folderName = entry.path().filename().string();
-            if (folderName.empty() || folderName[0] == '.' || folderName[0] == '_')
-                continue;
-            Candidate candidate;
-            candidate.name = std::move(folderName);
-            candidate.path = entry.path();
-            candidate.isDirectory = true;
-            candidate.manifest = ModManifest(entry.path() / "mod.json");
-            candidates.push_back(std::move(candidate));
-        } else if (entry.is_regular_file() && entry.path().extension() == ".lua") {
-            Candidate candidate;
-            candidate.name = entry.path().stem().string();
-            candidate.path = entry.path();
-            candidate.isDirectory = false;
-            candidates.push_back(std::move(candidate));
-        }
-    }
-
-    for (Candidate& candidate : candidates) {
-        if (candidate.manifest.isMalformed() && candidate.manifest.diagnostic().has_value()) {
-            logger.error("ModManager: mod '{}' has an unusable mod.json, ignoring it: {}",
-                         candidate.name, candidate.manifest.diagnostic()->what());
-            candidate.manifest = ModManifest{};
-        } else if (candidate.manifest.isValid() && !candidate.manifest.getIgnoredKeys().empty()) {
-            std::string keys;
-            for (const std::string& key : candidate.manifest.getIgnoredKeys()) {
-                if (!keys.empty())
-                    keys += ", ";
-                keys += key;
-            }
-            logger.debug("ModManager: mod '{}': mod.json (manifestVersion {}) has keys this "
-                         "loader does not read: {}",
-                         candidate.name, candidate.manifest.getManifestVersion(), keys);
-        }
-    }
-
-    {
-        crabe::domain::Config& activeConfig = crabe::domain::Config::active();
-        std::vector<Candidate> enabledCandidates;
-        enabledCandidates.reserve(candidates.size());
-        for (Candidate& candidate : candidates) {
-            const std::string provisionalId =
-                (candidate.manifest.isValid() && !candidate.manifest.getId().empty())
-                    ? candidate.manifest.getId()
-                    : synthesiseModId(candidate.name);
-            if (activeConfig.isModEnabled(provisionalId)) {
-                enabledCandidates.push_back(std::move(candidate));
-            } else {
-                logger.debug("ModManager: mod '{}' ({}) skipped: disabled by profile '{}'.",
-                             candidate.name, provisionalId, activeConfig.activeProfileName());
-            }
-        }
-        candidates = std::move(enabledCandidates);
-    }
-
-    std::vector<ModIdCandidate> idCandidates;
-    idCandidates.reserve(candidates.size());
-    for (const Candidate& candidate : candidates) {
-        idCandidates.push_back(ModIdCandidate{
-            .declaredId = (candidate.manifest.isValid() && !candidate.manifest.getId().empty())
-                              ? candidate.manifest.getId()
-                              : std::string{},
-            .folderName = candidate.name,
-            .sortKey = candidate.path.generic_string(),
-        });
-    }
-
-    std::vector<ModIdRenumbering> renumbered;
-    const std::vector<std::string> assignedIds = assignModIds(idCandidates, &renumbered);
-    for (std::size_t index = 0; index < candidates.size(); ++index)
-        candidates[index].id = assignedIds[index];
-
-    for (const ModIdRenumbering& collision : renumbered) {
-        logger.warning("ModManager: mod '{}' would be called '{}', which is already taken; "
-                       "calling it '{}' instead. Rename the folder, or give it a mod.json with "
-                       "an \"id\", if anything needs to depend on it by name.",
-                       candidates[collision.index].name, collision.wantedId, collision.chosenId);
-    }
-
-    std::vector<ResolverInput> inputs;
-    inputs.reserve(candidates.size());
-    for (const Candidate& candidate : candidates)
-        inputs.push_back(ResolverInput{ candidate.id, &candidate.manifest });
-
-    const SemVer loaderVersion(crabe::version::Major, crabe::version::Minor,
-                               crabe::version::Patch);
-    const ResolutionResult resolution = resolve(inputs, loaderVersion);
-
-    logger.info("ModManager: {} mod(s) found in '{}': {} to load, {} rejected (loader v{}).",
-                candidates.size(), modsFolder.string(), resolution.loadOrder.size(),
-                resolution.rejected.size(), crabe::version::String);
+    const auto& candidates = plan->candidates;
+    const auto& resolution = plan->resolution;
 
     std::vector<bool> ran(candidates.size(), false);
     _mods.reserve(resolution.loadOrder.size());
@@ -318,7 +218,7 @@ void ModManager::discoverAndLoadMods(void* L, const std::filesystem::path& modsF
 
     for (std::size_t position = 0; position < resolution.loadOrder.size(); ++position) {
         const std::size_t index = resolution.sourceIndex[position];
-        Candidate& candidate = candidates[index];
+        const auto& candidate = candidates[index];
         ran[index] = true;
 
         const crabe::infrastructure::ScopedMod scopedMod(candidate.id);

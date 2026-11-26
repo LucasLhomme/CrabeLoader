@@ -5,7 +5,7 @@
 ** Populates keyboard and gamepad binding rows directly below the Controls option.
 ** Manages input remapping state transitions and delegates to the controls interface.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include "infrastructure/patch/patch_keybind.hpp"
@@ -46,7 +46,7 @@ struct ActionDef {
     const char* label;
 };
 
-constexpr std::array<ActionDef, 23> kActions = {{
+constexpr std::array<ActionDef, 25> kActions = {{
     { "forward",      DeviceType::Keyboard, 0x11,   "Move forward" },
     { "back",         DeviceType::Keyboard, 0x1F,   "Move back" },
     { "left",         DeviceType::Keyboard, 0x1E,   "Move left" },
@@ -55,6 +55,7 @@ constexpr std::array<ActionDef, 23> kActions = {{
     { "interact",     DeviceType::Keyboard, 0x12,   "Interact / pick up" },
     { "sprint",       DeviceType::Keyboard, 0x2A,   "Sprint / target" },
     { "block",        DeviceType::Keyboard, 0x1D,   "Block" },
+    { "special",      DeviceType::Keyboard, 0x21,   "Special ability / charged boost" },
     { "swap",         DeviceType::Keyboard, 0x10,   "Swap hero" },
     { "ribbon",       DeviceType::Keyboard, 0x0F,   "Toy Box menu" },
     { "tool1",        DeviceType::Keyboard, 0x02,   "Previous tool" },
@@ -65,6 +66,7 @@ constexpr std::array<ActionDef, 23> kActions = {{
     { "padAttack",    DeviceType::Pad,      0x4000, "Attack" },
     { "padAlt",       DeviceType::Pad,      0x8000, "Alternate attack" },
     { "padBlock",     DeviceType::Pad,      0x2000, "Block" },
+    { "padSpecial",   DeviceType::Pad,      XINPUT_GAMEPAD_RIGHT_SHOULDER, "Special ability" },
     { "padPause",     DeviceType::Pad,      0x0010, "Pause menu" },
     { "padRibbon",    DeviceType::Pad,      0x0020, "Toy Box menu" },
     { "padSwap",      DeviceType::Pad,      0x0040, "Swap hero" },

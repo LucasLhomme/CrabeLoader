@@ -5,7 +5,7 @@
 ** The game exports no Lua symbol, so each real address is the n-th call inside a stdlib wrapper.
 ** Calls none of them; the calls and the detours are src/infrastructure/lua_call.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include <cstdint>
@@ -185,6 +185,21 @@ Resolution resolveAll(uintptr_t base, const crabe::domain::GameProfile* profile)
         ++result.total;
         if (addr) ++result.resolved;
     }
+
+    // Optional compatibility surface: these are the registered C wrappers,
+    // not an n-th call inside them. Never choose an unverified scan candidate.
+    const auto resolveWrapper = [&](const char* name, const char* symbol) -> uintptr_t {
+        const uintptr_t rva = profile ? profile->luaSymbolRva(symbol) : 0;
+        if (rva) {
+            for (const uintptr_t candidate : crabe::memory::findRegisteredFunctions(name)) {
+                if (candidate == base + rva) return candidate;
+            }
+        }
+        logger.warning("LuaSymbols: patch iterator wrapper '{}' unavailable; refusing unverified address.", name);
+        return 0;
+    };
+    result.addresses.patchNext = resolveWrapper("next", "luaB_next");
+    result.addresses.patchRawget = resolveWrapper("rawget", "luaB_rawget");
 
     logger.info("LuaSymbols: {}/{} symbols resolved{}.", result.resolved, result.total,
                 profile ? std::format(" against profile '{}'", profile->id)

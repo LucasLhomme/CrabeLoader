@@ -233,6 +233,8 @@ set(CRABELOADER_CORE_SOURCES
     src/infrastructure/lua_call.cpp
     src/infrastructure/lua_symbols.cpp
     src/infrastructure/vfs_override_manager.cpp
+    src/domain/mod_load_plan.cpp
+    src/infrastructure/bank_dependency_patch.cpp
     src/infrastructure/vfs_hook.cpp
     src/infrastructure/http_redirect_rules.cpp
     src/infrastructure/http_redirect.cpp
@@ -375,6 +377,7 @@ endif()
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         dbghelp
+        bcrypt ole32 oleaut32
         hid
         setupapi
         nlohmann_json::nlohmann_json
@@ -469,6 +472,8 @@ endif()
 add_executable(test_vfs_override
     tests/cpp/test_vfs_override.cpp
     src/infrastructure/vfs_override_manager.cpp
+    src/domain/mod_load_plan.cpp
+    src/infrastructure/bank_dependency_patch.cpp
     src/shared/logger.cpp
     src/shared/version.cpp
 )
@@ -478,7 +483,7 @@ target_include_directories(test_vfs_override PRIVATE
     include/shared
     src
 )
-target_link_libraries(test_vfs_override PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_vfs_override PRIVATE nlohmann_json::nlohmann_json bcrypt ole32 oleaut32)
 target_compile_definitions(test_vfs_override PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
@@ -539,6 +544,8 @@ endif()
 add_executable(crabe_fate
     tests/cpp/crabe_fate_main.cpp
     src/infrastructure/vfs_override_manager.cpp
+    src/domain/mod_load_plan.cpp
+    src/infrastructure/bank_dependency_patch.cpp
     src/domain/dependency_resolver.cpp
     src/domain/mod_manifest.cpp
     src/domain/mod_id.cpp
@@ -559,6 +566,7 @@ target_compile_definitions(crabe_fate PRIVATE
     _CRT_SECURE_NO_WARNINGS
 )
 target_link_libraries(crabe_fate PRIVATE
+    bcrypt ole32 oleaut32
     nlohmann_json::nlohmann_json
 )
 if(MSVC)
@@ -912,3 +920,44 @@ if(Python3_FOUND)
     add_test(NAME test_lua_suite COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_lua_tests.py")
 endif()
 
+
+# Offline harness for independently encrypted bank dependency fixtures.
+add_executable(test_bank_dependencies tests/cpp/test_bank_dependencies.cpp
+    src/infrastructure/bank_dependency_patch.cpp
+    src/infrastructure/vfs_override_manager.cpp
+    src/domain/mod_load_plan.cpp src/shared/logger.cpp src/shared/version.cpp)
+target_include_directories(test_bank_dependencies PRIVATE include src)
+target_link_libraries(test_bank_dependencies PRIVATE nlohmann_json::nlohmann_json bcrypt ole32 oleaut32)
+target_compile_definitions(test_bank_dependencies PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(MSVC)
+    target_compile_options(test_bank_dependencies PRIVATE /W4 /utf-8)
+endif()
+
+# The standalone VFS harnesses share production discovery and dependency resolution.
+foreach(target test_vfs_override test_bank_dependencies)
+    target_sources(${target} PRIVATE src/domain/mod_manifest.cpp src/domain/mod_id.cpp
+        src/domain/dependency_resolver.cpp src/domain/semver.cpp src/domain/mod_load_plan.cpp)
+endforeach()
+
+add_executable(test_vfs_framework tests/cpp/test_vfs_framework.cpp
+    src/infrastructure/vfs_override_manager.cpp src/infrastructure/bank_dependency_patch.cpp
+    src/domain/mod_load_plan.cpp src/domain/mod_manifest.cpp src/domain/mod_id.cpp
+    src/domain/dependency_resolver.cpp src/domain/semver.cpp src/shared/logger.cpp src/shared/version.cpp)
+target_include_directories(test_vfs_framework PRIVATE include src)
+target_link_libraries(test_vfs_framework PRIVATE nlohmann_json::nlohmann_json bcrypt ole32 oleaut32)
+target_compile_definitions(test_vfs_framework PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(MSVC)
+    target_compile_options(test_vfs_framework PRIVATE /W4 /utf-8)
+endif()
+add_test(NAME test_vfs_framework COMMAND test_vfs_framework)
+
+target_sources(test_vfs_framework PRIVATE src/domain/mod_entry.cpp)
+
+# Real bare-state tests for the restricted patch VM compatibility surface.
+add_executable(test_patch_iterators tests/cpp/test_patch_iterators.cpp)
+target_include_directories(test_patch_iterators PRIVATE include)
+target_link_libraries(test_patch_iterators PRIVATE crabe_lua51)
+if(MSVC)
+    target_compile_options(test_patch_iterators PRIVATE /W4 /utf-8)
+endif()
+add_test(NAME test_patch_iterators COMMAND test_patch_iterators)

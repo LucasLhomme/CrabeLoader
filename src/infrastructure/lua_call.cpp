@@ -5,13 +5,14 @@
 ** Every call saves and restores the stack top, so a failure never leaves the VM stack skewed.
 ** Resolves no address -- that pass is src/infrastructure/lua_symbols.cpp.
 **
-** Authors: @LucasLhomme
+** Authors: @LucasLhomme, @Weresthebeef
 */
 
 #include <cstring>
 #include <format>
 
 #include "infrastructure/lua_call.hpp"
+#include "infrastructure/lua_patch_iterators.hpp"
 #include "application/loader.hpp"
 #include "shared/logger.hpp"
 
@@ -70,6 +71,8 @@ bool LuaCall::initialize(const LuaApiAddresses& addresses)
     _isnumber = reinterpret_cast<t_lua_isnumber>(addresses.isnumber);
     _pushcclosure = reinterpret_cast<t_lua_pushcclosure>(addresses.pushcclosure);
     _rawset = reinterpret_cast<t_lua_rawset>(addresses.rawset);
+    _patchNext = reinterpret_cast<t_lua_cfunction>(addresses.patchNext);
+    _patchRawget = reinterpret_cast<t_lua_cfunction>(addresses.patchRawget);
 
     if (!_tolstring || !_settop) {
         crabe::shared::Logger::getInstance().warning(
@@ -246,6 +249,20 @@ bool LuaCall::runPatch(void* L, const std::string& patchSource, const std::strin
         return false;
 
     std::string chunkName = "=" + (label.empty() ? std::string("crabe_patch") : label);
+
+    const patch_iterators::Api iteratorApi{
+        _gettop, _settop, loadbuffer, pcall, _pushcclosure, _tonumber
+    };
+    const int iterators = patch_iterators::ensure(L, iteratorApi, _patchNext, _patchRawget);
+    if (iterators > 0) {
+        crabe::shared::Logger::getInstance().info(
+            "LuaCall: patch iterators installed in state {} (pairs={}, ipairs={}) before '{}'.",
+            L, (iterators & 1) != 0, (iterators & 2) != 0, label);
+    } else if (iterators < 0) {
+        crabe::shared::Logger::getInstance().warning(
+            "LuaCall: patch iterator compatibility unavailable in state {} (status {}) before '{}'.",
+            L, iterators, label);
+    }
 
     ChunkResult result = runChunk(L, kLuaMultret, [&]() {
         return loadbuffer(L, patchSource.c_str(), patchSource.size(), chunkName.c_str());

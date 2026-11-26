@@ -3,7 +3,7 @@
 ** File description:
 ** Manages in-memory O(1) virtual file system overrides mapping assets to loose mod files.
 ** Provides thread-safe normalized path resolution with zero disk access on hot lookups.
-** Mod content lives under mods/; this service knows nothing about game-specific formats.
+** Bank dependency overlay generation is delegated to infrastructure/bank_dependency_patch.cpp.
 **
 ** Authors: @LucasLhomme, @Weresthebeef
 */
@@ -15,7 +15,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <mutex>
+#include <memory>
+#include "domain/mod_load_plan.hpp"
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -33,6 +36,12 @@ public:
         std::string originMod;
         mutable std::size_t hitCount{0};
         bool allowLooseMaterials{false};
+        std::string modId;
+        std::size_t order{0};
+        std::size_t mountIndex{0};
+        std::string mount;
+        bool alias{false};
+        std::string reason;
     };
 
     struct VfsStats {
@@ -45,10 +54,23 @@ public:
     static VfsOverrideManager& get() noexcept;
 
     // Discovers and indexes all loose asset overrides found inside the mods directory.
-    void initialize(const std::filesystem::path& gameRoot);
+    void initialize(const std::filesystem::path& gameRoot,
+                    std::function<bool(std::string_view)> modFilter = {});
 
     // Recursively indexes all loose asset files present within subfolders of modsFolder.
     void scanModsDirectory(const std::filesystem::path& modsFolder);
+
+    struct Explanation {
+        std::string path;
+        std::optional<OverrideEntry> winner;
+        std::vector<OverrideEntry> providers;
+    };
+    // Returns the immutable load plan published with the current VFS index.
+    [[nodiscard]] std::shared_ptr<const crabe::domain::ModLoadPlan> getModPlan() const;
+    // Returns all providers and the winner without registering a lookup hit.
+    [[nodiscard]] Explanation explain(std::string_view path) const;
+    // Returns sorted virtual paths with competing providers.
+    [[nodiscard]] std::vector<std::string> getConflictPaths() const;
 
     // Manually registers an override mapping a virtual asset path to a physical disk file.
     bool registerOverride(std::string_view virtualPath,
@@ -98,6 +120,10 @@ private:
     mutable std::unordered_map<std::string, std::optional<std::filesystem::path>, string_hash, std::equal_to<>> _fastCache;
     std::unordered_map<std::string, OverrideEntry> _overrides;
     std::filesystem::path _gameRoot;
+    std::function<bool(std::string_view)> _modFilter;
+    std::shared_ptr<const crabe::domain::ModLoadPlan> _modPlan;
+    std::unordered_map<std::string, std::vector<OverrideEntry>> _providers;
+    std::mutex _scanMutex;
     mutable std::atomic<std::size_t> _resolutionCount{0};
     mutable std::atomic<std::size_t> _hitCount{0};
     mutable std::string _lastRedirected;

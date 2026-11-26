@@ -420,7 +420,7 @@ suite.cases[#suite.cases + 1] = {
         assertEquals(idsIn(menu.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings")
         menu.className = "InGameSettingsMenu"
         menu:BuildList()
-        assertEquals(idsIn(menu.listData), "gamma,resolution", "pause-menu subclasses stay unchanged")
+        assertEquals(idsIn(menu.listData), "gamma,resolution,Crabe_KeyboardBindings,Crabe_PadBindings", "in-game Options also expose binding rows")
     end,
 }
 
@@ -438,10 +438,10 @@ suite.cases[#suite.cases + 1] = {
         state.UI = {
             INVALID_UI_HANDLE = -1,
             GetHandleFromName = function(name, player)
-                assertEquals(name, "SettingsMenu")
+                assertTrue(name == "SettingsMenu" or name == "InGameSettingsMenu")
                 assertEquals(player, 0)
                 lookups = lookups + 1
-                return 16
+                return name == "SettingsMenu" and 16 or -1
             end,
             GetScreenFromScreenHandle = function(handle)
                 assertEquals(handle, 16)
@@ -456,7 +456,128 @@ suite.cases[#suite.cases + 1] = {
         for _ = 1, 120 do state.Game._runTicks(0.016) end
         assertEquals(rebuilds, 1, "an unchanged list must not be refreshed repeatedly")
         assertEquals(#menu.listData, 4, "bindings must not duplicate")
-        assertEquals(lookups, 1, "the screen lookup must stop once the rows are attached")
+        assertEquals(lookups, 10, "both persistent menus remain discoverable without rebuilding unchanged lists")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "in-game Options are hooked independently of inherited front-end metadata",
+    function(state)
+        registerSettingsNatives(state)
+        state.Crabe.Settings._initBuiltins()
+        local base = newScreen(state, "SettingsMenu")
+        state.Crabe.Settings._install("SettingsMenu")
+        local child = newScreen(state, "InGameSettingsMenu")
+        child.BuildList = function(self)
+            self.listData = {{id="Scn_Controls_Options"}, {id="pause-only"}}
+        end
+        setmetatable(child, {__index=base})
+        state.Crabe.Settings._install("InGameSettingsMenu")
+        child:BuildList()
+        assertEquals(idsIn(child.listData), "Scn_Controls_Options,Crabe_KeyboardBindings,Crabe_PadBindings,pause-only")
+        child:BuildList()
+        assertEquals(#child.listData, 4)
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "pause-menu rebinding opens, captures, resets and preserves the native Controls lifecycle",
+    function(state)
+        registerSettingsNatives(state)
+        local crabe = state.Crabe
+        local currentPage, resets, cancels, movieCalls, exits = nil, 0, 0, 0, 0
+        crabe._patchKeybindGetActionCount = function(page) currentPage=page; return 1 end
+        crabe._patchKeybindGetAction = function() return "jump", "Jump", "Space" end
+        crabe._patchKeybindSelectAction = function(page, row)
+            assertEquals(page, "keyboard"); assertEquals(row, 1); return "Press a key"
+        end
+        crabe._patchKeybindResetPage = function(page) assertEquals(page, "keyboard"); resets=resets+1 end
+        crabe._patchKeybindCancelCapture = function() cancels=cancels+1 end
+        crabe._patchKeybindPoll = function() return true, 1, "J" end
+        state.SettingsControls = {
+            ScreenDefinition={SWF="ListMenu/Menu"}, DataProvider={MenuOptions={}},
+            onEnter=function(self) self.nativeEntered=true end,
+            GetHeaderLabel=function() return "Controls" end,
+            SelectItem=function(self) self.nativeSelected=true end,
+            MovieLoaded = function() movieCalls=movieCalls+1 end,
+            onExit = function() exits=exits+1 end,
+        }
+        -- The real injection environment need not be the table stored in _G.
+        state._G = {}
+        crabe.Settings._initBuiltins()
+        local menu = newScreen(state, "InGameSettingsMenu")
+        local extra
+        menu.InstanceData = {playerNum=0}
+        menu.AddScreen = function(self, data)
+            assertEquals(data.screenName, "SettingsControls")
+            assertEquals(state.SettingsControls.ScreenDefinition.SWF, "ListMenu/Menu")
+            assertNotNil(state.SettingsControls.DataProvider.MenuOptions)
+            extra = setmetatable({Rebuild=function(self) self.rebuilds=(self.rebuilds or 0)+1 end,
+                SetButtonLegend=function() end, InstanceData=data}, {__index=state.SettingsControls})
+            extra:onEnter(); extra:MovieLoaded()
+        end
+        menu.SetFocus = function(self, focus) assertFalse(focus) end
+        crabe.Settings._install("InGameSettingsMenu"); menu:BuildList()
+        menu.selectedIndex=3; menu:SelectItem(3)
+        assertEquals(currentPage, "keyboard")
+        assertEquals(movieCalls, 1, "native MovieLoaded is preserved")
+        assertEquals(extra:GetHeaderLabel(), "Keyboard and mouse bindings")
+        extra:SelectItem(1)
+        assertEquals(extra.listData[1].enumValue, "Press a key")
+        assertEquals(extra.listData[1].text, "Jump : Press a key")
+        assertEquals(extra.rebuilds, 2)
+        state.Game._runTicks(0.016)
+        assertEquals(extra.listData[1].enumValue, "J")
+        assertEquals(extra.listData[1].text, "Jump : J")
+        assertEquals(extra.rebuilds, 3)
+        extra:SelectItem(2)
+        assertEquals(resets, 1)
+        assertEquals(extra.listData[1].text, "Jump : Space")
+        assertEquals(extra.rebuilds, 4)
+        extra:onExit()
+        assertEquals(cancels, 1)
+        assertEquals(exits, 1, "native onExit is preserved")
+        menu.selectedIndex=4; menu:SelectItem(4)
+        assertEquals(currentPage, "pad")
+        assertEquals(extra:GetHeaderLabel(), "Controller bindings")
+        assertEquals(movieCalls, 2, "Extras hooks must not stack on reopen")
+        extra:onExit()
+        assertEquals(exits, 2)
+        local ordinary = setmetatable({InstanceData={}, Rebuild=function() end}, {__index=state.SettingsControls})
+        ordinary:onEnter()
+        assertEquals(ordinary:GetHeaderLabel(), "Controls")
+        ordinary:SelectItem(1)
+        assertTrue(ordinary.nativeSelected, "ordinary Controls selection must still reach the game")
+        ordinary:onExit()
+        assertEquals(cancels, 2, "ordinary Controls must not cancel a binding capture")
+    end,
+}
+
+suite.cases[#suite.cases + 1] = {
+    "persistent pause menus are repaired even after front-end rows were attached",
+    function(state)
+        registerSettingsNatives(state)
+        local front = newScreen(state, "SettingsMenu"); front:BuildList()
+        local pause = newScreen(state, "InGameSettingsMenu"); pause:BuildList()
+        local paused = false
+        local frontRebuilds, pauseRebuilds = 0, 0
+        front.Rebuild = function() frontRebuilds=frontRebuilds+1 end
+        pause.Rebuild = function() pauseRebuilds=pauseRebuilds+1 end
+        state.UI = {
+            INVALID_UI_HANDLE=-1,
+            GetHandleFromName=function(name)
+                if name=="SettingsMenu" then return 1 end
+                return paused and 2 or -1
+            end,
+            GetScreenFromScreenHandle=function(handle) return handle==1 and front or pause end,
+        }
+        state.Crabe.Settings._initBuiltins()
+        for _=1,30 do state.Game._runTicks(0.016) end
+        assertEquals(frontRebuilds,1); assertEquals(pauseRebuilds,0)
+        paused=true
+        for _=1,60 do state.Game._runTicks(0.016) end
+        assertEquals(frontRebuilds,1); assertEquals(pauseRebuilds,1)
+        assertEquals(#pause.listData,4)
     end,
 }
 

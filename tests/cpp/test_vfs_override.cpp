@@ -172,7 +172,7 @@ int main()
         saveMaterial();
         vfs.scanModsDirectory(tempDir);
         require(!vfs.readOverrideBytes("ui/icons/hud_playericons_probe.mtb", true), "Old mods must not activate dormant materials");
-        createDummyFile(modC / "mod.json", R"({"manifestVersion":1,"id":"local.probe","looseMaterialOverrides":true})");
+        createDummyFile(modC / "mod.json", R"({"manifestVersion":1,"id":"local.probe","version":"1.0.0","looseMaterialOverrides":true})");
         vfs.scanModsDirectory(tempDir);
         auto looseMaterial = vfs.readOverrideBytes("ASSETS\\UI\\ICONS\\HUD_PLAYERICONS_PROBE.MTB", true);
         require(looseMaterial && *looseMaterial == material, "Opted-in material bytes must be returned exactly");
